@@ -1,0 +1,11 @@
+package-as: GuildFoundForever
+
+# Only the addon goes into the ZIP. Files and folders starting with a dot are left out anyway.
+ignore:
+  - README.md
+  - tests
+  - docs
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown

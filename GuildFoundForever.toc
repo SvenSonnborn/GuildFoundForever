@@ -1,0 +1,34 @@
+## Interface: 16001
+## Title: Guild Found Forever
+## Notes: Guild-found rules: no auction house, mail and trade only within the guild, non-guild group lock from a chosen level.
+## Notes-deDE: Gilden-Found-Regeln: kein Auktionshaus, Post und Handel nur innerhalb der Gilde, Sperre für externe Gruppen ab einem festgelegten Level.
+## Version: @project-version@
+## Author: Zerroc
+## X-License: MIT
+## X-Website: https://github.com/SvenSonnborn/GuildFoundForever
+## IconTexture: Interface\Icons\INV_Shirt_GuildTabard_01
+## SavedVariables: GuildFoundForeverDB
+## SavedVariablesPerCharacter: GuildFoundForeverCharDB
+## AddonCompartmentFunc: GuildFoundForever_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: GuildFoundForever_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: GuildFoundForever_OnAddonCompartmentLeave
+
+Locales.lua
+Core.lua
+Data.lua
+Rules.lua
+Guild.lua
+Comm.lua
+Modules\AuctionHouse.lua
+Modules\Mail.lua
+Modules\Trade.lua
+Modules\Travel.lua
+Modules\Group.lua
+Modules\Announce.lua
+Modules\GuildMap.lua
+MapPin.xml
+Modules\Audit.lua
+Modules\Professions.lua
+Modules\Finder.lua
+Banner.lua
+UI.lua

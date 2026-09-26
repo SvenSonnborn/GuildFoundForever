@@ -1,0 +1,10 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+	<!-- World map pin of a guild member. Behaviour: GuildFoundForeverMapPinMixin in Modules/GuildMap.lua.
+	     No OnEnter/OnLeave here: the map canvas sets them and calls OnMouseEnter/OnMouseLeave. -->
+	<Frame name="GuildFoundForeverMapPinTemplate" mixin="GuildFoundForeverMapPinMixin" virtual="true">
+		<Size x="16" y="16"/>
+		<Scripts>
+			<OnLoad method="OnLoad"/>
+		</Scripts>
+	</Frame>
+</Ui>

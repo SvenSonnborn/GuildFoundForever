@@ -1,0 +1,2 @@
+# Normalise line endings in the repository; Windows checkouts get CRLF, WoW reads both.
+* text=auto

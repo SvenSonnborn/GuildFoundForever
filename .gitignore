@@ -1,0 +1,5 @@
+# Test interpreter, downloaded by tests/run.ps1
+tests/.moonsharp/
+
+# Output of a local packager run
+.release/
