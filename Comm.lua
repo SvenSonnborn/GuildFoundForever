@@ -238,6 +238,8 @@ local function FinishCheck()
 	end
 	table.sort(withAddon)
 	table.sort(withoutAddon)
+	-- Our own messages are ignored, so the player never answers the check; list them first.
+	table.insert(withAddon, 1, L.CHECK_SELF:format(UnitName("player"), ns.version))
 
 	ns.Print(L.CHECK_WITH, #withAddon, #withAddon > 0 and table.concat(withAddon, ", ") or L.CHECK_NONE)
 	ns.Print(L.CHECK_WITHOUT, #withoutAddon, #withoutAddon > 0 and table.concat(withoutAddon, ", ") or L.CHECK_NONE)

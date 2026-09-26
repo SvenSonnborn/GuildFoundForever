@@ -1385,7 +1385,7 @@ ClearChat()
 ns.Comm.StartCheck()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "PONG\t0.6.0", "WHISPER", "Freund-ClassicBetaPvE2")
 RunTimers()
-check(ChatContains("Mit Addon (1): Freund (0.6.0)"), "check lists members with addon")
+check(ChatContains("Mit Addon (2): Magus (0.7.0, du), Freund (0.6.0)"), "check lists the player first, then the members who answered")
 check(ChatContains("Online ohne Addon (1): Crossy"), "check lists online members without addon")
 
 -- Bug report 26.09.2026: "Gilde prüfen" said messages could not be sent. In 12.x
