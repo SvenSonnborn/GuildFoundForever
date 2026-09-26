@@ -20,17 +20,13 @@
 - **Auction house:** closes as soon as it opens.
 - **Mail:** only to and from guild members. Mail from NPCs and the auction house, and returned mail, stay allowed.
 - **Trades with outsiders** are blocked, except what your officers allow:
-
-  | Allowed in trades with outsiders | Default |
-  |---|---|
-  | Conjured food and water | on |
-  | Healthstones | on |
-  | Quest items | on |
-  | Your enchanting and lockpicking for them | on |
-  | Gold | off |
-  | Them picking your lockboxes | off |
-
-  A blocked trade greys out the Trade button and explains why below the trade window.
+  - conjured food and water *(default: allowed)*
+  - healthstones *(default: allowed)*
+  - quest items *(default: allowed)*
+  - your enchanting and lockpicking for them *(default: allowed)*
+  - gold *(default: blocked)*
+  - them picking your lockboxes *(default: blocked)*
+  - A blocked trade greys out the Trade button and explains why below the trade window.
 - **Summons** by outsiders (warlocks, meeting stones) are declined.
 - **Portals** of outsider mages cannot be blocked; you get a warning, and using one is logged.
 - **Groups:** from level 50 (your officers can change this, 0 turns it off), invites from outsiders are declined. You also leave groups that contain outsiders after a short warning. Battlegrounds and arenas are exempt.
@@ -76,7 +72,7 @@ Everything goes through addon messages to your own guild only (the dungeon finde
 | `/gff audit [name]` | open the audit |
 | `/gff dungeons` | the dungeons and raids the game delivers, with levels |
 | `/gff test` | send a test announcement to the guild |
-| `/gff test loot \| level \| death \| map` | try an announcement or the map pin, only for you |
+| `/gff test loot` / `level` / `death` / `map` | try an announcement or the map pin, only for you |
 | `/gff preview` | preview the banners |
 | `/gff publish` / `unpublish` | officers: write the rules into the guild info or remove them |
 
@@ -116,17 +112,13 @@ Inspired by [GuildFound](https://www.curseforge.com/wow/addons/guildfound) by Lo
 - **Auktionshaus:** schließt sich sofort wieder.
 - **Post:** nur an und von Gildenmitgliedern. Post von NPCs und vom Auktionshaus sowie zurückgeschickte Post bleiben erlaubt.
 - **Handel mit Außenstehenden** ist gesperrt, bis auf das, was eure Offiziere erlauben:
-
-  | Erlaubt im Handel mit Außenstehenden | Standard |
-  |---|---|
-  | Herbeigezaubertes Essen und Wasser | an |
-  | Gesundheitssteine | an |
-  | Quest-Items | an |
-  | Eigenes Verzaubern und Schlossknacken für sie | an |
-  | Gold | aus |
-  | Sie knacken eure Kassetten | aus |
-
-  Bei einem gesperrten Handel wird der Handeln-Button ausgegraut, und unter dem Handelsfenster steht der Grund.
+  - herbeigezaubertes Essen und Wasser *(Standard: erlaubt)*
+  - Gesundheitssteine *(Standard: erlaubt)*
+  - Quest-Items *(Standard: erlaubt)*
+  - eigenes Verzaubern und Schlossknacken für sie *(Standard: erlaubt)*
+  - Gold *(Standard: gesperrt)*
+  - sie knacken eure Kassetten *(Standard: gesperrt)*
+  - Bei einem gesperrten Handel wird der Handeln-Button ausgegraut, und unter dem Handelsfenster steht der Grund.
 - **Beschwörungen** durch Außenstehende (Hexer, Versammlungssteine) werden abgelehnt.
 - **Portale** außenstehender Magier lassen sich nicht sperren; ihr bekommt eine Warnung, und die Benutzung wird protokolliert.
 - **Gruppen:** Ab Level 50 werden Einladungen von Außenstehenden abgelehnt. Eure Offiziere können das Level ändern, 0 schaltet die Sperre aus. Gruppen mit Außenstehenden verlasst ihr nach einer kurzen Warnung. Schlachtfelder und Arenen sind ausgenommen.
@@ -172,7 +164,7 @@ Alles geht per Addon-Nachricht nur an eure eigene Gilde (die Dungeonsuche nutzt 
 | `/gff audit [Name]` | das Audit öffnen |
 | `/gff dungeons` | Dungeons und Schlachtzüge aus dem Spiel, mit Stufen |
 | `/gff test` | Testmeldung an die Gilde schicken |
-| `/gff test loot \| level \| tod \| karte` | eine Ankündigung oder den Kartenpunkt ausprobieren, nur bei euch |
+| `/gff test loot` / `level` / `tod` / `karte` | eine Ankündigung oder den Kartenpunkt ausprobieren, nur bei euch |
 | `/gff preview` | Vorschau der Banner |
 | `/gff publish` / `unpublish` | Offiziere: Regeln in die Gildeninfo schreiben oder entfernen |
 

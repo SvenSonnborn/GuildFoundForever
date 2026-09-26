@@ -551,6 +551,7 @@ Vorbereitet:
 Offen:
 - [ ] TOC: `## X-Curse-Project-ID` und `## X-Wago-ID`, sobald die Projekte angelegt sind
 - [ ] CurseForge-Projekt anlegen:
+  - Summary: „Guild-found rules for WoW Forever: no auction house, guild-only mail and trades, group lock - plus announcements, deathlog, guild map and a guild dungeon finder.“ (161 Zeichen). Kurzfassung: „Guild-found rules for WoW Forever: no AH, guild-only mail and trade, group lock and more.“ (89 Zeichen)
   - Editor auf Markdown stellen
   - „No automatic packaging“ wählen, sonst packt CurseForge zusätzlich selbst
   - API-Token als GitHub-Secret `CF_API_KEY` hinterlegen
