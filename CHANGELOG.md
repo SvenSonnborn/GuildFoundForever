@@ -24,3 +24,4 @@ Guild Found Forever keeps your guild self-found on WoW Forever. This first publi
 ### Fixes during development
 - 0.6.0: addon messages were blocked by a check that reports "restricted" on Forever even where sending works.
 - 0.6.0: the player was listed twice when the server spelled the realm differently; the own character is now found by GUID.
+- 0.7.0: **Check guild** lists yourself as well; before, it showed 0 members with the addon when nobody else was online.

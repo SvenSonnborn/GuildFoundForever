@@ -276,7 +276,7 @@ Beispiel:
 GuildFoundForever.toc    Interface 16001, Ladereihenfolge, SavedVariables; Version kommt aus dem Git-Tag
 CHANGELOG.md             Änderungen, Englisch; wird beim Upload als Changelog verwendet
 LICENSE                  MIT
-docs/curseforge.md       Projektbeschreibung für CurseForge/Wago; nicht in der ZIP
+docs/curseforge.md       Projektbeschreibung für CurseForge; nicht in der ZIP
 .pkgmeta                 Packager: was in die ZIP kommt
 .github/workflows/       tests.yml (Tests bei Push), release.yml (Tag → Tests → Upload)
 tests/                   run.ps1, stubs.lua (nachgebaute WoW-API), tests.lua; nicht in der ZIP
@@ -527,16 +527,17 @@ Festgelegt am 26.09.2026:
 - Lizenz: **MIT**.
 - Quellcode öffentlich auf **GitHub**. Ein Tag löst das automatische Packen und Hochladen aus.
 - **Jetzt als Beta** (`0.7.0-beta`), **1.0.0 zum Launch** am 04.11.2026.
+- Nur **CurseForge** (Projekt-ID 1712933) und GitHub-Releases. Wago wurde verworfen.
 
 Stand der Technik (26.09.2026):
 - CurseForge führt Forever als eigene Spielversion (1.60.1, Interface 16001).
-- Der BigWigs-Packager ordnet Interface 16xxx automatisch Forever zu, für CurseForge und Wago.
+- Der BigWigs-Packager ordnet Interface 16xxx automatisch Forever zu.
 - WoWInterface hat keine Forever-Version; `## X-WoWI-ID` darf nicht in die TOC, sonst bricht der Lauf ab.
 
 Vorbereitet:
 - [x] `.pkgmeta`: Die ZIP enthält nur das Addon. README, `tests/` und Dateien mit Punkt am Anfang bleiben draußen, `CHANGELOG.md` ist das Änderungsprotokoll des Uploads.
 - [x] `.github/workflows/tests.yml`: Tests bei jedem Push auf `main` und bei Pull Requests (Windows, PowerShell)
-- [x] `.github/workflows/release.yml`: Tag pushen → Tests → BigWigs-Packager → CurseForge, Wago und GitHub-Release. Tags mit `beta` werden Beta-Dateien, mit `alpha` Alpha-Dateien, sonst Releases.
+- [x] `.github/workflows/release.yml`: Tag pushen → Tests → BigWigs-Packager → CurseForge und GitHub-Release. Tags mit `beta` werden Beta-Dateien, mit `alpha` Alpha-Dateien, sonst Releases.
 - [x] Version aus dem Tag: `## Version: @project-version@`. Eine Kopie direkt aus dem Repository meldet sich als `dev` und vergleicht keine Versionen.
 - [x] `CHANGELOG.md` (Englisch)
 - [x] Test-Umgebung in `tests/`
@@ -546,18 +547,17 @@ Vorbereitet:
   - Git liegt unter `C:\Program Files\Git\cmd\git.exe`
 - [x] `LICENSE` (MIT, Autor Zerroc)
 - [x] TOC: `## Author: Zerroc`, `## X-License: MIT`, `## X-Website` (GitHub)
-- [x] Projektbeschreibung für CurseForge und Wago, Englisch und Deutsch: `docs/curseforge.md`, mit einem Abschnitt, was geteilt wird
+- [x] Projektbeschreibung für CurseForge, Englisch und Deutsch: `docs/curseforge.md`, mit einem Abschnitt, was geteilt wird
+- [x] CurseForge-Projekt angelegt, ID 1712933 als `## X-Curse-Project-ID` in der TOC
+  - Summary: „Guild-found rules for WoW Forever: no auction house, guild-only mail and trades, group lock - plus announcements, deathlog, guild map and a guild dungeon finder.“ (161 Zeichen). Kurzfassung: „Guild-found rules for WoW Forever: no AH, guild-only mail and trade, group lock and more.“ (89 Zeichen)
+  - Editor auf Markdown, „No automatic packaging“
+- [x] Im Spiel geprüft (26.09.2026): Das Addon lädt unter dem neuen Namen, alles funktioniert
+- [x] Tag `0.7.0-beta` gesetzt (26.09.2026)
 
 Offen:
-- [ ] TOC: `## X-Curse-Project-ID` und `## X-Wago-ID`, sobald die Projekte angelegt sind
-- [ ] CurseForge-Projekt anlegen:
-  - Summary: „Guild-found rules for WoW Forever: no auction house, guild-only mail and trades, group lock - plus announcements, deathlog, guild map and a guild dungeon finder.“ (161 Zeichen). Kurzfassung: „Guild-found rules for WoW Forever: no AH, guild-only mail and trade, group lock and more.“ (89 Zeichen)
-  - Editor auf Markdown stellen
-  - „No automatic packaging“ wählen, sonst packt CurseForge zusätzlich selbst
-  - API-Token als GitHub-Secret `CF_API_KEY` hinterlegen
-- [ ] Wago-Projekt anlegen: Release- und Metadaten-Automatik dort aus lassen, Token als GitHub-Secret `WAGO_API_TOKEN`
+- [ ] CurseForge-API-Token als GitHub-Secret `CF_API_KEY`. Ohne ihn überspringt der Packager den CurseForge-Upload und macht nur das GitHub-Release; danach den Lauf in GitHub Actions mit „Re-run jobs“ wiederholen.
 - [ ] Screenshots und optional ein Logo
-- [ ] Vor dem ersten Upload aus Phase 0: lädt ohne Lua-Fehler (BugSack), Addon-Nachrichten zwischen zwei Spielern kommen an
+- [ ] Addon-Nachrichten zwischen zwei Spielern mit Addon prüfen (Gilde prüfen, Ankündigungen, Karte, Dungeonsuche)
 - [ ] Nach dem Launch am 04.11.2026 die Interface-Nummer prüfen und aktualisieren
 
 ### Laufend

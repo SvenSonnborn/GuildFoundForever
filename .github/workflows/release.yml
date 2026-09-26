@@ -1,11 +1,11 @@
 # Pushing a tag builds the ZIP and uploads it once the tests pass.
 #   0.7.0-beta  -> beta file     1.0.0 -> release file     (a tag containing "alpha" -> alpha file)
 # The version in the TOC (@project-version@) becomes the tag. The packager maps interface 16001 to
-# the Forever game version on CurseForge and Wago.
+# the Forever game version on CurseForge. The ZIP also goes to the GitHub release of the tag.
 #
-# Repository secrets (Settings > Secrets and variables > Actions):
-#   CF_API_KEY      CurseForge API token (needs ## X-Curse-Project-ID in the TOC)
-#   WAGO_API_TOKEN  Wago API token, optional (needs ## X-Wago-ID in the TOC)
+# Repository secret (Settings > Secrets and variables > Actions):
+#   CF_API_KEY      CurseForge API token (the project ID is ## X-Curse-Project-ID in the TOC)
+# Without it the CurseForge upload is skipped and only the GitHub release is made.
 # Do not set ## X-WoWI-ID: WoWInterface has no Forever version and the upload would fail.
 name: Release
 
@@ -30,7 +30,6 @@ jobs:
       contents: write
     env:
       CF_API_KEY: ${{ secrets.CF_API_KEY }}
-      WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
       GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4

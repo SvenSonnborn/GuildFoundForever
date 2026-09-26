@@ -6,6 +6,7 @@
 ## Author: Zerroc
 ## X-License: MIT
 ## X-Website: https://github.com/SvenSonnborn/GuildFoundForever
+## X-Curse-Project-ID: 1712933
 ## IconTexture: Interface\Icons\INV_Shirt_GuildTabard_01
 ## SavedVariables: GuildFoundForeverDB
 ## SavedVariablesPerCharacter: GuildFoundForeverCharDB
