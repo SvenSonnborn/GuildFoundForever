@@ -25,6 +25,7 @@ function Said(text, category)
 	return false
 end
 function ClearMessages() if NS.char and NS.char.messages then wipe(NS.char.messages) end end
+function CloseMessages() if NS.MessageWindow and NS.MessageWindow.IsShown() then NS.MessageWindow.Toggle() end end
 
 function issecretvalue(v) return rawequal(v, SECRET) end
 function geterrorhandler() return function(err) ERRORS[#ERRORS + 1] = tostring(err) end end
@@ -159,6 +160,7 @@ UIErrorsFrame = NewWidget("Frame", "UIErrorsFrame")
 function UIErrorsFrame:AddMessage(msg) record("UIError", msg) end
 RaidWarningFrame = NewWidget("Frame", "RaidWarningFrame")
 GameTooltip = NewWidget("GameTooltip", "GameTooltip")
+function GameTooltip:SetHyperlink(link) record("SetHyperlink", link) end
 DEFAULT_CHAT_FRAME = { AddMessage = function(_, msg) CHAT[#CHAT + 1] = msg end }
 ChatTypeInfo = { RAID_WARNING = {} }
 SOUNDKIT = { RAID_WARNING = 8959 }

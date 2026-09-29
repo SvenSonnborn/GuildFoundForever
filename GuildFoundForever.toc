@@ -33,4 +33,5 @@ Modules\Audit.lua
 Modules\Professions.lua
 Modules\Finder.lua
 Banner.lua
+MessageWindow.lua
 UI.lua

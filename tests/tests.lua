@@ -1459,6 +1459,85 @@ FireEvent("CHAT_MSG_ADDON", "GFForever", "LFGJOIN\tWARRIOR\t21\tT\t73", "WHISPER
 check(#F.GetListings() == 0 and LastAddonMessage() == "LFGGONE", "finder off: listings ignored, join requests answered with gone")
 ns.db.lastTab = "rules"
 
+-- Messages: window, button and hint -------------------------------------------------------
+local MW = ns.MessageWindow
+CloseMessages()
+ClearMessages()
+ns.db.messages.window, ns.db.messages.button = "kaputt", { x = 5 }
+check(pcall(MW.RestorePositions), "broken saved positions fall back to the defaults")
+ns.db.messages.window, ns.db.messages.button = {}, {}
+local m1 = M.Add("blocked", "Handel blockiert")
+M.Add("audit", "Daten abgerufen", { important = true })
+M.Add("guild", "Freund hat Beute", { link = link(12345, "Epic Sword") })
+M.Add("system", "Status", { details = "Zeile 1\nZeile 2" })
+check(M.CountUnread() == 4 and M.CountUnread("audit") == 1 and M.HasImportantUnread(), "four unread, one of them important")
+local Btn, Toast = GuildFoundForeverMessagesButton, GuildFoundForeverMessagesToast
+check(Btn and Btn:IsShown() and Btn.badge:IsShown() and Btn.count:GetText() == "4" and Btn.glow:IsShown(), "button counts the unread messages and glows for the important one")
+check(Toast and Toast:IsShown() and Toast.text:GetText() == "Daten abgerufen", "the important message showed a hint")
+MW.Show()
+local W = GuildFoundForeverMessages
+check(W:IsShown() and M.CountUnread() == 0 and W.rows[1].text:GetText() == "Status" and W.rows[1].dot:IsShown() and not Toast:IsShown(),
+	"opening marks all read, the new ones stay highlighted, newest first, the hint goes")
+check(not Btn.badge:IsShown() and not Btn.glow:IsShown(), "all read: no counter, no glow")
+check(W.filters.all.label:GetText():find("4", 1, true) and W.filters.audit.label:GetText():find("1", 1, true) and W.count:GetText():find("4", 1, true),
+	"filters and header show how many are new")
+W.filters.blocked:RunScript("OnClick")
+check(W.filter == "blocked" and W.rows[1].text:GetText() == "Handel blockiert" and not W.rows[2]:IsShown(), "a filter shows only its category")
+W.filters.all:RunScript("OnClick")
+W.rows[1]:RunScript("OnClick")
+check(W.detail:GetText():find("Zeile 2", 1, true), "clicking a message shows all of it below")
+W.rows[2]:RunScript("OnEnter")
+check(LastCall("SetHyperlink") and LastCall("SetHyperlink").args[1]:find("item:12345", 1, true), "announcements with an item show the item tooltip")
+local m5 = M.Add("finder", "Anfrage von Freund\nzweite Zeile", { important = true })
+check(m5.r and M.CountUnread() == 0 and W.rows[1].text:GetText() == "Anfrage von Freund" and W.rows[1].dot:IsShown() and not Toast:IsShown(),
+	"a new message while open: shown with its first line, highlighted, read, no hint")
+MW.Toggle()
+check(not W:IsShown(), "toggle closes the window")
+MW.Show()
+check(not W.rows[1].dot:IsShown(), "after closing, nothing counts as new any more")
+W.rows[5]:RunScript("OnClick")
+check(W.rows[5].entry == m1, "the oldest message is selected")
+W.filters.blocked:RunScript("OnClick")
+W.clear:RunScript("OnClick")
+check(#M.GetList("blocked") == 0 and #M.GetList() == 4 and W.detail:GetText():find("Klicke", 1, true), "clear empties the active filter only and drops the selection")
+W.filters.all:RunScript("OnClick")
+MW.Toggle()
+local report = ns.Report("system", "Bericht", { "a", "b" })
+check(W:IsShown() and W.rows[1].text:GetText() == "Bericht" and W.detail:GetText():find("Bericht", 1, true), "a report opens the window at its entry")
+MW.Toggle()
+ClearMessages()
+MW.Show()
+check(W.empty:IsShown(), "an empty list says so")
+MW.Toggle()
+for i = 1, 120 do M.Add("system", "Viel " .. i) end
+check(Btn.count:GetText() == "99+", "more than 99 unread: 99+")
+ClearMessages()
+M.Add("audit", "Wichtig", { important = true })
+Toast:RunScript("OnEnter")
+Toast:RunScript("OnUpdate", 10)
+check(Toast:IsShown(), "hovering holds the hint")
+Toast:RunScript("OnLeave")
+Toast:RunScript("OnUpdate", 5)
+check(not Toast:IsShown(), "the hint goes after 4 seconds")
+M.Add("finder", "Anfrage", { important = true })
+Toast:RunScript("OnClick")
+check(W:IsShown() and not Toast:IsShown() and W.rows[1].text:GetText() == "Anfrage", "clicking the hint opens the window at its message")
+MW.Toggle()
+M.Add("system", "Still", { silent = true })
+check(not Btn.badge:IsShown(), "silent messages do not count")
+ns.db.messages.showButton = false
+ns.Fire("SETTINGS_CHANGED")
+check(not Btn:IsShown(), "the button can be switched off")
+M.Add("guild", "Regeln übernommen", { important = true })
+check(Toast:IsShown(), "the hint still appears without the button")
+ns.db.messages.showButton = true
+ns.Fire("SETTINGS_CHANGED")
+Btn:RunScript("OnClick")
+check(W:IsShown(), "the button opens the window")
+Btn:RunScript("OnClick")
+check(not W:IsShown(), "and closes it")
+ClearMessages()
+
 -- Addon messages -----------------------------------------------------------
 ResetCalls()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "PING", "GUILD", "Freund-ClassicBetaPvE2")
