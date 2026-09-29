@@ -4,12 +4,12 @@ local L = ns.L
 local MessageWindow = {}
 ns.MessageWindow = MessageWindow
 
-local WIDTH, HEIGHT = 520, 470
+local WIDTH, HEIGHT = 520, 490
 local ROWS, ROW_HEIGHT = 10, 26
 local LIST_TOP = -76
 local DETAIL_TOP = LIST_TOP - ROWS * ROW_HEIGHT - 12
-local DETAIL_HEIGHT = 84
-local DETAIL_LINES = 6
+local DETAIL_HEIGHT = 104
+local TOOLTIP_DETAIL_LINES = 10
 local BUTTON_SIZE = 36
 local MAX_BADGE = 99
 local TOAST_WIDTH, TOAST_HEIGHT = 300, 40
@@ -170,12 +170,20 @@ local function CreateRow(w, index)
 			return
 		end
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		if entry.l then
-			GameTooltip:SetHyperlink(entry.l:match("|H(.-)|h") or entry.l)
+		local hyperlink = entry.l and entry.l:match("|H(.-)|h")
+		if hyperlink then
+			GameTooltip:SetHyperlink(hyperlink)
 		else
 			GameTooltip:SetText(entry.m, 1, 1, 1, 1, true)
 			if entry.d then
-				GameTooltip:AddLine(entry.d, 0.8, 0.8, 0.8, true)
+				-- The detail area shows everything; the tooltip stays within the screen.
+				local lines = { strsplit("\n", entry.d) }
+				for i = 1, math.min(#lines, TOOLTIP_DETAIL_LINES) do
+					GameTooltip:AddLine(lines[i], 0.8, 0.8, 0.8, true)
+				end
+				if #lines > TOOLTIP_DETAIL_LINES then
+					GameTooltip:AddLine("…", 0.8, 0.8, 0.8, true)
+				end
 			end
 		end
 		GameTooltip:Show()
@@ -256,6 +264,7 @@ local function Window()
 	detailBox:SetPoint("TOPRIGHT", -12, DETAIL_TOP)
 	detailBox:SetHeight(DETAIL_HEIGHT)
 	StyleBox(detailBox, PANEL, PANEL_BORDER, 10)
+	w.detailBox = detailBox
 	w.detail = detailBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	w.detail:SetPoint("TOPLEFT", 10, -8)
 	w.detail:SetPoint("BOTTOMRIGHT", -10, 8)
@@ -294,8 +303,8 @@ local function RefreshDetail(w)
 		text = text .. "\n\n" .. entry.d
 	end
 	local lines = { strsplit("\n", text) }
-	w.detailOffset = math.max(0, math.min(w.detailOffset, #lines - DETAIL_LINES))
-	w.detail:SetText(table.concat(lines, "\n", w.detailOffset + 1, math.min(#lines, w.detailOffset + DETAIL_LINES)))
+	w.detailOffset = math.max(0, math.min(w.detailOffset, #lines - 1))
+	w.detail:SetText(table.concat(lines, "\n", w.detailOffset + 1, #lines))
 end
 
 function MessageWindow.Refresh()
@@ -422,7 +431,9 @@ local function UpdateButton()
 	local important = ns.Messages.HasImportantUnread()
 	b.glow:SetShown(important)
 	if important then
-		b.pulse:Play()
+		if not b.pulse:IsPlaying() then
+			b.pulse:Play()
+		end
 	else
 		b.pulse:Stop()
 	end
@@ -435,6 +446,7 @@ local function Toast()
 	local t = CreateFrame("Button", addonName .. "MessagesToast", UIParent, "BackdropTemplate")
 	t:SetSize(TOAST_WIDTH, TOAST_HEIGHT)
 	t:SetFrameStrata("HIGH")
+	t:SetClampedToScreen(true)
 	StyleBox(t, BACKGROUND, FRAME_BORDER)
 	t.accent = t:CreateTexture(nil, "ARTWORK")
 	t.accent:SetTexture(WHITE)

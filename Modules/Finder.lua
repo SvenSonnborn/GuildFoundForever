@@ -249,7 +249,7 @@ function Finder.PrintActivities()
 		table.sort(fields)
 		lines[#lines + 1] = L.FINDER_DUMP_FIELDS:format(table.concat(fields, ", "))
 	end
-	ns.Report("system", L.FINDER_DUMP_HEADER:format(#list, L["FINDER_SOURCE_" .. Finder.GetSource():upper()]), lines)
+	ns.Report("system", L.FINDER_DUMP_HEADER:format(#list, L["FINDER_SOURCE_" .. Finder.GetSource():upper()] or Finder.GetSource()), lines)
 end
 
 ns.On("LFG_LIST_AVAILABILITY_UPDATE", function()

@@ -37,7 +37,7 @@
 
 - **Messages window instead of chat:** nothing from the addon clutters your chat. Every message goes to a window in the style of the banners, with filters, details and item tooltips; a small counter button shows what you have not read yet, and important messages show a short hint.
 - **Announcements:** max level, deaths, and epic loot, rare loot and recipes once a member has looted them.
-  - They show as chat lines and as banners: a gold banner for max level, a dark one with a skull for deaths, and the item icon for loot.
+  - They show in the messages window and as banners: a gold banner for max level, a dark one with a skull for deaths, and the item icon for loot.
   - Optionally, they are also posted to guild chat for members without the addon.
   - Each member chooses what they want to see.
 - **Deathlog:** every death in the guild with level, class, zone and cause.
@@ -131,7 +131,7 @@ Inspired by [GuildFound](https://www.curseforge.com/wow/addons/guildfound) by Lo
 
 - **Meldungen statt Chat:** Das Addon müllt deinen Chat nicht mehr zu. Alle Meldungen stehen in einem Fenster im Stil der Banner, mit Filtern, Details und Item-Tooltips; ein kleiner Zähler-Knopf zeigt, was du noch nicht gelesen hast, und wichtige Meldungen blenden kurz einen Hinweis ein.
 - **Ankündigungen:** Höchstlevel, Tode sowie epische Beute, seltene Beute und Rezepte, sobald ein Mitglied sie gelootet hat.
-  - Sie erscheinen als Chatzeilen und als Banner: golden beim Höchstlevel, düster mit Totenkopf beim Tod, mit Item-Symbol bei Beute.
+  - Sie erscheinen im Meldungsfenster und als Banner: golden beim Höchstlevel, düster mit Totenkopf beim Tod, mit Item-Symbol bei Beute.
   - Auf Wunsch gehen sie zusätzlich in den Gildenchat, für Mitglieder ohne Addon.
   - Jedes Mitglied stellt selbst ein, was es sehen will.
 - **Deathlog:** jeder Tod in der Gilde mit Level, Klasse, Zone und Ursache.

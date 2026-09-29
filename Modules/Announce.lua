@@ -282,8 +282,10 @@ local function Notify(sender, kind, data)
 	local shown = false
 	local chatName, screenName = PlayerNames(sender, data.class)
 	-- Always in the message window, also when the sender posted it to guild chat: the window lists
-	-- every announcement, and the chat gets nothing from the addon any more.
-	ns.Notify("guild", NotificationText(chatName, kind, data), { link = LOOT_KINDS[kind] and data.extra or nil })
+	-- every announcement, and the chat gets nothing from the addon any more. Only pass a link when
+	-- it is one: the sample loot and long announcements send the plain item name instead.
+	local link = LOOT_KINDS[kind] and type(data.extra) == "string" and data.extra:find("|Hitem:", 1, true) and data.extra or nil
+	ns.Notify("guild", NotificationText(chatName, kind, data), { link = link })
 	shown = true
 	if def.screen and settings.screen then
 		ns.Banner.ShowAnnouncement(kind, screenName, data)

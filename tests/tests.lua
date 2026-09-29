@@ -159,6 +159,16 @@ GUILD_INFO_TEXT = "Willkommen\n" .. DEFAULT_TAG
 RunTickers()
 check(not copyDialog:IsShown() and ns.Rules.FromGuild() and ns.Rules.IsGuildSetting("dungeonFinder"), "the dialog closes by itself once the pasted rules are in the guild info")
 check(Said("Regeln aus der Gildeninfo übernommen", "guild") and ns.Messages.GetList("guild")[1].i, "rules taken over: an important guild message")
+
+-- F3: a login with unchanged rules (tags already known from a previous session, kept per character)
+-- must not announce "applied" as important again. Restores the guild info to DEFAULT_TAG afterwards
+-- so the following tests see the same state as before this insertion.
+GUILD_INFO_TEXT = "Willkommen"
+FireEvent("GUILD_ROSTER_UPDATE")
+ns.char.appliedRuleTags = DEFAULT_TAG
+GUILD_INFO_TEXT = "Willkommen\n" .. DEFAULT_TAG
+FireEvent("GUILD_ROSTER_UPDATE")
+check(Said("Regeln aus der Gildeninfo übernommen", "guild") and not ns.Messages.GetList("guild")[1].i, "the same rules again (e.g. after a login): a plain message, no hint")
 ClearMessages()
 G.PublishRules()
 check(not copyDialog:IsShown() and Said("enthält diese Regeln bereits"), "unchanged rules: nothing to paste")
@@ -1550,6 +1560,26 @@ Btn:RunScript("OnClick")
 check(W:IsShown(), "the button opens the window")
 Btn:RunScript("OnClick")
 check(not W:IsShown(), "and closes it")
+
+-- F1: the detail area renders from the scroll offset to the end and clips at the bottom instead
+-- of clamping the scroll at a fixed line count.
+local longLines = {}
+for i = 1, 12 do longLines[i] = "Zeile " .. i end
+ns.Report("system", "Lang", longLines)
+check(W.detail:GetText():find("Zeile 12", 1, true), "the detail area holds the whole text, the frame clips the bottom")
+for _ = 1, 3 do W.detailBox:RunScript("OnMouseWheel", -1) end
+check(W.detail:GetText():match("^[^\n]*") == "Zeile 1", "the mouse wheel scrolls the details line by line")
+for _ = 1, 30 do W.detailBox:RunScript("OnMouseWheel", -1) end
+check(W.detail:GetText() == "Zeile 12", "scrolling stops at the last line")
+CloseMessages()
+
+-- F2: a stored "link" that is plain text (e.g. the sample loot item) must not be passed to
+-- GameTooltip:SetHyperlink, which throws on anything that is not an actual link in the real client.
+M.Add("guild", "Beispiel ohne Link", { link = "|cffa335ee[Klinge der Vorschau]|r" })
+MW.Show()
+W.rows[1]:RunScript("OnEnter")
+check(W.rows[1].entry.m == "Beispiel ohne Link", "a stored non-link falls back to the text tooltip without an error")
+CloseMessages()
 ClearMessages()
 
 -- Addon messages -----------------------------------------------------------

@@ -82,6 +82,8 @@ function ns.IsActive()
 end
 
 local function Format(msg, ...)
+	-- Calls without a category (e.g. ns.Print(category)) reach Format with msg == nil; the guard
+	-- also avoids a MoonSharp 2.0.0 select("#", ...) quirk in the test harness.
 	if msg == nil then
 		return nil
 	end

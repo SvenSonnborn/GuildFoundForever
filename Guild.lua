@@ -406,9 +406,18 @@ local function UpdateGuildRules()
 		CopyToLocalSettings(rules)
 	end
 	ns.Rules.SetGuildRules(rules)
+	-- appliedTags only lives for the session; the last tags seen are kept per character so a
+	-- login with unchanged rules is not announced as important.
+	local known = ns.char and ns.char.appliedRuleTags
 	if tags then
-		ns.Notify("guild", L.GUILD_RULES_APPLIED:format(tags), { important = true })
+		if ns.char then
+			ns.char.appliedRuleTags = tags
+		end
+		ns.Notify("guild", L.GUILD_RULES_APPLIED:format(tags), { important = tags ~= known })
 	elseif hadTags then
+		if ns.char then
+			ns.char.appliedRuleTags = nil
+		end
 		ns.Notify("guild", L.GUILD_RULES_REMOVED, { important = true })
 	end
 end

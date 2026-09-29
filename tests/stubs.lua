@@ -160,7 +160,7 @@ UIErrorsFrame = NewWidget("Frame", "UIErrorsFrame")
 function UIErrorsFrame:AddMessage(msg) record("UIError", msg) end
 RaidWarningFrame = NewWidget("Frame", "RaidWarningFrame")
 GameTooltip = NewWidget("GameTooltip", "GameTooltip")
-function GameTooltip:SetHyperlink(link) record("SetHyperlink", link) end
+function GameTooltip:SetHyperlink(link) if type(link) ~= "string" or not link:match("^%a+:") then error("Unknown link type") end record("SetHyperlink", link) end
 CHAT_TOTAL = 0 -- every chat line of the whole run; ClearChat does not reset it
 DEFAULT_CHAT_FRAME = { AddMessage = function(_, msg) CHAT[#CHAT + 1] = msg CHAT_TOTAL = CHAT_TOTAL + 1 end }
 ChatTypeInfo = { RAID_WARNING = {} }

@@ -68,7 +68,7 @@ Das Konzept ist von [GuildFound](https://www.curseforge.com/wow/addons/guildfoun
 - **Deathlog:** Tode der Gildenmitglieder mit Zeit, Name (Klassenfarbe), Level, Klasse, Zone und Ursache.
   - maximal 500 Einträge
   - getrennt nach Gilde
-  - im Fenster mit dem Mausrad blätterbar, im Chat über `/gff deaths`
+  - im Fenster mit dem Mausrad blätterbar, über `/gff deaths` als Tab
 - **Todesursache:** Sie kommt aus Blizzards Todesübersicht (`C_DeathRecap`). Ist diese gesperrt, nimmt das Addon den feindlichen Gegner im Ziel. Umgebungsschaden wie Sturz oder Ertrinken wird als solcher erkannt.
 - **Gesperrte Phasen:** Ist das Senden gesperrt (z. B. in Instanzen im Kampf), wartet die Meldung und geht raus, sobald das Senden wieder erlaubt ist (bis zu 10 Minuten).
 - **Test:** `/gff test` oder der Knopf in den Einstellungen schickt eine Testmeldung an alle Mitglieder mit Addon.
@@ -147,7 +147,7 @@ Wunsch vom 26.09.2026: Gruppen melden sich an, um Mitglieder zu suchen. Was gesu
   - Stufenbereich aus `minLevelSuggestion`/`minLevel` bis `maxLevelSuggestion`/`maxLevel`.
     - Fehlt er bei einem Eintrag, holt das Addon ihn aus den Dungeonbrowser-Daten (`GetLFGDungeonInfo`, Abgleich über die Karten-ID).
     - Liefert die Gruppensuche gar nichts, nimmt es die Dungeonbrowser-Daten als ganze Liste.
-  - `/gff dungeons` zeigt im Chat, was das Spiel liefert: Quelle, jeden Eintrag mit Stufen und die Rohfelder des ersten Eintrags. Damit lässt sich prüfen, ob Liste und Stufen stimmen.
+  - `/gff dungeons` zeigt im Meldungsfenster, was das Spiel liefert: Quelle, jeden Eintrag mit Stufen und die Rohfelder des ersten Eintrags. Damit lässt sich prüfen, ob Liste und Stufen stimmen.
 - **Tab „Dungeonsuche“:**
   - **links:** Dungeons und Schlachtzüge mit Stufenbereich.
     - Passend zur eigenen Stufe: grüne Zahl. Noch zu niedrig: rot. Herausgewachsen: grau.
@@ -207,7 +207,7 @@ Ohne Gilde sind alle Regeln und Ankündigungen inaktiv.
 | `/gff log` | Meldungsfenster mit dem Filter „Blockiert“ |
 | `/gff deaths` | Tab „Deathlog“ öffnen |
 | `/gff audit [Name]` | Tab „Audit“ öffnen, optional direkt bei einem Mitglied |
-| `/gff dungeons` | Dungeons und Schlachtzüge aus dem Spiel mit Stufen und Quelle im Chat auflisten |
+| `/gff dungeons` | Dungeons und Schlachtzüge aus dem Spiel mit Stufen und Quelle im Meldungsfenster auflisten |
 | `/gff test` | Testmeldung an die Gilde schicken |
 | `/gff test loot [Item]` | eigene Beute-Meldung nur bei dir durchspielen. Item per Umschalt-Klick anhängen; ohne Item nimmt das Addon das beste blaue oder lila Item aus den Taschen, sonst ein Beispiel-Item |
 | `/gff test level` | Höchstlevel-Meldung nur bei dir durchspielen |
