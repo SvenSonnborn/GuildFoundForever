@@ -20,6 +20,6 @@ ns.On("AUCTION_HOUSE_SHOW", function()
 	CloseAuctionHouseWindow()
 	-- The auction house UI may open after our handler ran; close it again on the next frame.
 	C_Timer.After(0, CloseAuctionHouseWindow)
-	ns.Warn(L.AH_BLOCKED)
+	ns.Warn("blocked", L.AH_BLOCKED)
 	ns.Log("ah", L.LOG_AH)
 end)

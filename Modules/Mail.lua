@@ -16,7 +16,7 @@ local function IsInboxMailAllowed(index)
 end
 
 local function ReportBlockedMail(sender)
-	ns.Warn(L.MAIL_TAKE_BLOCKED, sender)
+	ns.Warn("blocked", L.MAIL_TAKE_BLOCKED, sender)
 	ns.Log("mail", L.LOG_MAIL_TAKE:format(sender))
 end
 
@@ -75,7 +75,7 @@ if type(originalSendMail) == "function" then
 	SendMail = function(recipient, ...)
 		if RuleActive() and not ns.Guild.IsAllowedName(recipient) then
 			local name = type(recipient) == "string" and recipient or "?"
-			ns.Warn(L.MAIL_SEND_BLOCKED, name)
+			ns.Warn("blocked", L.MAIL_SEND_BLOCKED, name)
 			ns.Log("mail", L.LOG_MAIL_SEND:format(name))
 			-- Let the send frame refresh its button for a corrected recipient.
 			if SendMailFrame_Update then

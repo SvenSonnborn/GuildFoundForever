@@ -242,7 +242,7 @@ local function Update()
 	if problemText ~= trade.reportedProblems then
 		trade.reportedProblems = problemText
 		if blocked then
-			ns.Warn(L.TRADE_BLOCKED, trade.problems[1])
+			ns.Warn("blocked", L.TRADE_BLOCKED, trade.problems[1])
 			ns.Log("trade", L.LOG_TRADE:format(trade.partner, problemText))
 		end
 	end
@@ -281,7 +281,7 @@ ns.On("TRADE_SHOW", function()
 		buttonWanted = tradeButton:IsEnabled() and true or false
 	end
 	if trade.external then
-		ns.Print(L.TRADE_EXTERNAL, trade.partner, AllowedText())
+		ns.Print("blocked", L.TRADE_EXTERNAL, trade.partner, AllowedText())
 	end
 	Update()
 end)
@@ -308,7 +308,7 @@ ns.On("TRADE_ACCEPT_UPDATE", function(_, playerAccepted)
 	Update()
 	if trade.blocked and (playerAccepted == 1 or playerAccepted == true) then
 		CancelTrade()
-		ns.Warn(L.TRADE_CANCELLED)
+		ns.Warn("blocked", L.TRADE_CANCELLED)
 	end
 end)
 

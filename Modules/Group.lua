@@ -52,7 +52,7 @@ local function LeaveGroup()
 	if #externals == 0 then
 		return
 	end
-	ns.Alert(L.GROUP_LEFT)
+	ns.Alert("blocked", L.GROUP_LEFT)
 	ns.Log("group", L.LOG_GROUP_LEFT:format(table.concat(externals, ", ")))
 	if C_PartyInfo and C_PartyInfo.LeaveParty then
 		C_PartyInfo.LeaveParty()
@@ -76,7 +76,7 @@ function Group.Check(level)
 		return
 	end
 	local delay = math.max(0, tonumber(ns.db.groupLeaveDelay) or 10)
-	ns.Alert(L.GROUP_EXTERNAL_WARNING, table.concat(externals, ", "), ns.Rules.GetGroupLockLevel(), delay)
+	ns.Alert("blocked", L.GROUP_EXTERNAL_WARNING, table.concat(externals, ", "), ns.Rules.GetGroupLockLevel(), delay)
 	leaveTimer = C_Timer.NewTimer(delay, LeaveGroup)
 end
 
@@ -108,7 +108,7 @@ ns.On("PARTY_INVITE_REQUEST", function(_, inviter)
 	end
 	DeclineGroup()
 	StaticPopup_Hide("PARTY_INVITE")
-	ns.Warn(L.GROUP_INVITE_DECLINED, inviter, ns.Rules.GetGroupLockLevel())
+	ns.Warn("blocked", L.GROUP_INVITE_DECLINED, inviter, ns.Rules.GetGroupLockLevel())
 	ns.Log("group", L.LOG_GROUP_INVITE:format(inviter))
 end)
 
@@ -118,7 +118,7 @@ if C_PartyInfo and C_PartyInfo.InviteUnit then
 			return
 		end
 		if ns.IsActive() and ns.Rules.IsGroupLocked() and not ns.Guild.IsAllowedName(name) then
-			ns.Warn(L.GROUP_INVITE_WARNING, name, ns.Rules.GetGroupLockLevel())
+			ns.Warn("blocked", L.GROUP_INVITE_WARNING, name, ns.Rules.GetGroupLockLevel())
 		end
 	end)
 end

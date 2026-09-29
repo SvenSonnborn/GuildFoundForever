@@ -323,6 +323,8 @@ FireEvent("TRADE_SHOW")
 RunTimers()
 check(button(), "trade with guild member unrestricted")
 FireEvent("TRADE_CLOSED")
+check(Said("Das Auktionshaus ist für deine Gilde tabu.", "blocked") and Said("blockiert: nicht in deiner Gilde oder einer Partnergilde", "blocked")
+	and Said("Handel blockiert:", "blocked"), "auction house, mail and trade messages are filed under blocked")
 
 -- Group lock ---------------------------------------------------------------
 PLAYER_LEVEL = 49
@@ -338,6 +340,7 @@ check(CallCount("RaidNotice") == 1, "level up to 50 warns")
 PLAYER_LEVEL = 50
 RunTimers()
 check(CallCount("LeaveParty") == 1, "group left after grace period")
+check(Said("Du hast die Gruppe verlassen", "blocked"), "leaving the group is filed under blocked")
 
 GROUP = { "party1" }
 ResetCalls()
@@ -463,6 +466,8 @@ UNITS.party1, UNITS.party3 = nil, nil
 ZONE = "Elwynn Forest"
 Advance(100)
 RunTimers()
+check(Said("ist nicht in deiner Gilde - ab Level", "blocked") and Said("Beschwörung durch", "blocked") and Said("hat ein Portal nach", "blocked"),
+	"invite, summon and portal messages are filed under blocked")
 
 -- Partner guilds -----------------------------------------------------------
 ns.Rules.SetPartnerGuilds({ "Bruderschaft" })

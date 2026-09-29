@@ -27,7 +27,7 @@ local function CheckSummon()
 	C_SummonInfo.CancelSummon()
 	lastCancelTime = GetTime()
 	HideSummonDialog()
-	ns.Warn(L.SUMMON_BLOCKED, summoner)
+	ns.Warn("blocked", L.SUMMON_BLOCKED, summoner)
 	ns.Log("travel", L.LOG_SUMMON:format(summoner))
 end
 
@@ -83,7 +83,7 @@ local function OnGroupSpellcast(_, _, unit, _, spellID)
 		return
 	end
 	pendingPortal = { caster = caster, destination = destination, expires = GetTime() + PORTAL_WINDOW_SECONDS }
-	ns.Alert(L.PORTAL_WARNING, caster, destination)
+	ns.Alert("blocked", L.PORTAL_WARNING, caster, destination)
 end
 
 -- Hearthstone or an own teleport explains a trip to the same city.
@@ -106,7 +106,7 @@ local function CheckArrival()
 		return
 	end
 	if zone:find(pendingPortal.destination, 1, true) then
-		ns.Warn(L.PORTAL_USED, pendingPortal.caster)
+		ns.Warn("blocked", L.PORTAL_USED, pendingPortal.caster)
 		ns.Log("travel", L.LOG_PORTAL:format(pendingPortal.caster, pendingPortal.destination))
 		pendingPortal = nil
 	end
