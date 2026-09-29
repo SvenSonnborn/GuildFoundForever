@@ -23,6 +23,9 @@ local KINDS = {
 	test = { screen = true },
 }
 
+-- Announcements whose extra field is an item link.
+local LOOT_KINDS = { epic = true, rare = true, recipe = true }
+
 -- Link colours by quality, for links whose item is not cached.
 local LINK_COLOR_QUALITY = { ff1eff00 = 2, ff0070dd = 3, ffa335ee = 4, ffff8000 = 5 }
 
@@ -278,11 +281,10 @@ local function Notify(sender, kind, data)
 	end
 	local shown = false
 	local chatName, screenName = PlayerNames(sender, data.class)
-	-- The sender posted it to guild chat already; do not print it a second time.
-	if not (def.chatRule and ns.Rules.Get(def.chatRule)) then
-		ns.Print(NotificationText(chatName, kind, data))
-		shown = true
-	end
+	-- Always in the message window, also when the sender posted it to guild chat: the window lists
+	-- every announcement, and the chat gets nothing from the addon any more.
+	ns.Notify("guild", NotificationText(chatName, kind, data), { link = LOOT_KINDS[kind] and data.extra or nil })
+	shown = true
 	if def.screen and settings.screen then
 		ns.Banner.ShowAnnouncement(kind, screenName, data)
 		shown = true
@@ -347,7 +349,7 @@ end)
 
 function Announce.SendTest()
 	if not IsInGuild() then
-		ns.Warn(L.NOT_IN_GUILD)
+		ns.Warn("system", L.NOT_IN_GUILD)
 		return
 	end
 	Publish("test", {})
@@ -394,7 +396,7 @@ local function PrepareLootTest(data, linkText)
 	end
 	local kind = Announce.Classify(link)
 	if not kind then
-		ns.Print(L.TEST_NOT_ANNOUNCED, link)
+		ns.Print("system", L.TEST_NOT_ANNOUNCED, link)
 		return nil
 	end
 	data.extra = link
@@ -405,7 +407,7 @@ function Announce.RunLocalTest(argument)
 	local word, rest = argument:match("^(%S*)%s*(.-)%s*$")
 	local test = TEST_KINDS[word:lower()]
 	if not test then
-		ns.Print(L.TEST_USAGE)
+		ns.Print("system", L.TEST_USAGE)
 		return
 	end
 	local data = {
@@ -427,16 +429,16 @@ function Announce.RunLocalTest(argument)
 		end
 	end
 
-	ns.Print(L.TEST_LOCAL_HEADER)
+	ns.Print("system", L.TEST_LOCAL_HEADER)
 	local chatRule = KINDS[kind].chatRule
 	if chatRule and ns.Rules.Get(chatRule) then
-		ns.Print(L.TEST_GUILD_CHAT, GuildChatText(kind, data))
+		ns.Print("system", L.TEST_GUILD_CHAT, GuildChatText(kind, data))
 	end
 	if not Notify(PlayerFullName(), kind, data) then
 		if kind == "death" and data.level < (tonumber(ns.db.notify.deathMinLevel) or 0) then
-			ns.Print(L.TEST_FILTERED_DEATH, ns.db.notify.deathMinLevel)
+			ns.Print("system", L.TEST_FILTERED_DEATH, ns.db.notify.deathMinLevel)
 		else
-			ns.Print(L.TEST_FILTERED)
+			ns.Print("system", L.TEST_FILTERED)
 		end
 	end
 end

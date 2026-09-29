@@ -526,7 +526,7 @@ function Finder.Cancel(reason)
 	own = nil
 	ns.Comm.Send("LFGEND", "GUILD")
 	if reason then
-		ns.Print(reason)
+		ns.Print("finder", reason)
 	end
 	ns.Fire("FINDER_UPDATED")
 end
@@ -783,7 +783,7 @@ function Finder.Invite(listing)
 	elseif InviteUnit then
 		InviteUnit(listing.name)
 	end
-	ns.Print(L.FINDER_INVITED, Ambiguate(listing.name, "guild"))
+	ns.Print("finder", L.FINDER_INVITED, Ambiguate(listing.name, "guild"))
 end
 
 function Finder.RequestJoin(listing)
@@ -794,11 +794,11 @@ function Finder.RequestJoin(listing)
 	local message = ("LFGJOIN\t%s\t%d\t%s\t%d"):format(UnitClassBase("player") or "", UnitLevel("player"), ROLE_CODES[role] or "N", spec or 0)
 	local sent, code = ns.Comm.Send(message, "WHISPER", listing.name)
 	if not sent then
-		ns.Warn(ns.Comm.FailureText(code))
+		ns.Warn("finder", ns.Comm.FailureText(code))
 		return
 	end
 	requestsSent[listing.key] = GetTime()
-	ns.Print(L.FINDER_REQUEST_SENT, Ambiguate(listing.name, "guild"))
+	ns.Print("finder", L.FINDER_REQUEST_SENT, Ambiguate(listing.name, "guild"))
 	ns.Fire("FINDER_UPDATED")
 end
 
@@ -860,7 +860,7 @@ ns.Comm.RegisterHandler("LFGJOIN", function(sender, channel, payload)
 	local class, level, role, spec = strsplit("\t", payload or "")
 	local details = Finder.DescribeMember(class ~= "" and class or nil, tonumber(level), CODE_ROLES[role], Positive(spec))
 	local name = ns.Announce.ClassColored(Ambiguate(sender, "guild"), class)
-	ns.Print(L.FINDER_JOIN_CHAT, name, details)
+	ns.Notify("finder", L.FINDER_JOIN_CHAT:format(name, details), { important = true })
 	if SOUNDKIT and SOUNDKIT.READY_CHECK then
 		PlaySound(SOUNDKIT.READY_CHECK)
 	end
@@ -873,7 +873,7 @@ ns.Comm.RegisterHandler("LFGDECL", function(sender, channel)
 	local key = ns.Guild.NormalizeName(sender)
 	if channel == "WHISPER" and key and requestsSent[key] then
 		requestsSent[key] = nil
-		ns.Print(L.FINDER_REQUEST_DECLINED, Ambiguate(sender, "guild"))
+		ns.Notify("finder", L.FINDER_REQUEST_DECLINED:format(Ambiguate(sender, "guild")), { important = true })
 		ns.Fire("FINDER_UPDATED")
 	end
 end)
@@ -883,7 +883,7 @@ ns.Comm.RegisterHandler("LFGGONE", function(sender, channel)
 	if channel == "WHISPER" and key and requestsSent[key] then
 		requestsSent[key] = nil
 		listings[key] = nil
-		ns.Print(L.FINDER_REQUEST_GONE, Ambiguate(sender, "guild"))
+		ns.Print("finder", L.FINDER_REQUEST_GONE, Ambiguate(sender, "guild"))
 		ns.Fire("FINDER_UPDATED")
 	end
 end)

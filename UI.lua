@@ -974,7 +974,7 @@ local function BuildFinderPanel(panel)
 		local ids = SelectedActivities()
 		local ok, reason = ns.Finder.Post(ids)
 		if not ok then
-			ns.Warn(reason)
+			ns.Warn("finder", reason)
 		end
 	end)
 	controls.finderPost:SetPoint("TOPLEFT", FINDER_RIGHT_X + 2, FINDER_OWN_Y - 54)

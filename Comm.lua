@@ -188,7 +188,7 @@ local function NoteVersion(version)
 	end
 	if VersionNumber(version) > VersionNumber(ns.version) then
 		newerVersionSeen = true
-		ns.Print(L.NEWER_VERSION, version, ns.version)
+		ns.Notify("system", L.NEWER_VERSION:format(version, ns.version), { important = true })
 	end
 end
 
@@ -249,20 +249,20 @@ end
 
 function Comm.StartCheck()
 	if not IsInGuild() then
-		ns.Warn(L.NOT_IN_GUILD)
+		ns.Warn("system", L.NOT_IN_GUILD)
 		return
 	end
 	if checkResults then
-		ns.Print(L.CHECK_RUNNING)
+		ns.Print("system", L.CHECK_RUNNING)
 		return
 	end
 	local sent, code = Comm.Send("PING", "GUILD")
 	if not sent then
-		ns.Warn(Comm.FailureText(code))
+		ns.Warn("system", Comm.FailureText(code))
 		return
 	end
 	checkResults = {}
 	ns.Guild.RequestRoster()
-	ns.Print(L.CHECK_STARTED, CHECK_SECONDS)
+	ns.Print("system", L.CHECK_STARTED, CHECK_SECONDS)
 	C_Timer.After(CHECK_SECONDS, FinishCheck)
 end

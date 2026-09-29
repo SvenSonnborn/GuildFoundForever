@@ -407,9 +407,9 @@ local function UpdateGuildRules()
 	end
 	ns.Rules.SetGuildRules(rules)
 	if tags then
-		ns.Print(L.GUILD_RULES_APPLIED, tags)
+		ns.Notify("guild", L.GUILD_RULES_APPLIED:format(tags), { important = true })
 	elseif hadTags then
-		ns.Print(L.GUILD_RULES_REMOVED)
+		ns.Notify("guild", L.GUILD_RULES_REMOVED, { important = true })
 	end
 end
 
@@ -419,11 +419,11 @@ end
 
 local function CheckPublishPermission()
 	if not IsInGuild() then
-		ns.Warn(L.NOT_IN_GUILD)
+		ns.Warn("guild", L.NOT_IN_GUILD)
 		return false
 	end
 	if not CanEditGuildInfo() then
-		ns.Warn(L.PUBLISH_NO_PERMISSION)
+		ns.Warn("guild", L.PUBLISH_NO_PERMISSION)
 		return false
 	end
 	return true
@@ -469,13 +469,13 @@ function Guild.PublishRules()
 	local partnerTag = Guild.BuildPartnerTag(ns.db.partnerGuilds)
 	local tags = JoinTags(rulesTag, partnerTag)
 	if tags == appliedTags then
-		ns.Print(L.PUBLISH_ALREADY)
+		ns.Print("guild", L.PUBLISH_ALREADY)
 		return
 	end
 	local current = GetInfoText()
 	local text = SetTag(SetTag(current, RULES_TAG_PATTERN, rulesTag), PARTNER_TAG_PATTERN, partnerTag)
 	if #text > GUILD_INFO_MAX_LENGTH then
-		ns.Warn(L.PUBLISH_TOO_LONG, #text, GUILD_INFO_MAX_LENGTH)
+		ns.Warn("guild", L.PUBLISH_TOO_LONG, #text, GUILD_INFO_MAX_LENGTH)
 		return
 	end
 	local replacing = current:find(RULES_TAG_PATTERN) ~= nil or current:find(PARTNER_TAG_PATTERN) ~= nil
@@ -520,7 +520,7 @@ ns.RegisterCallback("LOGIN", function()
 	C_Timer.NewTicker(ROSTER_REFRESH_SECONDS, Guild.RequestRoster)
 	C_Timer.After(15, function()
 		if not IsInGuild() then
-			ns.Print(L.NOT_IN_GUILD_INFO)
+			ns.Notify("system", L.NOT_IN_GUILD_INFO, { silent = true })
 		end
 	end)
 end)

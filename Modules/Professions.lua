@@ -360,7 +360,7 @@ function Professions.RequestRecipes(fullName, skillLineID)
 	end
 	local sent, code = ns.Comm.Send("PROFREQ\t" .. skillLineID, "WHISPER", fullName)
 	if not sent then
-		ns.Warn(ns.Comm.FailureText(code))
+		ns.Warn("system", ns.Comm.FailureText(code))
 		return
 	end
 	local request = { state = "running", count = 0, recipes = {} }

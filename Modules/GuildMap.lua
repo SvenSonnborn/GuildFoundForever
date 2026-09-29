@@ -166,7 +166,7 @@ end)
 function GuildMap.ShowTestPin()
 	local mapID, x, y = GetOwnPosition()
 	if not mapID then
-		ns.Print(L.MAP_TEST_NO_POSITION)
+		ns.Print("system", L.MAP_TEST_NO_POSITION)
 		return
 	end
 	positions[L.MAP_TEST_NAME] = {
@@ -177,7 +177,7 @@ function GuildMap.ShowTestPin()
 		class = UnitClassBase("player"),
 		time = GetTime(),
 	}
-	ns.Print(L.MAP_TEST_ADDED)
+	ns.Print("system", L.MAP_TEST_ADDED)
 	Refresh()
 end
 

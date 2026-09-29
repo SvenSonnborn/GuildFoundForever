@@ -30,7 +30,9 @@ FireEvent("ADDON_LOADED", "GuildFoundForever")
 check(ns.db ~= nil and ns.db.rules.groupLockLevel == 50 and ns.db.rules.transportSummon == false, "saved variables initialised with defaults")
 check(CallCount("RegisterAddOnCategory") == 1, "settings category registered")
 FireEvent("PLAYER_LOGIN")
-check(Said("v0.7.0 geladen"), "German load message with version from the TOC stub")
+local loadedMessage
+for _, e in ipairs(ns.char.messages) do if e.m:find("v0.7.0 geladen", 1, true) then loadedMessage = e end end
+check(loadedMessage and loadedMessage.c == "system" and loadedMessage.r, "German load message with version from the TOC stub, silent under system")
 RunTimers()
 
 -- Messages: store ------------------------------------------------------------------
@@ -155,6 +157,7 @@ check(dialogText() == DEFAULT_TAG, "the text to copy cannot be edited by acciden
 GUILD_INFO_TEXT = "Willkommen\n" .. DEFAULT_TAG
 RunTickers()
 check(not copyDialog:IsShown() and ns.Rules.FromGuild() and ns.Rules.IsGuildSetting("dungeonFinder"), "the dialog closes by itself once the pasted rules are in the guild info")
+check(Said("Regeln aus der Gildeninfo übernommen", "guild") and ns.Messages.GetList("guild")[1].i, "rules taken over: an important guild message")
 ClearMessages()
 G.PublishRules()
 check(not copyDialog:IsShown() and Said("enthält diese Regeln bereits"), "unchanged rules: nothing to paste")
@@ -535,7 +538,7 @@ ClearMessages()
 FireEvent("PLAYER_LEVEL_UP", 20)
 check(LastAddonMessage():find("^ANN\tcap\t%d+\t20\tMAGE\t") ~= nil, "max level announced to the guild")
 check(LastChatMessage() == "[Guild Found Forever] Level 20 erreicht!", "max level posted to guild chat")
-check(CallCount("Banner") == 1 and not Said("hat Level 20 erreicht"), "own max level shown on screen, chat line only from the guild chat post")
+check(CallCount("Banner") == 1 and Said("hat Level 20 erreicht", "guild"), "own max level: banner and a guild message")
 PLAYER_LEVEL = 20
 
 local epic = link(12345, "Epic Sword")
@@ -544,14 +547,15 @@ ClearMessages()
 FireEvent("CHAT_MSG_LOOT", "You receive loot: " .. epic .. ".")
 check(LastAddonMessage():find("ANN\tepic", 1, true) == 1 and LastAddonMessage():find(epic, 1, true) ~= nil, "epic drop announced with link")
 check(LastChatMessage():find("[Guild Found Forever] Beute: " .. epic, 1, true) == 1, "epic drop posted to guild chat")
-check(CallCount("Banner") == 1 and not Said("erbeutet"), "own epic shown on screen, no second chat line")
+check(CallCount("Banner") == 1 and Said("erbeutet", "guild"), "own epic: banner and a guild message")
 ResetCalls()
 ClearMessages()
 local blue = link(5500, "Blue Boots")
 FireEvent("CHAT_MSG_LOOT", "You receive loot: " .. blue .. "x2.")
 check(LastAddonMessage():find("ANN\trare", 1, true) == 1 and LastAddonMessage():sub(-#blue - 1) == "\t" .. blue, "rare drop (stack) announced, link without the count")
 check(CallCount("SendChatMessage") == 0, "rare drops not posted to guild chat by default")
-check(Said("|cff3fc7ebMagus|r]|h hat " .. blue .. " erbeutet") and CallCount("Banner") == 0, "own rare loot shown in own chat with class-coloured name")
+check(Said("|cff3fc7ebMagus|r]|h hat " .. blue .. " erbeutet", "guild") and CallCount("Banner") == 0, "own rare loot as a guild message with class-coloured name")
+check(ns.Messages.GetList("guild")[1].l == blue, "loot messages keep the item link for the tooltip")
 ns.db.notify.rare = false
 ClearMessages()
 FireEvent("CHAT_MSG_LOOT", "You receive loot: " .. blue .. ".")
@@ -617,7 +621,7 @@ check(deathsOf("Freund-ClassicBetaPvE2") == 2, "whispered announcements ignored"
 ClearMessages()
 ResetCalls()
 receive("epic\t1700000800\t20\tWARRIOR\tWestfall\t" .. epic)
-check(not Said("erbeutet") and CallCount("Banner") == 1, "epic already posted to guild chat: screen only, no second chat line")
+check(Said("erbeutet", "guild") and CallCount("Banner") == 1, "epic already posted to guild chat: banner and still a message in the window")
 ClearMessages()
 ResetCalls()
 receive("rare\t1700000900\t20\tWARRIOR\tWestfall\t" .. link(5500, "Blue Boots"))
@@ -948,7 +952,7 @@ check(endMessage and endMessage.args[2] == ("AUDEND\t%d\t%d"):format(total, GetS
 local longest = 0
 for _, c in ipairs(sent) do longest = math.max(longest, #c.args[2]) end
 check(longest <= 250 and #sent < total, "several records per message, every message short enough")
-check(Said("Freund (Offizier) hat deine Audit-Daten abgerufen"), "member is told who fetched the data")
+check(Said("Freund (Offizier) hat deine Audit-Daten abgerufen", "audit") and ns.Messages.GetList("audit")[1].i, "member is told who fetched the data, as an important audit message")
 local answer = {}
 for _, c in ipairs(sent) do answer[#answer + 1] = c.args[2] end
 
@@ -990,7 +994,7 @@ end
 local snapshotTotal = 0
 for _ in pairs(distinctSnapshots) do snapshotTotal = snapshotTotal + 1 end
 check(cache and #cache.snapshots == snapshotTotal and #cache.trades == #records.trades and #cache.mail == #records.mail and #cache.log == #ns.char.log, "round trip: fetched data equals the member's records")
-check(A.GetRequestState("freund-classicbetapve2") == "done" and Said("Audit-Daten von Freund empfangen"), "request finished")
+check(A.GetRequestState("freund-classicbetapve2") == "done" and Said("Audit-Daten von Freund empfangen", "audit"), "request finished")
 local cachedTrade = cache.trades[#cache.trades]
 check(cachedTrade.gi == "2589:20" and cachedTrade.ri == "5350:5" and cachedTrade.gm == 500 and cachedTrade.k == "g", "trade survives the transfer")
 check(cache.snapshots[#cache.snapshots].r == "out" and cache.snapshots[#cache.snapshots].m == 20000, "snapshot survives the transfer")
@@ -1299,7 +1303,7 @@ ClearMessages()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "LFGJOIN\tWARRIOR\t21\tT\t73", "WHISPER", "Freund-ClassicBetaPvE2")
 local popup = LastCall("StaticPopup_Show")
 check(popup and popup.args[1] == "GUILDFOUNDFOREVER_JOIN_REQUEST" and popup.args[4] == "Freund-ClassicBetaPvE2" and popup.args[3] == "Stufe 21 Krieger, Schutz (Tank)"
-	and Said("möchte deiner Gruppe beitreten"), "join request shows a dialog with level, class, spec and role")
+	and Said("möchte deiner Gruppe beitreten", "finder") and ns.Messages.GetList("finder")[1].i, "join request shows a dialog with level, class, spec and role")
 StaticPopupDialogs.GUILDFOUNDFOREVER_JOIN_REQUEST.OnAccept(nil, popup.args[4])
 check(LastCall("InviteUnit") and LastCall("InviteUnit").args[1] == "Freund-ClassicBetaPvE2", "accepting invites the player")
 ResetCalls()
@@ -1553,7 +1557,7 @@ local pong = LastCall("SendAddonMessage")
 check(pong and pong.args[2] == "PONG\t0.7.0" and pong.args[3] == "WHISPER", "PING answered with PONG")
 ClearMessages()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "HELLO\t0.8.0", "GUILD", "Freund-ClassicBetaPvE2")
-check(Said("0.8.0"), "newer version announced")
+check(Said("0.8.0", "system") and ns.Messages.GetList("system")[1].i, "newer version announced as an important message")
 local V = ns.Comm.VersionNumber
 check(V("0.7.0") == 700 and V("v1.2.3") == 10203 and V("0.7.0-beta") == 700 and V("1.0") == 10000 and V("dev") == 0 and V(nil) == 0, "version numbers from release tags")
 ResetCalls()

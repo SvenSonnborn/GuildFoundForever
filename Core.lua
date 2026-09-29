@@ -243,7 +243,7 @@ ns.On("ADDON_LOADED", function(_, loadedName)
 end)
 
 ns.On("PLAYER_LOGIN", function()
-	ns.Print(L.LOADED, ns.version)
+	ns.Notify("system", L.LOADED:format(ns.version), { silent = true })
 	ns.Fire("LOGIN")
 end)
 
@@ -351,7 +351,7 @@ SlashCmdList.GUILDFOUNDFOREVER = function(input)
 		ns.Guild.PublishRules()
 	elseif command == "debug" then
 		ns.db.debug = not ns.db.debug
-		ns.Print(ns.db.debug and L.DEBUG_ON or L.DEBUG_OFF)
+		ns.Print("system", ns.db.debug and L.DEBUG_ON or L.DEBUG_OFF)
 	else
 		local lines = {}
 		for i, key in ipairs(HELP_LINES) do

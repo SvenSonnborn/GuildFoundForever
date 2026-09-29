@@ -390,7 +390,7 @@ ns.Comm.RegisterHandler("AUDREQ", function(sender, channel, payload)
 	local messages = Pack(records)
 	messages[#messages + 1] = ("AUDEND\t%d\t%d"):format(#records, GetServerTime())
 	ns.Comm.SendPaced(messages, "WHISPER", sender)
-	ns.Print(L.AUDIT_SHARED, Ambiguate(sender, "guild"))
+	ns.Notify("audit", L.AUDIT_SHARED:format(Ambiguate(sender, "guild")), { important = true })
 end)
 
 ---------------------------------------------------------------------------
@@ -481,7 +481,7 @@ function Audit.Request(name)
 	local since = cache and cache.latest or 0
 	local sent, code = ns.Comm.Send("AUDREQ\t" .. since, "WHISPER", name)
 	if not sent then
-		ns.Warn(ns.Comm.FailureText(code))
+		ns.Warn("audit", ns.Comm.FailureText(code))
 		return
 	end
 	local request = { name = name, records = 0, state = "running" }
@@ -544,14 +544,14 @@ ns.Comm.RegisterHandler("AUDEND", function(sender, channel)
 	Trim(cache.trades, MAX_TRADES)
 	Trim(cache.mail, MAX_MAIL)
 	Trim(cache.log, 200)
-	ns.Print(L.AUDIT_RECEIVED, Ambiguate(sender, "guild"), request.records)
+	ns.Print("audit", L.AUDIT_RECEIVED, Ambiguate(sender, "guild"), request.records)
 	FinishRequest(key, "done")
 end)
 
 ns.Comm.RegisterHandler("AUDNO", function(sender, channel)
 	local key = ActiveRequest(sender, channel)
 	if key then
-		ns.Warn(L.AUDIT_DENIED, Ambiguate(sender, "guild"))
+		ns.Warn("audit", L.AUDIT_DENIED, Ambiguate(sender, "guild"))
 		FinishRequest(key, "denied")
 	end
 end)

@@ -417,5 +417,5 @@ function Banner.ResetPosition()
 	if frame then
 		ApplyPosition(frame)
 	end
-	ns.Print(L.BANNER_RESET_DONE)
+	ns.Print("system", L.BANNER_RESET_DONE)
 end
