@@ -182,7 +182,7 @@ Wunsch vom 26.09.2026: Gruppen melden sich an, um Mitglieder zu suchen. Was gesu
 
 ### Sonstiges
 
-- **Gildenweite Regeln:** Offiziere schreiben Regeln und Partnergilden in die Gildeninfo, alle Mitglieder mit Addon übernehmen sie automatisch.
+- **Gildenweite Regeln:** Regeln und Partnergilden stehen als Tags in der Gildeninfo, alle Mitglieder mit Addon übernehmen sie automatisch. Hineinschreiben muss sie ein Offizier selbst (siehe [Regeln in der Gildeninfo](#regeln-in-der-gildeninfo)).
 - **Gilde prüfen:** zeigt, wer online das Addon nutzt (mit Version) und wer nicht. Neuere Versionen im Umlauf werden gemeldet.
 - **Log:** blockierte Aktionen werden pro Charakter gespeichert (maximal 200 Einträge).
 - **Oberfläche:**
@@ -213,8 +213,7 @@ Ohne Gilde sind alle Regeln und Ankündigungen inaktiv.
 | `/gff test karte` | Testpunkt für 90 Sekunden neben dich auf die Weltkarte setzen, nur bei dir |
 | `/gff preview` | Banner-Vorschau nur bei dir |
 | `/gff banner reset` | Banner an die Standardposition zurücksetzen |
-| `/gff publish` | Regeln und Partnergilden in die Gildeninfo schreiben (braucht das Recht, die Gildeninfo zu bearbeiten) |
-| `/gff unpublish` | beides aus der Gildeninfo entfernen |
+| `/gff publish` | Regeln und Partnergilden als Text zum Einfügen in die Gildeninfo anzeigen (braucht das Recht, die Gildeninfo zu bearbeiten) |
 | `/gff debug` | Debug-Ausgaben ein/aus |
 
 `/guildfoundforever` funktioniert ebenfalls. Statt `loot`, `level` und `tod` gehen auch `beute`, `maxlevel`/`stufe` und `death`.
@@ -225,6 +224,14 @@ Die lokalen Tests (`/gff test loot|level|tod`) laufen durch dieselben persönlic
 - Blendet eine Einstellung die Meldung aus, nennt der Test den Grund, zum Beispiel „Tode unter Level 10“.
 
 ## Regeln in der Gildeninfo
+
+**Veröffentlichen geht nur von Hand.** Seit 12.x dürfen Addons die Gildeninfo nicht mehr schreiben. `SetGuildInfoText()` löst `ADDON_ACTION_FORBIDDEN` aus (Fehlerbericht vom 29.09.2026), die Nachfolgerin `C_GuildInfo.SetInfoText` ist vermutlich ebenso gesperrt. Lesen geht weiterhin. Deshalb:
+- **„In Gildeninfo veröffentlichen“** (oder `/gff publish`) öffnet ein Fenster mit den fertigen Tags, markiert zum Kopieren.
+  - Der Offizier kopiert sie mit Strg+C, öffnet das Gildenfenster (J), bearbeitet die Gildeninformationen und fügt sie mit Strg+V ein. Vorhandene `[GuildFoundForever …]`-Einträge ersetzt er dabei; das Fenster weist darauf hin.
+  - Das Addon liest die Gildeninfo alle 2 Sekunden. Sobald die Tags dort stehen, schließt sich das Fenster, und die Regeln gelten.
+  - Ändert der Offizier den Entwurf, während das Fenster offen ist, passt sich der Text an.
+  - Stehen genau diese Regeln schon in der Gildeninfo, erscheint nur ein Hinweis.
+- **Entfernen** geht ebenfalls von Hand: die `[GuildFoundForever …]`-Einträge aus der Gildeninfo löschen. Einen Knopf dafür gibt es nicht mehr (seit dem Wunsch vom 30.09.2026), er konnte auch nur anzeigen, was zu löschen ist. Die Mitglieder merken es bei der nächsten Aktualisierung der Mitgliederliste; danach gelten wieder ihre eigenen Einstellungen.
 
 Beispiel:
 
@@ -262,7 +269,7 @@ Beispiel:
   - Normale Mitglieder sehen die Regeln ausgegraut.
 - Persönlich bleiben immer: die Wartezeit vor dem Verlassen einer Gruppe und alle Benachrichtigungs-Einstellungen.
 - Eine leere Gildeninfo gilt nicht als „Tag entfernt“, weil der Text beim Login oft erst nach der Mitgliederliste ankommt.
-- Die Gildeninfo darf höchstens 500 Zeichen lang sein. Wäre sie mit den Tags zu lang, bricht das Veröffentlichen ab.
+- Die Gildeninfo darf höchstens 500 Zeichen lang sein. Wäre sie mit den Tags zu lang, zeigt das Addon das Fenster gar nicht erst, sondern eine Warnung mit der Länge.
 
 ## Partnergilden: wie Mitglieder erkannt werden
 
@@ -359,6 +366,8 @@ UI.lua                   Fenster mit Tabs, Einstellungs-Eintrag, Addon-Menü an 
   - Folge vor dem Fix (Fehlerbericht vom 26.09.2026): Man stand im Berufe-Tab doppelt, eigene Addon-Nachrichten galten als fremde, und das Audit erkannte die eigenen Daten nicht.
 - Die API wurde gegen die Funktionsliste aus [forever-addon-kit](https://github.com/Thunderz96/forever-addon-kit) abgeglichen. Diese stammt von Beta-Build 69893, der eigene Client hatte beim Abgleich Build 70009.
 - Bestätigt im Spiel: `C_PartyInfo.LeaveParty` dürfen Addons aufrufen.
+- **Gesperrt für Addons:** `SetGuildInfoText()` löst `ADDON_ACTION_FORBIDDEN` aus (Fehlerbericht vom 29.09.2026). Laut Blizzard-Forum sind seit 12.0 auch die Funktionen für Gildennotizen gesperrt (`GuildRosterSetPublicNote`, `C_GuildInfo.SetNote`). Die Gildeninfo schreibt deshalb der Offizier selbst, siehe [Regeln in der Gildeninfo](#regeln-in-der-gildeninfo).
+  - Die Test-Umgebung behandelt beide Schreibfunktionen wie das Spiel: Ein Aufruf zählt als Fehler.
 - Zeitplan: Die Beta ist auf Level 20 begrenzt, später auf 30, und läuft bis 22.10.2026. Release ist am 04.11.2026.
 
 ## Plan / To-do
@@ -383,7 +392,8 @@ Noch offen aus 0.1.0:
 - [ ] Handel: Wasser, Brot und Gesundheitsstein bleiben erlaubt; Gold sperrt; der Hinweis unter dem Handelsfenster ist lesbar
 - [ ] Item-IDs von Wasser, Brot und Gesundheitssteinen in Forever bestätigen. Die Sperrmeldung nennt die ID, falls ein Item fälschlich blockiert wird.
 - [ ] Einladungen von Externen werden oberhalb des Sperr-Levels abgelehnt
-- [ ] Gildeninfo: als Offizier veröffentlichen und entfernen; ein zweiter Charakter übernimmt die Regeln
+- [ ] Gildeninfo: als Offizier veröffentlichen, ein zweiter Charakter übernimmt die Regeln; nach dem Löschen von Hand gelten wieder die eigenen
+  - [x] Kopierfenster geprüft (30.09.2026): erscheint ohne Fehler, Text ist markiert, schließt sich nach dem Einfügen und Speichern
 - [ ] „Gilde prüfen“ mit mindestens zwei Spielern mit Addon. Am 26.09.2026 kam „Addon-Nachrichten können gerade nicht gesendet werden“; die Ursache ist behoben und muss erneut getestet werden.
 
 Neu in 0.2.0 (in der Beta bis Level 20/30 testbar):
@@ -563,7 +573,8 @@ Offen:
 ### Laufend
 
 - [x] Test-Umgebung im Projekt: `.\tests\run.ps1` (mit `-All` jede Prüfung einzeln).
-  - Besteht aus MoonSharp als Lua-Interpreter, einer nachgebauten WoW-API (`tests/stubs.lua`) und 357 Prüfungen (`tests/tests.lua`, Stand 0.7.0).
+  - Besteht aus MoonSharp als Lua-Interpreter, einer nachgebauten WoW-API (`tests/stubs.lua`) und 367 Prüfungen (`tests/tests.lua`).
+  - Die nachgebauten Fenster verhalten sich wie echte: Unbekannte Methoden (Großbuchstabe am Anfang) tun nichts, eigene Felder sind `nil`, bis sie gesetzt werden.
   - MoonSharp 2.0.0 lädt das Skript beim ersten Lauf von NuGet nach `tests/.moonsharp`; der Ordner gehört nicht ins Repository.
   - Das Skript endet mit Code 1, wenn eine Prüfung fehlschlägt.
 - [ ] Weitere Sprachen (frFR, esES, …)

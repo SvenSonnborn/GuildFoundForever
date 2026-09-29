@@ -318,14 +318,12 @@ SlashCmdList.GUILDFOUNDFOREVER = function(input)
 		ns.Banner.ResetPosition()
 	elseif command == "publish" then
 		ns.Guild.PublishRules()
-	elseif command == "unpublish" then
-		ns.Guild.UnpublishRules()
 	elseif command == "debug" then
 		ns.db.debug = not ns.db.debug
 		ns.Print(ns.db.debug and L.DEBUG_ON or L.DEBUG_OFF)
 	else
 		ns.Print(L.HELP_TITLE)
-		for _, line in ipairs({ L.HELP_CONFIG, L.HELP_SETTINGS, L.HELP_STATUS, L.HELP_CHECK, L.HELP_LOG, L.HELP_DEATHS, L.HELP_AUDIT, L.HELP_DUNGEONS, L.HELP_TEST, L.HELP_TEST_LOCAL, L.HELP_PREVIEW, L.HELP_BANNER_RESET, L.HELP_PUBLISH, L.HELP_UNPUBLISH, L.HELP_DEBUG }) do
+		for _, line in ipairs({ L.HELP_CONFIG, L.HELP_SETTINGS, L.HELP_STATUS, L.HELP_CHECK, L.HELP_LOG, L.HELP_DEATHS, L.HELP_AUDIT, L.HELP_DUNGEONS, L.HELP_TEST, L.HELP_TEST_LOCAL, L.HELP_PREVIEW, L.HELP_BANNER_RESET, L.HELP_PUBLISH, L.HELP_DEBUG }) do
 			DEFAULT_CHAT_FRAME:AddMessage("  " .. line)
 		end
 	end

@@ -8,7 +8,7 @@
 
 ## How it works
 
-- Officers set the rules in the Guild Found Forever window (`/gff`) and publish them to the guild info with one click.
+- Officers set the rules in the Guild Found Forever window (`/gff`). The addon turns them into a short line of text that the officer pastes into the guild info (Blizzard does not let addons write it).
 - Every member running Guild Found Forever picks the rules up automatically; members see them greyed out.
 - Each member's own addon enforces the rules. **Check guild** shows who is running it and which version.
 - Outside a guild, Guild Found Forever does nothing.
@@ -74,7 +74,7 @@ Everything goes through addon messages to your own guild only (the dungeon finde
 | `/gff test` | send a test announcement to the guild |
 | `/gff test loot` / `level` / `death` / `map` | try an announcement or the map pin, only for you |
 | `/gff preview` | preview the banners |
-| `/gff publish` / `unpublish` | officers: write the rules into the guild info or remove them |
+| `/gff publish` | officers: show the rules to paste into the guild info |
 
 ## Good to know
 
@@ -100,7 +100,7 @@ Inspired by [GuildFound](https://www.curseforge.com/wow/addons/guildfound) by Lo
 
 ### So funktioniert es
 
-- Die Offiziere legen die Regeln im Guild-Found-Forever-Fenster fest (`/gff`) und veröffentlichen sie mit einem Klick in der Gildeninfo.
+- Die Offiziere legen die Regeln im Guild-Found-Forever-Fenster fest (`/gff`). Das Addon macht daraus eine kurze Textzeile, die der Offizier in die Gildeninfo einfügt (Blizzard erlaubt Addons nicht, sie selbst zu schreiben).
 - Jedes Mitglied mit Guild Found Forever übernimmt die Regeln automatisch; Mitglieder sehen sie ausgegraut.
 - Das Addon jedes Mitglieds setzt die Regeln bei diesem Mitglied durch. **Gilde prüfen** zeigt, wer es nutzt und in welcher Version.
 - Ohne Gilde tut Guild Found Forever nichts.
@@ -166,7 +166,7 @@ Alles geht per Addon-Nachricht nur an eure eigene Gilde (die Dungeonsuche nutzt 
 | `/gff test` | Testmeldung an die Gilde schicken |
 | `/gff test loot` / `level` / `tod` / `karte` | eine Ankündigung oder den Kartenpunkt ausprobieren, nur bei euch |
 | `/gff preview` | Vorschau der Banner |
-| `/gff publish` / `unpublish` | Offiziere: Regeln in die Gildeninfo schreiben oder entfernen |
+| `/gff publish` | Offiziere: Regeln zum Einfügen in die Gildeninfo anzeigen |
 
 ### Gut zu wissen
 

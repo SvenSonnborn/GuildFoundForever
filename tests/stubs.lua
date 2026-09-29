@@ -64,10 +64,13 @@ local Widget = {}
 local frames = {}
 local function NewWidget(kind, name)
 	local w = setmetatable({ _kind = kind, _name = name, _scripts = {}, _shown = true, _enabled = true, _text = "", _events = {}, _checked = false }, {
+		-- Unknown methods (WoW's start with a capital letter) do nothing; the addon's own fields are
+		-- nil until set, as on real frames.
 		__index = function(_, k)
 			local v = Widget[k]
 			if v ~= nil then return v end
-			return function() end
+			if type(k) == "string" and k:match("^%u") then return function() end end
+			return nil
 		end,
 	})
 	frames[#frames + 1] = w
@@ -93,7 +96,19 @@ function Widget:GetChecked() return self._checked end
 function Widget:GetName() return self._name end
 function Widget:GetPoint() return "CENTER", nil, "CENTER", 0, 0 end
 function Widget:GetStringHeight() return 12 end
-function Widget:HasFocus() return false end
+function Widget:HasFocus() return rawget(self, "_focus") == true end
+-- The client passes script handlers more than the frame: a method set directly as handler gets
+-- those values as arguments (bug report 30.09.2026, HighlightText as OnEditFocusGained).
+function Widget:SetFocus() self._focus = true self:RunScript("OnEditFocusGained", 2 ^ 40) end
+function Widget:ClearFocus() self._focus = false self:RunScript("OnEditFocusLost") end
+function Widget:HighlightText(start, stop)
+	for i, v in ipairs({ start or 0, stop or 0 }) do
+		if type(v) ~= "number" or v < -2147483648 or v > 2147483647 then
+			error(("bad argument #%d to '?' (outside of expected range -2147483648 to 2147483647 - Usage: self:HighlightText([start, stop]))"):format(i + 1), 2)
+		end
+	end
+	self._highlighted = true
+end
 function Widget:CreateFontString() return NewWidget("FontString") end
 function Widget:CreateTexture() return NewWidget("Texture") end
 function Widget:CreateMaskTexture() return NewWidget("MaskTexture") end
@@ -205,8 +220,8 @@ function C_Timer.NewTimer(d, fn)
 	return t
 end
 TICKERS = {}
-function C_Timer.NewTicker(d, fn) local t = { fn = fn } function t:Cancel() end TICKERS[#TICKERS + 1] = t return t end
-function RunTickers() for _, t in ipairs(TICKERS) do t.fn() end end
+function C_Timer.NewTicker(d, fn) local t = { fn = fn } function t:Cancel() self.cancelled = true end TICKERS[#TICKERS + 1] = t return t end
+function RunTickers() for _, t in ipairs(TICKERS) do if not t.cancelled then t.fn() end end end
 -- Runs every pending timer with delay <= maxDelay, including timers they schedule.
 function RunTimers(maxDelay)
 	maxDelay = maxDelay or math.huge
@@ -286,10 +301,12 @@ function GetGuildInfo(unit)
 	return u and u.guildName
 end
 function GetGuildInfoText() return GUILD_INFO_TEXT end
-function SetGuildInfoText(t) record("SetGuildInfoText", t) GUILD_INFO_TEXT = t end
+-- Protected in 12.x: the client refuses the call (ADDON_ACTION_FORBIDDEN), the info text stays.
+function SetGuildInfoText(t) record("SetGuildInfoText", t) ERRORS[#ERRORS + 1] = "ADDON_ACTION_FORBIDDEN: SetGuildInfoText()" end
 function CanEditGuildInfo() return CAN_EDIT end
 C_GuildInfo = {
 	GuildRoster = function() record("GuildRoster") end,
+	SetInfoText = function(t) record("SetGuildInfoText", t) ERRORS[#ERRORS + 1] = "ADDON_ACTION_FORBIDDEN: C_GuildInfo.SetInfoText()" end,
 	MemberExistsByName = function() return false end,
 	CanViewOfficerNote = function() return CAN_VIEW_OFFICER end,
 	GuildControlGetRankFlags = function(rankOrder) return RANK_FLAGS[rankOrder] end,

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.1-beta
+
+### Fixes
+- **Publish to guild info** caused an `ADDON_ACTION_FORBIDDEN` error: WoW Forever no longer lets addons write the guild info. The button now opens a window with the rules as text, ready to copy. Paste it into the guild information yourself (guild window, J); the window closes by itself once the rules are there. To remove the rules, delete the entries from the guild information by hand; the **Remove from guild info** button and `/gff unpublish` are gone.
+
 ## 0.7.0-beta – first public beta
 
 Guild Found Forever keeps your guild self-found on WoW Forever. This first public version contains everything built during development (0.1.0 to 0.7.0):
@@ -11,7 +16,7 @@ Guild Found Forever keeps your guild self-found on WoW Forever. This first publi
 - Summons by non-guild warlocks are declined; portals of non-guild mages trigger a warning and are logged.
 - Groups with non-guild players are locked from a chosen level (default 50); battlegrounds and arenas are exempt.
 - Partner guilds count as guild members for every rule.
-- Officers publish the rules in the guild info, and every member running the addon follows them.
+- Officers put the rules into the guild info, and every member running the addon follows them.
 
 ### Guild features
 - Announcements for max level, deaths, epic and rare loot and recipes, as chat lines and banners; optionally posted to guild chat for members without the addon.

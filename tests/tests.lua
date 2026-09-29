@@ -74,27 +74,53 @@ FireEvent("GUILD_ROSTER_UPDATE")
 check(not ns.Rules.FromGuild() and ns.Rules.GetGroupLockLevel() == 10, "tag removed -> local rules (last guild values)")
 ns.db.rules.groupLockLevel = 50
 
+-- Bug report 29.09.2026: "Publish to guild info" raised ADDON_ACTION_FORBIDDEN - addons may not write
+-- the guild info in 12.x. Officers get the tags to paste themselves; the addon only reads the info.
+local copyDialog
+local function dialogText() return copyDialog and copyDialog.box:GetText() end
+ResetCalls()
 G.PublishRules()
-check(GUILD_INFO_TEXT == "Willkommen\n" .. DEFAULT_TAG, "publish appends rules tag, no partner tag for an empty list")
+copyDialog = GuildFoundForeverCopyDialog
+check(CallCount("SetGuildInfoText") == 0 and copyDialog and copyDialog:IsShown() and dialogText() == DEFAULT_TAG,
+	"publish shows the rules tag to copy, the guild info is not written")
+check(copyDialog.box:HasFocus() and copyDialog.box._highlighted, "the text is selected, ready for Ctrl+C (bug report 30.09.2026: HighlightText error on focus)")
+check(not copyDialog.text:GetText():find("Ersetze", 1, true), "no replace hint while the guild info has no tags")
+copyDialog.box:SetText("verändert")
+copyDialog.box:RunScript("OnTextChanged", true)
+check(dialogText() == DEFAULT_TAG, "the text to copy cannot be edited by accident")
+GUILD_INFO_TEXT = "Willkommen\n" .. DEFAULT_TAG
+RunTickers()
+check(not copyDialog:IsShown() and ns.Rules.FromGuild() and ns.Rules.IsGuildSetting("dungeonFinder"), "the dialog closes by itself once the pasted rules are in the guild info")
+ClearChat()
+G.PublishRules()
+check(not copyDialog:IsShown() and ChatContains("enthält diese Regeln bereits"), "unchanged rules: nothing to paste")
 ns.db.rules.groupLockLevel = 45
 ns.db.partnerGuilds = { "Bruderschaft", "Die Nachbarn" }
 G.PublishRules()
-check(GUILD_INFO_TEXT == "Willkommen\n" .. DEFAULT_TAG:gsub("L=50", "L=45") .. "\n[GuildFoundForever-Partner: Bruderschaft, Die Nachbarn]", "publish replaces rules tag and adds partner tag")
-ns.db.partnerGuilds = {}
-G.PublishRules()
-check(GUILD_INFO_TEXT == "Willkommen\n" .. DEFAULT_TAG:gsub("L=50", "L=45"), "publish removes partner tag when the list is empty")
-G.UnpublishRules()
-check(GUILD_INFO_TEXT == "Willkommen", "unpublish removes the tags")
+check(copyDialog:IsShown() and dialogText() == DEFAULT_TAG:gsub("L=50", "L=45") .. " [GuildFoundForever-Partner: Bruderschaft, Die Nachbarn]"
+	and copyDialog.text:GetText():find("Ersetze", 1, true), "changed rules: rules and partner tag to copy, with the hint to replace the old entries")
+ns.Rules.Set("groupLockLevel", 44)
+check(copyDialog:IsShown() and dialogText():find("L=44", 1, true), "changing the draft while the dialog is open updates the text")
+GUILD_INFO_TEXT = "Willkommen\n" .. DEFAULT_TAG:gsub("L=50", "L=44") .. "\n[GuildFoundForever-Partner: Bruderschaft, Die Nachbarn]"
+RunTickers()
+check(not copyDialog:IsShown() and ns.Rules.GetGroupLockLevel() == 44 and #ns.Rules.GetPartnerGuilds() == 2, "rules and partner tag pasted on two lines work as well")
+-- Removing the rules is done by hand as well, without a button (wish of 30.09.2026).
+check(G.UnpublishRules == nil, "no function to remove the rules from the guild info")
+GUILD_INFO_TEXT = "Willkommen"
+FireEvent("GUILD_ROSTER_UPDATE")
+check(not ns.Rules.FromGuild(), "deleting the tags from the guild info by hand ends the guild rules")
 ns.db.rules.groupLockLevel = 50
+ns.db.partnerGuilds = {}
 CAN_EDIT = false
-ResetCalls()
+ClearChat()
 G.PublishRules()
-check(CallCount("SetGuildInfoText") == 0, "publish needs permission")
+check(not copyDialog:IsShown() and ChatContains("Du darfst die Gildeninfo nicht bearbeiten"), "publish needs permission")
 CAN_EDIT = true
 GUILD_INFO_TEXT = string.rep("x", 460)
-ResetCalls()
+ClearChat()
 G.PublishRules()
-check(CallCount("SetGuildInfoText") == 0, "publish refuses too long info")
+check(not copyDialog:IsShown() and ChatContains("zu lang"), "publish refuses when the guild info would get too long")
+check(CallCount("SetGuildInfoText") == 0, "the guild info is never written")
 GUILD_INFO_TEXT = "Willkommen"
 FireEvent("GUILD_ROSTER_UPDATE")
 
@@ -1417,6 +1443,10 @@ SEND_RESULT = nil
 -- Window and slash commands ------------------------------------------------
 ns.UI.Toggle()
 check(GuildFoundForeverFrame and GuildFoundForeverFrame:IsShown(), "window opens (officer, guild rules)")
+check(FindWidgetByText("Button", "In Gildeninfo veröffentlichen") and not FindWidgetByText("Button", "Aus Gildeninfo entfernen"), "publish button only, no remove button")
+ClearChat()
+SlashCmdList.GUILDFOUNDFOREVER("unpublish")
+check(ChatContains("Befehle:") and not ChatContains("/gff unpublish"), "/gff unpublish is gone and not in the help")
 CAN_EDIT = false
 ns.UI.Refresh()
 GUILD_INFO_TEXT = "Willkommen"

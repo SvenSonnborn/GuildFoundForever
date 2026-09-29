@@ -1119,6 +1119,103 @@ function UI.RefreshFinder()
 end
 
 ---------------------------------------------------------------------------
+-- Publishing: addons may not write the guild info, so officers copy the tags and paste them
+-- there themselves. The dialog closes once the guild info matches. Removing works by hand too.
+---------------------------------------------------------------------------
+
+local COPY_DIALOG_WIDTH = 540
+local COPY_CHECK_SECONDS = 2
+
+local copyDialog
+
+local function CreateCopyDialog()
+	local d = CreateFrame("Frame", addonName .. "CopyDialog", UIParent, "BasicFrameTemplateWithInset")
+	d:SetSize(COPY_DIALOG_WIDTH, 210)
+	d:SetPoint("CENTER", 0, 140)
+	d:SetFrameStrata("FULLSCREEN_DIALOG")
+	d:SetToplevel(true)
+	d:SetClampedToScreen(true)
+	d:SetMovable(true)
+	d:EnableMouse(true)
+	d:RegisterForDrag("LeftButton")
+	d:SetScript("OnDragStart", d.StartMoving)
+	d:SetScript("OnDragStop", d.StopMovingOrSizing)
+	d:Hide()
+	tinsert(UISpecialFrames, d:GetName())
+
+	local title = d:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	title:SetPoint("TOP", 0, -5)
+	title:SetText(L.PUBLISH_DIALOG_TITLE)
+	d.text = d:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	d.text:SetPoint("TOPLEFT", 18, -36)
+	d.text:SetPoint("RIGHT", -18, 0)
+	d.text:SetJustifyH("LEFT")
+	d.text:SetSpacing(3)
+
+	-- Read-only: whatever is typed, the text to copy comes back, selected.
+	local box = CreateFrame("EditBox", nil, d, "InputBoxTemplate")
+	box:SetHeight(22)
+	box:SetPoint("BOTTOMLEFT", 24, 76)
+	box:SetPoint("BOTTOMRIGHT", -20, 76)
+	box:SetAutoFocus(false)
+	box:SetMaxLetters(0)
+	box:SetScript("OnTextChanged", function(self, userInput)
+		if userInput then
+			self:SetText(d.copyText or "")
+			self:HighlightText()
+		end
+	end)
+	-- Not box.HighlightText directly: the handler gets more arguments, which HighlightText would
+	-- take for its start and stop position.
+	box:SetScript("OnEditFocusGained", function(self)
+		self:HighlightText()
+	end)
+	box:SetScript("OnEscapePressed", function() d:Hide() end)
+	d.box = box
+
+	d.note = CreateNote(d, 22, -154, COPY_DIALOG_WIDTH - 44)
+	d.note:SetText(L.PUBLISH_DIALOG_NOTE)
+	local close = CreateButton(d, L.BTN_CLOSE, 120, function() d:Hide() end)
+	close:SetPoint("BOTTOMRIGHT", -16, 14)
+	d:SetScript("OnHide", function()
+		if d.ticker then
+			d.ticker:Cancel()
+			d.ticker = nil
+		end
+	end)
+	return d
+end
+
+-- replacing: the guild info has older tags, which the officer has to replace.
+function UI.ShowPublishDialog(tags, replacing)
+	copyDialog = copyDialog or CreateCopyDialog()
+	local d = copyDialog
+	d.copyText = tags
+	d.text:SetText(L.PUBLISH_DIALOG_TEXT .. (replacing and (" " .. L.PUBLISH_DIALOG_REPLACE) or ""))
+	d.box:SetText(tags)
+	d:Show()
+	d.box:SetFocus()
+	d.box:HighlightText()
+	-- Saving the guild info fires no event we could rely on; look at the text every few seconds.
+	d.ticker = d.ticker or C_Timer.NewTicker(COPY_CHECK_SECONDS, ns.Guild.CheckInfoText)
+end
+
+-- Closes the dialog once the guild info contains the draft; follows the draft while it is open.
+local function CheckCopyDialog()
+	local d = copyDialog
+	if not d or not d:IsShown() then
+		return
+	end
+	local tags = ns.Guild.GetDraftTags()
+	if ns.Guild.GetPublishedTags() == tags then
+		d:Hide()
+	elseif tags ~= d.copyText then
+		d.copyText = tags
+		d.box:SetText(tags)
+	end
+end
+
+---------------------------------------------------------------------------
 -- Main window
 ---------------------------------------------------------------------------
 
@@ -1287,10 +1384,8 @@ local function CreateMainFrame()
 	controls.hint = hint
 
 	local buttonWidth = 186
-	controls.unpublish = CreateButton(f, L.BTN_UNPUBLISH, buttonWidth, function() ns.Guild.UnpublishRules() end)
-	controls.unpublish:SetPoint("BOTTOMRIGHT", -16, 42)
 	controls.publish = CreateButton(f, L.BTN_PUBLISH, buttonWidth, function() ns.Guild.PublishRules() end)
-	controls.publish:SetPoint("RIGHT", controls.unpublish, "LEFT", -8, 0)
+	controls.publish:SetPoint("BOTTOMRIGHT", -16, 42)
 	AttachTooltip(controls.publish, L.BTN_PUBLISH, L.BTN_PUBLISH_TIP)
 	local log = CreateButton(f, L.BTN_LOG, buttonWidth, function() ns.PrintLog() end)
 	log:SetPoint("BOTTOMRIGHT", -16, 14)
@@ -1368,7 +1463,6 @@ function UI.Refresh()
 		controls.hint:SetText(L.LOCAL_RULES_HINT)
 	end
 	controls.publish:SetEnabled(officer)
-	controls.unpublish:SetEnabled(officer and fromGuild)
 
 	UI.RefreshDeathlog()
 	UI.RefreshAudit()
@@ -1392,6 +1486,7 @@ function UI.Toggle()
 end
 
 ns.RegisterCallback("RULES_CHANGED", UI.Refresh)
+ns.RegisterCallback("RULES_CHANGED", CheckCopyDialog)
 ns.RegisterCallback("ROSTER_UPDATED", UI.Refresh)
 ns.RegisterCallback("DEATHLOG_UPDATED", UI.RefreshDeathlog)
 ns.RegisterCallback("AUDIT_UPDATED", UI.RefreshAudit)

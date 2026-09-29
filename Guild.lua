@@ -441,44 +441,48 @@ local function SetTag(text, pattern, tag)
 	return text == "" and tag or (text .. "\n" .. tag)
 end
 
-local function WriteInfoText(text)
-	if #text > GUILD_INFO_MAX_LENGTH then
-		ns.Warn(L.PUBLISH_TOO_LONG, #text, GUILD_INFO_MAX_LENGTH)
-		return false
-	end
-	SetGuildInfoText(text)
-	C_Timer.After(2, Guild.RequestRoster)
-	return true
+-- The tags of the officer's draft, as they belong into the guild info.
+function Guild.GetDraftTags()
+	return JoinTags(Guild.BuildRulesTag(ns.db.rules), Guild.BuildPartnerTag(ns.db.partnerGuilds))
 end
 
+-- The tags currently in the guild info, or nil.
+function Guild.GetPublishedTags()
+	return appliedTags
+end
+
+-- Reads the guild info again; officers paste the tags there themselves.
+function Guild.CheckInfoText()
+	if IsInGuild() then
+		UpdateGuildRules()
+	end
+end
+
+-- Addons may not write the guild info (SetGuildInfoText and C_GuildInfo.SetInfoText are protected in
+-- 12.x), so publishing shows the tags for the officer to paste; the addon picks them up from there.
 function Guild.PublishRules()
 	if not CheckPublishPermission() then
 		return
 	end
+	UpdateGuildRules()
 	local rulesTag = Guild.BuildRulesTag(ns.db.rules)
 	local partnerTag = Guild.BuildPartnerTag(ns.db.partnerGuilds)
-	local text = SetTag(GetInfoText(), RULES_TAG_PATTERN, rulesTag)
-	text = SetTag(text, PARTNER_TAG_PATTERN, partnerTag)
-	if WriteInfoText(text) then
-		ns.Print(L.PUBLISH_DONE, JoinTags(rulesTag, partnerTag))
-	end
-end
-
-function Guild.UnpublishRules()
-	if not CheckPublishPermission() then
+	local tags = JoinTags(rulesTag, partnerTag)
+	if tags == appliedTags then
+		ns.Print(L.PUBLISH_ALREADY)
 		return
 	end
-	local text = GetInfoText()
-	if not text:find(RULES_TAG_PATTERN) and not text:find(PARTNER_TAG_PATTERN) then
-		ns.Print(L.UNPUBLISH_NONE)
+	local current = GetInfoText()
+	local text = SetTag(SetTag(current, RULES_TAG_PATTERN, rulesTag), PARTNER_TAG_PATTERN, partnerTag)
+	if #text > GUILD_INFO_MAX_LENGTH then
+		ns.Warn(L.PUBLISH_TOO_LONG, #text, GUILD_INFO_MAX_LENGTH)
 		return
 	end
-	text = SetTag(text, RULES_TAG_PATTERN, nil)
-	text = SetTag(text, PARTNER_TAG_PATTERN, nil)
-	if WriteInfoText(text) then
-		ns.Print(L.UNPUBLISH_DONE)
-	end
+	local replacing = current:find(RULES_TAG_PATTERN) ~= nil or current:find(PARTNER_TAG_PATTERN) ~= nil
+	ns.UI.ShowPublishDialog(tags, replacing)
 end
+-- Removing the rules needs no help from the addon: officers delete the tags from the guild info,
+-- and every member notices on the next roster update.
 
 ---------------------------------------------------------------------------
 -- Events
