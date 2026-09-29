@@ -16,6 +16,7 @@
 
 Locales.lua
 Core.lua
+Messages.lua
 Data.lua
 Rules.lua
 Guild.lua

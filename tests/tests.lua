@@ -33,6 +33,43 @@ FireEvent("PLAYER_LOGIN")
 check(ChatContains("v0.7.0 geladen"), "German load message with version from the TOC stub")
 RunTimers()
 
+-- Messages: store ------------------------------------------------------------------
+local M = ns.Messages
+ClearMessages()
+local firstMessage = M.Add("blocked", "Eins")
+local secondMessage = M.Add("audit", "Zwei", { important = true, details = "mehr" })
+M.Add("system", "Still", { silent = true })
+local messageList = M.GetList()
+check(#messageList == 3 and messageList[1].m == "Still" and messageList[3] == firstMessage and #M.GetList("audit") == 1, "messages: newest first, filtered by category")
+check(M.CountUnread() == 2 and M.CountUnread("blocked") == 1 and M.HasImportantUnread() and secondMessage.d == "mehr",
+	"silent messages count as read; important and details are kept")
+M.MarkAllRead()
+check(M.CountUnread() == 0 and not M.HasImportantUnread(), "mark all read")
+M.Clear("blocked")
+check(#M.GetList() == 2 and #M.GetList("blocked") == 0, "clear one category")
+local errorsBefore = #ERRORS
+M.Add("nonsense", "Wohin?")
+check(#ERRORS == errorsBefore + 1 and M.GetList()[1].c == "system", "unknown category: an error, stored under system")
+table.remove(ERRORS) -- expected
+for i = 1, 310 do M.Add("system", "Nr " .. i) end
+check(#ns.char.messages == 300 and ns.char.messages[1].m == "Nr 11", "at most 300 messages, the oldest go")
+ClearMessages()
+local savedLog = ns.char.log
+ns.char.messagesImported = false
+ns.char.log = { { t = 1, k = "trade", m = "Alter Handel" } }
+M.ImportLog()
+check(Said("Alter Handel", "blocked") and M.CountUnread() == 0, "blocked actions from the old log come over, read")
+M.ImportLog()
+check(#M.GetList() == 1, "the old log is imported only once")
+ns.char.log = savedLog
+local savedChar = ns.char
+ns.char = nil
+M.Add("system", "Vor dem Laden")
+ns.char = savedChar
+M.FlushPending()
+check(Said("Vor dem Laden", "system"), "messages from before the saved variables are loaded are kept")
+ClearMessages()
+
 -- Roster and names ---------------------------------------------------------
 FireEvent("GUILD_ROSTER_UPDATE")
 local G = ns.Guild

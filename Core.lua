@@ -56,6 +56,7 @@ ns.defaults = {
 	debug = false,
 	window = {},
 	lastTab = "rules", -- page of the window: rules, professions, finder, deathlog, audit or settings
+	messages = { showButton = true, window = {}, button = {} }, -- message window: button on/off, positions
 }
 
 ns.charDefaults = {
@@ -63,6 +64,8 @@ ns.charDefaults = {
 	audit = { snapshots = {}, trades = {}, mail = {} },
 	professions = {},
 	finder = { selected = {}, onlyFitting = false }, -- dungeon finder: picked activities (ID -> true)
+	messages = {}, -- message window, newest last (Messages.lua)
+	messagesImported = false, -- the old log of blocked actions came over
 }
 
 ---------------------------------------------------------------------------

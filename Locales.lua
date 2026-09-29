@@ -393,6 +393,13 @@ L.FINDER_BTN_POST_TIP = "Shows you or your group to the guild members running th
 L.FINDER_BTN_UPDATE = "Update"
 L.FINDER_BTN_CANCEL = "Delist"
 
+-- Message window
+L.MSG_CAT_BLOCKED = "Blocked"
+L.MSG_CAT_GUILD = "Guild"
+L.MSG_CAT_AUDIT = "Audit"
+L.MSG_CAT_FINDER = "Dungeon finder"
+L.MSG_CAT_SYSTEM = "System"
+
 ---------------------------------------------------------------------------
 -- deDE
 ---------------------------------------------------------------------------
@@ -765,4 +772,10 @@ if GetLocale() == "deDE" then
 	L.FINDER_BTN_POST_TIP = "Zeigt dich oder deine Gruppe den Gildenmitgliedern mit Addon, für die links ausgewählten Dungeons. Mitglieder und Rollen werden automatisch aus deiner Gruppe gelesen."
 	L.FINDER_BTN_UPDATE = "Aktualisieren"
 	L.FINDER_BTN_CANCEL = "Abmelden"
+
+	L.MSG_CAT_BLOCKED = "Blockiert"
+	L.MSG_CAT_GUILD = "Gilde"
+	L.MSG_CAT_AUDIT = "Audit"
+	L.MSG_CAT_FINDER = "Dungeonsuche"
+	L.MSG_CAT_SYSTEM = "System"
 end

@@ -15,6 +15,17 @@ function ResetCalls() CALLS = {} end
 function ClearChat() CHAT = {} end
 function ChatContains(text) for _, m in ipairs(CHAT) do if m:find(text, 1, true) then return true end end return false end
 
+-- Messages of the addon's message window (Messages.lua): text and details, optionally one category.
+function Said(text, category)
+	for _, e in ipairs(NS.char and NS.char.messages or {}) do
+		if (not category or e.c == category) and (e.m:find(text, 1, true) or (e.d and e.d:find(text, 1, true))) then
+			return true
+		end
+	end
+	return false
+end
+function ClearMessages() if NS.char and NS.char.messages then wipe(NS.char.messages) end end
+
 function issecretvalue(v) return rawequal(v, SECRET) end
 function geterrorhandler() return function(err) ERRORS[#ERRORS + 1] = tostring(err) end end
 function wipe(t) for k in pairs(t) do t[k] = nil end return t end
