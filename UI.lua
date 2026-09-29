@@ -1296,6 +1296,10 @@ function UI.ShowSettings()
 	OpenPage("settings")
 end
 
+function UI.ShowDeathlog()
+	OpenPage("deathlog")
+end
+
 -- Gear button left of the close button in the title bar; toggles the settings page.
 local function CreateSettingsButton(f)
 	local button = CreateFrame("Button", addonName .. "SettingsButton", f)
@@ -1391,7 +1395,7 @@ local function CreateMainFrame()
 	controls.publish = CreateButton(f, L.BTN_PUBLISH, buttonWidth, function() ns.Guild.PublishRules() end)
 	controls.publish:SetPoint("BOTTOMRIGHT", -16, 42)
 	AttachTooltip(controls.publish, L.BTN_PUBLISH, L.BTN_PUBLISH_TIP)
-	local log = CreateButton(f, L.BTN_LOG, buttonWidth, function() ns.PrintLog() end)
+	local log = CreateButton(f, L.BTN_LOG, buttonWidth, function() ns.MessageWindow.Show("blocked") end)
 	log:SetPoint("BOTTOMRIGHT", -16, 14)
 	local check = CreateButton(f, L.BTN_CHECK, buttonWidth, function() ns.Comm.StartCheck() end)
 	check:SetPoint("RIGHT", log, "LEFT", -8, 0)

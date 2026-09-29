@@ -637,8 +637,10 @@ local listed = ns.Announce.GetDeaths()
 check(#listed == 5 and listed[1].n == "Freund-ClassicBetaPvE2", "deathlog lists this guild's deaths, newest first")
 check(ns.Announce.FormatDeath(listed[1]):find("(Level 5 Krieger) in Nordhain - Wolf", 1, true) ~= nil, "deathlog entry formatted")
 ClearMessages()
-SlashCmdList.GUILDFOUNDFOREVER("deaths 3")
-check(Said("Die letzten 3 Tode"), "/gff deaths prints the deathlog")
+SlashCmdList.GUILDFOUNDFOREVER("deaths")
+check(GuildFoundForeverFrame:IsShown() and ns.db.lastTab == "deathlog", "/gff deaths opens the deathlog tab")
+ns.UI.Toggle()
+ns.db.lastTab = "rules"
 
 -- Banner ---------------------------------------------------------------------
 local B = GuildFoundForeverBanner
@@ -1199,10 +1201,11 @@ local deadmines = F.GetActivity(1)
 check(F.GetLevelFit(deadmines, 20) == "fit" and F.GetLevelFit(deadmines, 16) == "low" and F.GetLevelFit(deadmines, 27) == "high" and F.GetLevelFit(deadmines, 26) == "fit", "level fit")
 check(F.FormatLevels(deadmines) == "17-26" and F.FormatLevels(F.GetActivity(20)) == "60", "level ranges formatted")
 ClearMessages()
-ClearChat()
 F.PrintActivities()
-check(Said("5 Dungeons und Schlachtzüge (Quelle: Gruppensuche des Spiels)") and ChatContains("#1 Die Todesminen") and ChatContains("17-26")
-	and ChatContains("Schlachtzug, 40 Spieler") and Said("Felder des ersten Eintrags") and Said("maxLevelSuggestion=18"), "/gff dungeons prints list, source and fields")
+check(Said("5 Dungeons und Schlachtzüge (Quelle: Gruppensuche des Spiels)", "system") and Said("#1 Die Todesminen") and Said("17-26")
+	and Said("Schlachtzug, 40 Spieler") and Said("Felder des ersten Eintrags") and Said("maxLevelSuggestion=18") and ns.MessageWindow.IsShown(),
+	"/gff dungeons: one message with the whole list, shown in the window")
+CloseMessages()
 local savedLFGList = C_LFGList
 C_LFGList = nil
 F.PrintActivities()
@@ -1557,6 +1560,8 @@ FireEvent("CHAT_MSG_ADDON", "GFForever", "PONG\t0.6.0", "WHISPER", "Freund-Class
 RunTimers()
 check(Said("Mit Addon (2): Magus (0.7.0, du), Freund (0.6.0)"), "check lists the player first, then the members who answered")
 check(Said("Online ohne Addon (1): Crossy"), "check lists online members without addon")
+check(Said("Gilde prüfen: 2 mit Addon, 1 online ohne", "system") and ns.MessageWindow.IsShown(), "the check result is one message, shown in the window")
+CloseMessages()
 
 -- Bug report 26.09.2026: "Gilde prüfen" said messages could not be sent. In 12.x
 -- AreOutgoingAddonChatMessagesRestricted() reports "restricted" although sending works.
@@ -1566,6 +1571,7 @@ ClearMessages()
 ns.Comm.StartCheck()
 check(LastAddonMessage() == "PING" and Said("Frage Gildenmitglieder ab"), "guild check sends although the restriction check says restricted")
 RunTimers()
+CloseMessages()
 ResetCalls()
 FireEvent("CHAT_MSG_LOOT", "You receive loot: " .. link(5500, "Blue Boots") .. ".")
 check(LastAddonMessage():find("ANN\trare", 1, true) == 1, "announcements go out as well")
@@ -1591,6 +1597,21 @@ check(FindWidgetByText("Button", "In Gildeninfo veröffentlichen") and not FindW
 ClearMessages()
 SlashCmdList.GUILDFOUNDFOREVER("unpublish")
 check(Said("Befehle:") and not Said("/gff unpublish"), "/gff unpublish is gone and not in the help")
+check(Said("/gff msg", "system") and ns.MessageWindow.IsShown(), "the help lists /gff msg and opens in the window")
+CloseMessages()
+SlashCmdList.GUILDFOUNDFOREVER("msg")
+check(ns.MessageWindow.IsShown(), "/gff msg opens the messages")
+SlashCmdList.GUILDFOUNDFOREVER("msg")
+check(not ns.MessageWindow.IsShown(), "and closes them")
+SlashCmdList.GUILDFOUNDFOREVER("log")
+check(ns.MessageWindow.IsShown() and GuildFoundForeverMessages.filter == "blocked", "/gff log opens the messages filtered to blocked actions")
+CloseMessages()
+SlashCmdList.GUILDFOUNDFOREVER("status")
+check(ns.MessageWindow.IsShown() and GuildFoundForeverMessages.detail:GetText():find("Auktionshaus gesperrt", 1, true), "/gff status opens its report")
+CloseMessages()
+FindWidgetByText("Button", "Log anzeigen"):RunScript("OnClick")
+check(ns.MessageWindow.IsShown() and GuildFoundForeverMessages.filter == "blocked", "the log button opens the blocked actions")
+CloseMessages()
 CAN_EDIT = false
 ns.UI.Refresh()
 GUILD_INFO_TEXT = "Willkommen"

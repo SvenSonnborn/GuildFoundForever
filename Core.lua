@@ -267,20 +267,6 @@ function ns.Log(kind, msg)
 	end
 end
 
-function ns.PrintLog(count)
-	local log = ns.char and ns.char.log or {}
-	if #log == 0 then
-		ns.Print(L.LOG_EMPTY)
-		return
-	end
-	count = math.min(count or 15, #log)
-	ns.Print(L.LOG_HEADER, count)
-	for i = #log - count + 1, #log do
-		local entry = log[i]
-		DEFAULT_CHAT_FRAME:AddMessage(("  |cff999999%s|r %s"):format(date("%d.%m. %H:%M", entry.t), entry.m))
-	end
-end
-
 ---------------------------------------------------------------------------
 -- Status and slash commands
 ---------------------------------------------------------------------------
@@ -289,33 +275,41 @@ local function YesNo(value)
 	return value and L.YES or L.NO
 end
 
-function ns.PrintStatus()
+-- /gff status: the rules in force as one message, shown in the message window.
+function ns.ShowStatus()
 	local Rules, Guild = ns.Rules, ns.Guild
+	local lines = {}
 	if IsInGuild() then
-		ns.Print(L.STATUS_GUILD, Guild.GetName() or "?", Guild.GetMemberCount())
+		lines[#lines + 1] = L.STATUS_GUILD:format(Guild.GetName() or "?", Guild.GetMemberCount())
 	else
-		ns.Print(L.STATUS_NO_GUILD)
+		lines[#lines + 1] = L.STATUS_NO_GUILD
 	end
-	ns.Print(Rules.FromGuild() and L.STATUS_SOURCE_GUILD or L.STATUS_SOURCE_LOCAL)
-	ns.Print(L.STATUS_AH, YesNo(Rules.Get("blockAuctionHouse")))
-	ns.Print(L.STATUS_MAIL, YesNo(Rules.Get("blockMail")))
-	ns.Print(L.STATUS_TRADE, YesNo(Rules.Get("tradeConjured")), YesNo(Rules.Get("tradeHealthstones")), YesNo(Rules.Get("tradeGold")))
-	ns.Print(L.STATUS_TRADE_MORE, YesNo(Rules.Get("tradeQuestItems")), YesNo(Rules.Get("servicesOutgoing")), YesNo(Rules.Get("lockpickIncoming")))
-	ns.Print(L.STATUS_TRAVEL, YesNo(Rules.Get("transportSummon")), YesNo(Rules.Get("transportPortal")))
+	lines[#lines + 1] = Rules.FromGuild() and L.STATUS_SOURCE_GUILD or L.STATUS_SOURCE_LOCAL
+	lines[#lines + 1] = L.STATUS_AH:format(YesNo(Rules.Get("blockAuctionHouse")))
+	lines[#lines + 1] = L.STATUS_MAIL:format(YesNo(Rules.Get("blockMail")))
+	lines[#lines + 1] = L.STATUS_TRADE:format(YesNo(Rules.Get("tradeConjured")), YesNo(Rules.Get("tradeHealthstones")), YesNo(Rules.Get("tradeGold")))
+	lines[#lines + 1] = L.STATUS_TRADE_MORE:format(YesNo(Rules.Get("tradeQuestItems")), YesNo(Rules.Get("servicesOutgoing")), YesNo(Rules.Get("lockpickIncoming")))
+	lines[#lines + 1] = L.STATUS_TRAVEL:format(YesNo(Rules.Get("transportSummon")), YesNo(Rules.Get("transportPortal")))
 	local partners = Rules.GetPartnerGuilds()
-	ns.Print(L.STATUS_PARTNERS, #partners > 0 and table.concat(partners, ", ") or L.NONE)
-	ns.Print(L.STATUS_CHAT, YesNo(Rules.Get("chatLevelCap")), YesNo(Rules.Get("chatDeath")), YesNo(Rules.Get("chatEpic")),
+	lines[#lines + 1] = L.STATUS_PARTNERS:format(#partners > 0 and table.concat(partners, ", ") or L.NONE)
+	lines[#lines + 1] = L.STATUS_CHAT:format(YesNo(Rules.Get("chatLevelCap")), YesNo(Rules.Get("chatDeath")), YesNo(Rules.Get("chatEpic")),
 		YesNo(Rules.Get("chatRare")), YesNo(Rules.Get("chatRecipe")))
-	ns.Print(L.STATUS_AUDIT, YesNo(Rules.Get("audit")))
-	ns.Print(L.STATUS_PROFESSIONS, YesNo(Rules.Get("professions")))
-	ns.Print(L.STATUS_FINDER, YesNo(Rules.Get("dungeonFinder")))
+	lines[#lines + 1] = L.STATUS_AUDIT:format(YesNo(Rules.Get("audit")))
+	lines[#lines + 1] = L.STATUS_PROFESSIONS:format(YesNo(Rules.Get("professions")))
+	lines[#lines + 1] = L.STATUS_FINDER:format(YesNo(Rules.Get("dungeonFinder")))
 	local lockLevel = Rules.GetGroupLockLevel()
 	if lockLevel == 0 then
-		ns.Print(L.STATUS_GROUP_OFF)
+		lines[#lines + 1] = L.STATUS_GROUP_OFF
 	else
-		ns.Print(L.STATUS_GROUP, lockLevel, UnitLevel("player"), Rules.IsGroupLocked() and L.STATUS_LOCKED or L.STATUS_UNLOCKED)
+		lines[#lines + 1] = L.STATUS_GROUP:format(lockLevel, UnitLevel("player"), Rules.IsGroupLocked() and L.STATUS_LOCKED or L.STATUS_UNLOCKED)
 	end
+	ns.Report("system", L.STATUS_TITLE, lines)
 end
+
+local HELP_LINES = {
+	"HELP_CONFIG", "HELP_SETTINGS", "HELP_MESSAGES", "HELP_STATUS", "HELP_CHECK", "HELP_LOG", "HELP_DEATHS", "HELP_AUDIT", "HELP_DUNGEONS",
+	"HELP_TEST", "HELP_TEST_LOCAL", "HELP_PREVIEW", "HELP_BANNER_RESET", "HELP_PUBLISH", "HELP_DEBUG",
+}
 
 SLASH_GUILDFOUNDFOREVER1 = "/gff"
 SLASH_GUILDFOUNDFOREVER2 = "/guildfoundforever"
@@ -325,13 +319,13 @@ SlashCmdList.GUILDFOUNDFOREVER = function(input)
 	if command == "" or command == "config" then
 		ns.UI.Toggle()
 	elseif command == "status" then
-		ns.PrintStatus()
+		ns.ShowStatus()
 	elseif command == "check" then
 		ns.Comm.StartCheck()
 	elseif command == "log" then
-		ns.PrintLog(tonumber(argument))
+		ns.MessageWindow.Show("blocked")
 	elseif command == "deaths" then
-		ns.Announce.PrintDeaths(tonumber(argument))
+		ns.UI.ShowDeathlog()
 	elseif command == "test" then
 		local what = argument:match("^(%S*)"):lower()
 		if argument == "" then
@@ -341,6 +335,8 @@ SlashCmdList.GUILDFOUNDFOREVER = function(input)
 		else
 			ns.Announce.RunLocalTest(argument)
 		end
+	elseif command == "messages" or command == "msg" then
+		ns.MessageWindow.Toggle()
 	elseif command == "settings" then
 		ns.UI.ShowSettings()
 	elseif command == "audit" then
@@ -357,9 +353,10 @@ SlashCmdList.GUILDFOUNDFOREVER = function(input)
 		ns.db.debug = not ns.db.debug
 		ns.Print(ns.db.debug and L.DEBUG_ON or L.DEBUG_OFF)
 	else
-		ns.Print(L.HELP_TITLE)
-		for _, line in ipairs({ L.HELP_CONFIG, L.HELP_SETTINGS, L.HELP_STATUS, L.HELP_CHECK, L.HELP_LOG, L.HELP_DEATHS, L.HELP_AUDIT, L.HELP_DUNGEONS, L.HELP_TEST, L.HELP_TEST_LOCAL, L.HELP_PREVIEW, L.HELP_BANNER_RESET, L.HELP_PUBLISH, L.HELP_DEBUG }) do
-			DEFAULT_CHAT_FRAME:AddMessage("  " .. line)
+		local lines = {}
+		for i, key in ipairs(HELP_LINES) do
+			lines[i] = L[key]
 		end
+		ns.Report("system", L.HELP_TITLE, lines)
 	end
 end

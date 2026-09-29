@@ -211,19 +211,6 @@ function Announce.FormatDeath(entry)
 	return text
 end
 
-function Announce.PrintDeaths(count)
-	local deaths = Announce.GetDeaths()
-	if #deaths == 0 then
-		ns.Print(L.DEATHLOG_EMPTY)
-		return
-	end
-	count = math.min(count or 10, #deaths)
-	ns.Print(L.DEATHLOG_HEADER, count)
-	for i = count, 1, -1 do
-		DEFAULT_CHAT_FRAME:AddMessage("  " .. Announce.FormatDeath(deaths[i]))
-	end
-end
-
 ---------------------------------------------------------------------------
 -- Texts
 ---------------------------------------------------------------------------

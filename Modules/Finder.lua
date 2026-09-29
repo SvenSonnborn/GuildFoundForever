@@ -231,12 +231,12 @@ end
 function Finder.PrintActivities()
 	catalogue = nil
 	local list = Finder.GetActivities()
-	ns.Print(L.FINDER_DUMP_HEADER, #list, L["FINDER_SOURCE_" .. Finder.GetSource():upper()] or Finder.GetSource())
+	local lines = {}
 	for _, activity in ipairs(list) do
 		local levels = Finder.FormatLevels(activity)
-		DEFAULT_CHAT_FRAME:AddMessage(("  #%d %s |cff999999%s%s%s|r"):format(activity.id, activity.name,
+		lines[#lines + 1] = ("#%d %s |cff999999%s%s%s|r"):format(activity.id, activity.name,
 			levels ~= "" and levels or L.FINDER_NO_LEVELS, activity.raid and (" - " .. L.FINDER_RAID_SIZE:format(activity.size)) or "",
-			activity.levelSource and " *" or ""))
+			activity.levelSource and " *" or "")
 	end
 	if C_LFGList and C_LFGList.GetActivityInfoTable and list[1] and list[1].id < SOURCE_OFFSET then
 		local info = Call(C_LFGList.GetActivityInfoTable, list[1].id)
@@ -247,8 +247,9 @@ function Finder.PrintActivities()
 			end
 		end
 		table.sort(fields)
-		ns.Print(L.FINDER_DUMP_FIELDS, table.concat(fields, ", "))
+		lines[#lines + 1] = L.FINDER_DUMP_FIELDS:format(table.concat(fields, ", "))
 	end
+	ns.Report("system", L.FINDER_DUMP_HEADER:format(#list, L["FINDER_SOURCE_" .. Finder.GetSource():upper()]), lines)
 end
 
 ns.On("LFG_LIST_AVAILABILITY_UPDATE", function()

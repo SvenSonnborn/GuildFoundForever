@@ -21,7 +21,7 @@ L.HELP_TITLE = "Commands:"
 L.HELP_CONFIG = "/gff - open the window"
 L.HELP_STATUS = "/gff status - show the active rules"
 L.HELP_CHECK = "/gff check - see which guild members run the addon"
-L.HELP_LOG = "/gff log [n] - show the last blocked actions"
+L.HELP_LOG = "/gff log - show the blocked actions in the messages"
 L.HELP_PUBLISH = "/gff publish - show your rules to paste into the guild info (officers)"
 L.HELP_DEBUG = "/gff debug - toggle debug output"
 
@@ -39,9 +39,6 @@ L.STATUS_GROUP_OFF = "Non-guild groups: allowed at every level"
 L.STATUS_GROUP = "Non-guild groups: forbidden from level %d (you are %d - %s)"
 L.STATUS_LOCKED = "locked"
 L.STATUS_UNLOCKED = "not locked yet"
-
-L.LOG_EMPTY = "No blocked actions recorded."
-L.LOG_HEADER = "Last %d blocked actions:"
 
 -- Guild info rules
 L.GUILD_RULES_APPLIED = "Rules loaded from the guild info: %s"
@@ -163,10 +160,11 @@ L.SETTINGS_TITLE = "Settings - announcements"
 L.BTN_SETTINGS = "Settings"
 L.BTN_SETTINGS_TIP = "General settings: announcements, banners and what goes to guild chat. Click again to go back."
 L.HELP_SETTINGS = "/gff settings - open the settings"
+L.HELP_MESSAGES = "/gff msg - open or close the messages"
 L.TAB_DEATHLOG = "Deathlog"
 
 -- Announcements
-L.HELP_DEATHS = "/gff deaths [n] - show the last deaths in the guild"
+L.HELP_DEATHS = "/gff deaths - open the deathlog"
 L.HELP_TEST = "/gff test - send a test announcement to the guild"
 L.HELP_TEST_LOCAL = "/gff test loot [item] | level | death | map - simulate locally, only for you"
 L.TEST_USAGE = "Usage: /gff test loot [shift-click an item] | level | death | map - only for you, nothing is sent. /gff test without anything sends a test announcement to the guild."
@@ -208,7 +206,6 @@ L.CHAT_RECIPE = "Recipe found: %s (%s)"
 L.DEATHLOG_TITLE = "Deaths in the guild (%d)"
 L.DEATHLOG_ENTRY = "%s  %s (level %d %s) in %s"
 L.DEATHLOG_EMPTY = "No deaths recorded yet."
-L.DEATHLOG_HEADER = "Last %d deaths in the guild:"
 L.DEATHLOG_FOOTER = "%d-%d of %d, scroll with the mouse wheel."
 L.DEATHLOG_NOTE = "Recorded are deaths of guild members running the addon while you are online."
 
@@ -410,6 +407,8 @@ L.MSG_BUTTON_TIP = "Click: open or close the messages. Drag: move the button."
 L.SECTION_MESSAGES = "Messages (personal)"
 L.MSG_BUTTON_SHOW = "Show the messages button"
 L.MSG_BUTTON_SHOW_TIP = "The button shows how many messages you have not read yet. Without it, /gff msg opens the messages."
+L.STATUS_TITLE = "Active rules"
+L.CHECK_RESULT = "Check guild: %d with the addon, %d online without"
 
 ---------------------------------------------------------------------------
 -- deDE
@@ -429,7 +428,7 @@ if GetLocale() == "deDE" then
 	L.HELP_CONFIG = "/gff - Fenster öffnen"
 	L.HELP_STATUS = "/gff status - aktive Regeln anzeigen"
 	L.HELP_CHECK = "/gff check - prüfen, welche Gildenmitglieder das Addon nutzen"
-	L.HELP_LOG = "/gff log [n] - zuletzt blockierte Aktionen anzeigen"
+	L.HELP_LOG = "/gff log - blockierte Aktionen in den Meldungen anzeigen"
 	L.HELP_PUBLISH = "/gff publish - deine Regeln zum Einfügen in die Gildeninfo anzeigen (Offiziere)"
 	L.HELP_DEBUG = "/gff debug - Debug-Ausgaben ein/aus"
 
@@ -447,9 +446,6 @@ if GetLocale() == "deDE" then
 	L.STATUS_GROUP = "Externe Gruppen: ab Level %d verboten (du bist %d - %s)"
 	L.STATUS_LOCKED = "gesperrt"
 	L.STATUS_UNLOCKED = "noch nicht gesperrt"
-
-	L.LOG_EMPTY = "Keine blockierten Aktionen gespeichert."
-	L.LOG_HEADER = "Die letzten %d blockierten Aktionen:"
 
 	L.GUILD_RULES_APPLIED = "Regeln aus der Gildeninfo übernommen: %s"
 	L.GUILD_RULES_REMOVED = "Die Gildeninfo enthält keine Regeln mehr - es gelten wieder deine lokalen Einstellungen."
@@ -562,9 +558,10 @@ if GetLocale() == "deDE" then
 	L.BTN_SETTINGS = "Einstellungen"
 	L.BTN_SETTINGS_TIP = "Allgemeine Einstellungen: Ankündigungen, Banner und was in den Gildenchat geht. Nochmal klicken führt zurück."
 	L.HELP_SETTINGS = "/gff settings - Einstellungen öffnen"
+	L.HELP_MESSAGES = "/gff msg - Meldungen öffnen oder schließen"
 	L.TAB_DEATHLOG = "Deathlog"
 
-	L.HELP_DEATHS = "/gff deaths [n] - die letzten Tode in der Gilde anzeigen"
+	L.HELP_DEATHS = "/gff deaths - Deathlog öffnen"
 	L.HELP_TEST = "/gff test - Testmeldung an die Gilde schicken"
 	L.HELP_TEST_LOCAL = "/gff test loot [Item] | level | tod | karte - nur bei dir durchspielen"
 	L.TEST_USAGE = "Aufruf: /gff test loot [Item per Umschalt-Klick] | level | tod | karte - nur bei dir, es wird nichts gesendet. /gff test ohne Zusatz schickt eine Testmeldung an die Gilde."
@@ -605,7 +602,6 @@ if GetLocale() == "deDE" then
 	L.DEATHLOG_TITLE = "Tode in der Gilde (%d)"
 	L.DEATHLOG_ENTRY = "%s  %s (Level %d %s) in %s"
 	L.DEATHLOG_EMPTY = "Noch keine Tode aufgezeichnet."
-	L.DEATHLOG_HEADER = "Die letzten %d Tode in der Gilde:"
 	L.DEATHLOG_FOOTER = "%d-%d von %d, mit dem Mausrad blättern."
 	L.DEATHLOG_NOTE = "Aufgezeichnet werden Tode von Gildenmitgliedern mit Addon, während du online bist."
 
@@ -800,4 +796,6 @@ if GetLocale() == "deDE" then
 	L.SECTION_MESSAGES = "Meldungen (persönlich)"
 	L.MSG_BUTTON_SHOW = "Meldungs-Knopf anzeigen"
 	L.MSG_BUTTON_SHOW_TIP = "Der Knopf zeigt, wie viele Meldungen du noch nicht gelesen hast. Ohne ihn öffnet /gff msg die Meldungen."
+	L.STATUS_TITLE = "Aktive Regeln"
+	L.CHECK_RESULT = "Gilde prüfen: %d mit Addon, %d online ohne"
 end
