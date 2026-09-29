@@ -555,7 +555,8 @@ FireEvent("CHAT_MSG_LOOT", "You receive loot: " .. blue .. "x2.")
 check(LastAddonMessage():find("ANN\trare", 1, true) == 1 and LastAddonMessage():sub(-#blue - 1) == "\t" .. blue, "rare drop (stack) announced, link without the count")
 check(CallCount("SendChatMessage") == 0, "rare drops not posted to guild chat by default")
 check(Said("|cff3fc7ebMagus|r]|h hat " .. blue .. " erbeutet", "guild") and CallCount("Banner") == 0, "own rare loot as a guild message with class-coloured name")
-check(ns.Messages.GetList("guild")[1].l == blue, "loot messages keep the item link for the tooltip")
+local lootMessage = ns.Messages.GetList("guild")[1]
+check(lootMessage and lootMessage.l == blue, "loot messages keep the item link for the tooltip")
 ns.db.notify.rare = false
 ClearMessages()
 FireEvent("CHAT_MSG_LOOT", "You receive loot: " .. blue .. ".")
