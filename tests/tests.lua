@@ -30,7 +30,7 @@ FireEvent("ADDON_LOADED", "GuildFoundForever")
 check(ns.db ~= nil and ns.db.rules.groupLockLevel == 50 and ns.db.rules.transportSummon == false, "saved variables initialised with defaults")
 check(CallCount("RegisterAddOnCategory") == 1, "settings category registered")
 FireEvent("PLAYER_LOGIN")
-check(ChatContains("v0.7.0 geladen"), "German load message with version from the TOC stub")
+check(Said("v0.7.0 geladen"), "German load message with version from the TOC stub")
 RunTimers()
 
 -- Messages: store ------------------------------------------------------------------
@@ -69,6 +69,33 @@ ns.char = savedChar
 M.FlushPending()
 check(Said("Vor dem Laden", "system"), "messages from before the saved variables are loaded are kept")
 ClearMessages()
+
+-- Messages: output functions -------------------------------------------------------------
+ResetCalls()
+ns.Print("audit", "Hallo %s", "Welt")
+check(Said("Hallo Welt", "audit") and CallCount("UIError") == 0, "print: formatted, with its category, nothing on screen")
+ns.Warn("blocked", "Achtung %d", 1)
+ns.Warn("blocked", "Achtung %d", 1)
+local warnings = 0
+for _, e in ipairs(M.GetList("blocked")) do if e.m == "Achtung 1" then warnings = warnings + 1 end end
+check(warnings == 1 and CallCount("UIError") == 1, "warn: red screen text, identical warnings within 2 seconds once")
+ns.Alert("blocked", "Gleich weg")
+check(Said("Gleich weg", "blocked") and CallCount("RaidNotice") == 1 and CallCount("UIError") == 2, "alert: raid warning as well")
+ns.Notify("finder", "Anfrage", { important = true, link = "x" })
+check(M.GetList()[1].i and M.GetList()[1].l == "x", "notify keeps important and link")
+local report = ns.Report("system", "Titel", { "Zeile A", "Zeile B" })
+check(report.m == "Titel" and report.d == "Zeile A\nZeile B", "report: title with the lines as details")
+if ns.MessageWindow and ns.MessageWindow.IsShown() then ns.MessageWindow.Toggle() end
+ns.db.debug = true
+ns.Debug("Spur %d", 7)
+ns.db.debug = false
+ns.Debug("Nicht da")
+check(Said("Spur 7", "system") and not Said("Nicht da") and M.GetList()[1].r, "debug only when switched on, as a silent message")
+local legacyBefore = M.legacyCalls
+ns.Print("Alte %s", "Form")
+check(Said("Alte Form", "system") and M.legacyCalls == legacyBefore + 1, "calls without a category land under system for now")
+ClearMessages()
+ResetCalls()
 
 -- Roster and names ---------------------------------------------------------
 FireEvent("GUILD_ROSTER_UPDATE")
@@ -128,9 +155,9 @@ check(dialogText() == DEFAULT_TAG, "the text to copy cannot be edited by acciden
 GUILD_INFO_TEXT = "Willkommen\n" .. DEFAULT_TAG
 RunTickers()
 check(not copyDialog:IsShown() and ns.Rules.FromGuild() and ns.Rules.IsGuildSetting("dungeonFinder"), "the dialog closes by itself once the pasted rules are in the guild info")
-ClearChat()
+ClearMessages()
 G.PublishRules()
-check(not copyDialog:IsShown() and ChatContains("enthält diese Regeln bereits"), "unchanged rules: nothing to paste")
+check(not copyDialog:IsShown() and Said("enthält diese Regeln bereits"), "unchanged rules: nothing to paste")
 ns.db.rules.groupLockLevel = 45
 ns.db.partnerGuilds = { "Bruderschaft", "Die Nachbarn" }
 G.PublishRules()
@@ -149,14 +176,14 @@ check(not ns.Rules.FromGuild(), "deleting the tags from the guild info by hand e
 ns.db.rules.groupLockLevel = 50
 ns.db.partnerGuilds = {}
 CAN_EDIT = false
-ClearChat()
+ClearMessages()
 G.PublishRules()
-check(not copyDialog:IsShown() and ChatContains("Du darfst die Gildeninfo nicht bearbeiten"), "publish needs permission")
+check(not copyDialog:IsShown() and Said("Du darfst die Gildeninfo nicht bearbeiten"), "publish needs permission")
 CAN_EDIT = true
 GUILD_INFO_TEXT = string.rep("x", 460)
-ClearChat()
+ClearMessages()
 G.PublishRules()
-check(not copyDialog:IsShown() and ChatContains("zu lang"), "publish refuses when the guild info would get too long")
+check(not copyDialog:IsShown() and Said("zu lang"), "publish refuses when the guild info would get too long")
 check(CallCount("SetGuildInfoText") == 0, "the guild info is never written")
 GUILD_INFO_TEXT = "Willkommen"
 FireEvent("GUILD_ROSTER_UPDATE")
@@ -353,9 +380,9 @@ ResetCalls()
 FireEvent("PARTY_INVITE_REQUEST", "Fremder")
 check(CallCount("DeclineGroup") == 0, "stranger's invite fine below the lock level")
 PLAYER_LEVEL = 50
-ClearChat()
+ClearMessages()
 C_PartyInfo.InviteUnit("Fremder")
-check(ChatContains("Fremder ist nicht in deiner Gilde"), "warning when inviting a stranger")
+check(Said("Fremder ist nicht in deiner Gilde"), "warning when inviting a stranger")
 ns.Rules.Set("groupLockLevel", 0)
 ResetCalls()
 FireEvent("PARTY_INVITE_REQUEST", "Fremder")
@@ -499,31 +526,31 @@ ResetCalls()
 FireEvent("PLAYER_LEVEL_UP", 19)
 check(CallCount("SendAddonMessage") == 0, "no announcement below the max level")
 ResetCalls()
-ClearChat()
+ClearMessages()
 FireEvent("PLAYER_LEVEL_UP", 20)
 check(LastAddonMessage():find("^ANN\tcap\t%d+\t20\tMAGE\t") ~= nil, "max level announced to the guild")
 check(LastChatMessage() == "[Guild Found Forever] Level 20 erreicht!", "max level posted to guild chat")
-check(CallCount("Banner") == 1 and not ChatContains("hat Level 20 erreicht"), "own max level shown on screen, chat line only from the guild chat post")
+check(CallCount("Banner") == 1 and not Said("hat Level 20 erreicht"), "own max level shown on screen, chat line only from the guild chat post")
 PLAYER_LEVEL = 20
 
 local epic = link(12345, "Epic Sword")
 ResetCalls()
-ClearChat()
+ClearMessages()
 FireEvent("CHAT_MSG_LOOT", "You receive loot: " .. epic .. ".")
 check(LastAddonMessage():find("ANN\tepic", 1, true) == 1 and LastAddonMessage():find(epic, 1, true) ~= nil, "epic drop announced with link")
 check(LastChatMessage():find("[Guild Found Forever] Beute: " .. epic, 1, true) == 1, "epic drop posted to guild chat")
-check(CallCount("Banner") == 1 and not ChatContains("erbeutet"), "own epic shown on screen, no second chat line")
+check(CallCount("Banner") == 1 and not Said("erbeutet"), "own epic shown on screen, no second chat line")
 ResetCalls()
-ClearChat()
+ClearMessages()
 local blue = link(5500, "Blue Boots")
 FireEvent("CHAT_MSG_LOOT", "You receive loot: " .. blue .. "x2.")
 check(LastAddonMessage():find("ANN\trare", 1, true) == 1 and LastAddonMessage():sub(-#blue - 1) == "\t" .. blue, "rare drop (stack) announced, link without the count")
 check(CallCount("SendChatMessage") == 0, "rare drops not posted to guild chat by default")
-check(ChatContains("|cff3fc7ebMagus|r]|h hat " .. blue .. " erbeutet") and CallCount("Banner") == 0, "own rare loot shown in own chat with class-coloured name")
+check(Said("|cff3fc7ebMagus|r]|h hat " .. blue .. " erbeutet") and CallCount("Banner") == 0, "own rare loot shown in own chat with class-coloured name")
 ns.db.notify.rare = false
-ClearChat()
+ClearMessages()
 FireEvent("CHAT_MSG_LOOT", "You receive loot: " .. blue .. ".")
-check(not ChatContains("erbeutet"), "own rare loot hidden when the player switched rare off")
+check(not Said("erbeutet"), "own rare loot hidden when the player switched rare off")
 ns.db.notify.rare = true
 ResetCalls()
 FireEvent("CHAT_MSG_LOOT", "You receive loot: " .. link(6000, "Recipe: Something") .. ".")
@@ -547,13 +574,13 @@ check(CallCount("SendAddonMessage") == 1 and CallCount("SendChatMessage") == 1, 
 UNITS.target = { name = "Defias-Schläger", hostile = true }
 RECAP = { { timestamp = 1, sourceName = "Kobold", spellName = "Hieb" }, { timestamp = 5, sourceName = "Defias-Schläger", spellName = "Nahkampf" } }
 ResetCalls()
-ClearChat()
+ClearMessages()
 FireEvent("PLAYER_DEAD")
 RunTimers()
 local ownDeath = ns.db.deathlog[#ns.db.deathlog]
 check(ownDeath and ownDeath.n == "Magus-ClassicBetaPvE2" and ownDeath.k == "Defias-Schläger (Nahkampf)" and ownDeath.l == 20, "own death logged with the killing blow from the recap")
 check(LastAddonMessage():find("ANN\tdeath", 1, true) == 1 and CallCount("SendChatMessage") == 0, "death announced, not posted to guild chat by default")
-check(ChatContains("ist gestorben: Level 20, Elwynn Forest - Defias-Schläger (Nahkampf)") and CallCount("Banner") == 1, "own death shown in own chat and on screen")
+check(Said("ist gestorben: Level 20, Elwynn Forest - Defias-Schläger (Nahkampf)") and CallCount("Banner") == 1, "own death shown in own chat and on screen")
 Advance(30)
 RECAP = { { timestamp = SECRET, sourceName = SECRET } }
 FireEvent("PLAYER_DEAD")
@@ -570,48 +597,48 @@ UNITS.target = nil
 local function receive(payload, channel, sender)
 	FireEvent("CHAT_MSG_ADDON", "GFForever", "ANN\t" .. payload, channel or "GUILD", sender or "Freund-ClassicBetaPvE2")
 end
-ClearChat()
+ClearMessages()
 ResetCalls()
 receive("death\t1700000500\t25\tWARRIOR\tWestfall\tDefias-Räuber")
 check(deathsOf("Freund-ClassicBetaPvE2") == 1, "member's death goes into the deathlog")
-check(ChatContains("ist gestorben: Level 25, Westfall - Defias-Räuber") and CallCount("Banner") == 1, "member's death shown in chat and on screen")
+check(Said("ist gestorben: Level 25, Westfall - Defias-Räuber") and CallCount("Banner") == 1, "member's death shown in chat and on screen")
 receive("death\t1700000500\t25\tWARRIOR\tWestfall\tDefias-Räuber")
 check(deathsOf("Freund-ClassicBetaPvE2") == 1, "duplicate message ignored")
-ClearChat()
+ClearMessages()
 receive("death\t1700000600\t5\tWARRIOR\tNordhain\tWolf")
-check(deathsOf("Freund-ClassicBetaPvE2") == 2 and not ChatContains("Nordhain"), "death below the minimum level logged but not shown")
+check(deathsOf("Freund-ClassicBetaPvE2") == 2 and not Said("Nordhain"), "death below the minimum level logged but not shown")
 receive("death\t1700000700\t30\tWARRIOR\tDuskwood\tX", "WHISPER")
 check(deathsOf("Freund-ClassicBetaPvE2") == 2, "whispered announcements ignored")
-ClearChat()
+ClearMessages()
 ResetCalls()
 receive("epic\t1700000800\t20\tWARRIOR\tWestfall\t" .. epic)
-check(not ChatContains("erbeutet") and CallCount("Banner") == 1, "epic already posted to guild chat: screen only, no second chat line")
-ClearChat()
+check(not Said("erbeutet") and CallCount("Banner") == 1, "epic already posted to guild chat: screen only, no second chat line")
+ClearMessages()
 ResetCalls()
 receive("rare\t1700000900\t20\tWARRIOR\tWestfall\t" .. link(5500, "Blue Boots"))
-check(ChatContains("hat |cffffffff|Hitem:5500") and CallCount("Banner") == 0, "rare drop shown in chat, not on screen")
+check(Said("hat |cffffffff|Hitem:5500") and CallCount("Banner") == 0, "rare drop shown in chat, not on screen")
 ns.db.notify.rare = false
-ClearChat()
+ClearMessages()
 receive("rare\t1700001000\t20\tWARRIOR\tWestfall\t" .. link(5500, "Blue Boots"))
-check(not ChatContains("erbeutet"), "rare drops hidden when switched off")
+check(not Said("erbeutet"), "rare drops hidden when switched off")
 ns.db.notify.rare = true
 receive("bogus\t1\t1\tX\tY\tZ")
-ClearChat()
+ClearMessages()
 ResetCalls()
 ns.Announce.SendTest()
-check(LastAddonMessage():find("ANN\ttest", 1, true) == 1 and ChatContains("Testmeldung von") and CallCount("Banner") == 1, "test announcement sent and shown to the sender too")
-ClearChat()
+check(LastAddonMessage():find("ANN\ttest", 1, true) == 1 and Said("Testmeldung von") and CallCount("Banner") == 1, "test announcement sent and shown to the sender too")
+ClearMessages()
 ResetCalls()
 receive("test\t1700001100\t20\tWARRIOR\tWestfall\t")
-check(ChatContains("Testmeldung von") and CallCount("Banner") == 1, "test announcement received")
+check(Said("Testmeldung von") and CallCount("Banner") == 1, "test announcement received")
 
 ns.db.deathlog[#ns.db.deathlog + 1] = { t = 1, n = "Other-Realm", l = 1, c = "MAGE", z = "X", k = "", g = "Andere Gilde" }
 local listed = ns.Announce.GetDeaths()
 check(#listed == 5 and listed[1].n == "Freund-ClassicBetaPvE2", "deathlog lists this guild's deaths, newest first")
 check(ns.Announce.FormatDeath(listed[1]):find("(Level 5 Krieger) in Nordhain - Wolf", 1, true) ~= nil, "deathlog entry formatted")
-ClearChat()
+ClearMessages()
 SlashCmdList.GUILDFOUNDFOREVER("deaths 3")
-check(ChatContains("Die letzten 3 Tode"), "/gff deaths prints the deathlog")
+check(Said("Die letzten 3 Tode"), "/gff deaths prints the deathlog")
 
 -- Banner ---------------------------------------------------------------------
 local B = GuildFoundForeverBanner
@@ -683,60 +710,60 @@ B:RunScript("OnDragStart")
 B:RunScript("OnDragStop")
 SHIFT_DOWN = false
 check(ns.db.bannerPosition and ns.db.bannerPosition.point == "CENTER", "shift-drag stores the banner position")
-ClearChat()
+ClearMessages()
 SlashCmdList.GUILDFOUNDFOREVER("banner reset")
-check(ns.db.bannerPosition == nil and ChatContains("Banner-Position zurückgesetzt"), "/gff banner reset")
+check(ns.db.bannerPosition == nil and Said("Banner-Position zurückgesetzt"), "/gff banner reset")
 
 -- Local tests: /gff test loot | level | death ---------------------------------
 drain()
 local logSize = #ns.db.deathlog
 BAGS = { [0] = { { hyperlink = link(7000, "Green Boots"), quality = 2 }, { hyperlink = epic, quality = 4 }, { hyperlink = blue, quality = 3 } } }
 ResetCalls()
-ClearChat()
+ClearMessages()
 SlashCmdList.GUILDFOUNDFOREVER("test loot")
 check(CallCount("SendAddonMessage") == 0 and CallCount("SendChatMessage") == 0, "loot test sends nothing")
-check(ChatContains("Test - nur bei dir") and ChatContains("Im Gildenchat würde stehen: [Guild Found Forever] Beute: " .. epic), "loot test: best bag item, shows what guild chat would get")
+check(Said("Test - nur bei dir") and Said("Im Gildenchat würde stehen: [Guild Found Forever] Beute: " .. epic), "loot test: best bag item, shows what guild chat would get")
 check(B:IsShown() and B.main:GetText() == epic and B.icon._texture == "icon-12345", "loot test: banner with the item icon")
 drain()
 ResetCalls()
-ClearChat()
+ClearMessages()
 SlashCmdList.GUILDFOUNDFOREVER("test beute " .. blue)
-check(ChatContains("hat " .. blue .. " erbeutet") and CallCount("Banner") == 0, "loot test with a linked blue item: chat only, like real blue loot")
-ClearChat()
+check(Said("hat " .. blue .. " erbeutet") and CallCount("Banner") == 0, "loot test with a linked blue item: chat only, like real blue loot")
+ClearMessages()
 SlashCmdList.GUILDFOUNDFOREVER("test loot " .. link(7000, "Green Boots"))
-check(ChatContains("würde nicht angekündigt"), "loot test: a green item is not announced")
+check(Said("würde nicht angekündigt"), "loot test: a green item is not announced")
 BAGS = {}
 ResetCalls()
 SlashCmdList.GUILDFOUNDFOREVER("test loot")
 check(CallCount("Banner") == 1 and B.icon._texture == "Interface\\Icons\\INV_Sword_39" and B.title:GetText() == "EPISCHE BEUTE", "loot test without rare items: sample epic")
 drain()
 ResetCalls()
-ClearChat()
+ClearMessages()
 SlashCmdList.GUILDFOUNDFOREVER("test level")
 check(B:IsShown() and B.title:GetText() == "HÖCHSTSTUFE ERREICHT!" and B.badge:GetText() == tostring(MAX_LEVEL), "level test: max level banner")
-check(ChatContains("Im Gildenchat würde stehen: [Guild Found Forever] Level " .. MAX_LEVEL .. " erreicht!") and CallCount("SendChatMessage") == 0, "level test: guild chat only previewed")
+check(Said("Im Gildenchat würde stehen: [Guild Found Forever] Level " .. MAX_LEVEL .. " erreicht!") and CallCount("SendChatMessage") == 0, "level test: guild chat only previewed")
 drain()
 ResetCalls()
-ClearChat()
+ClearMessages()
 SlashCmdList.GUILDFOUNDFOREVER("test tod")
-check(B:IsShown() and B.title:GetText() == "GEFALLEN" and B.sub:GetText():find("Defias-Schläger", 1, true) ~= nil and ChatContains("ist gestorben: Level 20"), "death test: banner and chat line")
+check(B:IsShown() and B.title:GetText() == "GEFALLEN" and B.sub:GetText():find("Defias-Schläger", 1, true) ~= nil and Said("ist gestorben: Level 20"), "death test: banner and chat line")
 check(#ns.db.deathlog == logSize and CallCount("SendAddonMessage") == 0, "death test leaves the deathlog alone and sends nothing")
 drain()
 PLAYER_LEVEL = 5
-ClearChat()
+ClearMessages()
 SlashCmdList.GUILDFOUNDFOREVER("test death")
-check(ChatContains("Tode unter Level 10 blendet deine Einstellung aus"), "death test below the minimum level explains why nothing shows")
+check(Said("Tode unter Level 10 blendet deine Einstellung aus"), "death test below the minimum level explains why nothing shows")
 PLAYER_LEVEL = 20
 ns.db.notify.epic = false
 BAGS = { [0] = { { hyperlink = epic, quality = 4 } } }
-ClearChat()
+ClearMessages()
 SlashCmdList.GUILDFOUNDFOREVER("test loot")
-check(ChatContains("blenden diese Meldung aus"), "loot test with epic notifications off explains why nothing shows")
+check(Said("blenden diese Meldung aus"), "loot test with epic notifications off explains why nothing shows")
 ns.db.notify.epic = true
 BAGS = {}
-ClearChat()
+ClearMessages()
 SlashCmdList.GUILDFOUNDFOREVER("test quatsch")
-check(ChatContains("Aufruf: /gff test"), "unknown test prints the usage")
+check(Said("Aufruf: /gff test"), "unknown test prints the usage")
 ResetCalls()
 SlashCmdList.GUILDFOUNDFOREVER("test")
 check(LastAddonMessage():find("ANN\ttest", 1, true) == 1, "/gff test without anything still goes to the guild")
@@ -819,16 +846,16 @@ RunTimers()
 check(#PINS == 1, "back in the guild: the map works again")
 
 -- Test pin
-ClearChat()
+ClearMessages()
 SlashCmdList.GUILDFOUNDFOREVER("test karte")
-check(ChatContains("Testpunkt für 90 Sekunden") and #PINS == 2, "test pin next to the player")
+check(Said("Testpunkt für 90 Sekunden") and #PINS == 2, "test pin next to the player")
 local testPin
 for _, pin in ipairs(PINS) do if pin.name == "Testpunkt" then testPin = pin end end
 check(testPin and math.abs(testPin.posX - 0.53) < 1e-6, "test pin placed beside the player")
 PLAYER_POS = nil
-ClearChat()
+ClearMessages()
 SlashCmdList.GUILDFOUNDFOREVER("test map")
-check(ChatContains("keine Kartenposition"), "test pin without a map position explains why")
+check(Said("keine Kartenposition"), "test pin without a map position explains why")
 PLAYER_MAP = nil
 RunTickers()
 
@@ -901,7 +928,7 @@ check(A.GetData("magus-classicbetapve2").own, "own data shown to the player")
 -- Audit: member answers an officer ---------------------------------------------
 RANK_FLAGS = { [2] = { [11] = true }, [5] = { [11] = false } }
 ResetCalls()
-ClearChat()
+ClearMessages()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDREQ\t0", "WHISPER", "Freund-ClassicBetaPvE2")
 RunTimers()
 local sent = {}
@@ -914,7 +941,7 @@ check(endMessage and endMessage.args[2] == ("AUDEND\t%d\t%d"):format(total, GetS
 local longest = 0
 for _, c in ipairs(sent) do longest = math.max(longest, #c.args[2]) end
 check(longest <= 250 and #sent < total, "several records per message, every message short enough")
-check(ChatContains("Freund (Offizier) hat deine Audit-Daten abgerufen"), "member is told who fetched the data")
+check(Said("Freund (Offizier) hat deine Audit-Daten abgerufen"), "member is told who fetched the data")
 local answer = {}
 for _, c in ipairs(sent) do answer[#answer + 1] = c.args[2] end
 
@@ -943,7 +970,7 @@ check(CallCount("SendAddonMessage") == 0, "only officers can request")
 CAN_VIEW_OFFICER = true
 A.Request("Freund-ClassicBetaPvE2")
 check(LastAddonMessage() == "AUDREQ\t0" and A.GetRequestState("freund-classicbetapve2") == "running", "officer asks the member")
-ClearChat()
+ClearMessages()
 for _, message in ipairs(answer) do
 	FireEvent("CHAT_MSG_ADDON", "GFForever", message, "WHISPER", "Freund-ClassicBetaPvE2")
 end
@@ -956,7 +983,7 @@ end
 local snapshotTotal = 0
 for _ in pairs(distinctSnapshots) do snapshotTotal = snapshotTotal + 1 end
 check(cache and #cache.snapshots == snapshotTotal and #cache.trades == #records.trades and #cache.mail == #records.mail and #cache.log == #ns.char.log, "round trip: fetched data equals the member's records")
-check(A.GetRequestState("freund-classicbetapve2") == "done" and ChatContains("Audit-Daten von Freund empfangen"), "request finished")
+check(A.GetRequestState("freund-classicbetapve2") == "done" and Said("Audit-Daten von Freund empfangen"), "request finished")
 local cachedTrade = cache.trades[#cache.trades]
 check(cachedTrade.gi == "2589:20" and cachedTrade.ri == "5350:5" and cachedTrade.gm == 500 and cachedTrade.k == "g", "trade survives the transfer")
 check(cache.snapshots[#cache.snapshots].r == "out" and cache.snapshots[#cache.snapshots].m == 20000, "snapshot survives the transfer")
@@ -1171,10 +1198,11 @@ check(F.GetActivity(20).raid and F.GetActivity(20).size == 40 and not F.GetActiv
 local deadmines = F.GetActivity(1)
 check(F.GetLevelFit(deadmines, 20) == "fit" and F.GetLevelFit(deadmines, 16) == "low" and F.GetLevelFit(deadmines, 27) == "high" and F.GetLevelFit(deadmines, 26) == "fit", "level fit")
 check(F.FormatLevels(deadmines) == "17-26" and F.FormatLevels(F.GetActivity(20)) == "60", "level ranges formatted")
+ClearMessages()
 ClearChat()
 F.PrintActivities()
-check(ChatContains("5 Dungeons und Schlachtzüge (Quelle: Gruppensuche des Spiels)") and ChatContains("#1 Die Todesminen") and ChatContains("17-26")
-	and ChatContains("Schlachtzug, 40 Spieler") and ChatContains("Felder des ersten Eintrags") and ChatContains("maxLevelSuggestion=18"), "/gff dungeons prints list, source and fields")
+check(Said("5 Dungeons und Schlachtzüge (Quelle: Gruppensuche des Spiels)") and ChatContains("#1 Die Todesminen") and ChatContains("17-26")
+	and ChatContains("Schlachtzug, 40 Spieler") and Said("Felder des ersten Eintrags") and Said("maxLevelSuggestion=18"), "/gff dungeons prints list, source and fields")
 local savedLFGList = C_LFGList
 C_LFGList = nil
 F.PrintActivities()
@@ -1235,9 +1263,9 @@ F.RequestJoin(freundListing)
 local joinCall = LastCall("SendAddonMessage")
 check(joinCall and joinCall.args[2] == "LFGJOIN\tMAGE\t20\tD\t63" and joinCall.args[3] == "WHISPER" and joinCall.args[4] == "Freund-ClassicBetaPvE2"
 	and F.GetAction(freundListing) == "requested", "join request whispered to the leader")
-ClearChat()
+ClearMessages()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "LFGDECL", "WHISPER", "Freund-ClassicBetaPvE2")
-check(ChatContains("hat deine Anfrage abgelehnt") and F.GetAction(freundListing) == "request", "refusal shown, asking again possible")
+check(Said("hat deine Anfrage abgelehnt") and F.GetAction(freundListing) == "request", "refusal shown, asking again possible")
 F.RequestJoin(freundListing)
 Advance(61)
 F.GetListings()
@@ -1259,11 +1287,11 @@ lfgFrom("Crossy-OtherRealm", "LFGEND")
 
 -- Dungeon finder: someone asks to join our listing ------------------------------------------
 ResetCalls()
-ClearChat()
+ClearMessages()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "LFGJOIN\tWARRIOR\t21\tT\t73", "WHISPER", "Freund-ClassicBetaPvE2")
 local popup = LastCall("StaticPopup_Show")
 check(popup and popup.args[1] == "GUILDFOUNDFOREVER_JOIN_REQUEST" and popup.args[4] == "Freund-ClassicBetaPvE2" and popup.args[3] == "Stufe 21 Krieger, Schutz (Tank)"
-	and ChatContains("möchte deiner Gruppe beitreten"), "join request shows a dialog with level, class, spec and role")
+	and Said("möchte deiner Gruppe beitreten"), "join request shows a dialog with level, class, spec and role")
 StaticPopupDialogs.GUILDFOUNDFOREVER_JOIN_REQUEST.OnAccept(nil, popup.args[4])
 check(LastCall("InviteUnit") and LastCall("InviteUnit").args[1] == "Freund-ClassicBetaPvE2", "accepting invites the player")
 ResetCalls()
@@ -1307,11 +1335,11 @@ UNITS.party2 = { name = "Zwei", guild = true }
 UNITS.party3 = { name = "Drei", guild = true }
 UNITS.party4 = { name = "Vier", guild = true }
 GROUP = { "party1", "party2", "party3", "party4" }
-ClearChat()
+ClearMessages()
 ResetCalls()
 FireEvent("GROUP_ROSTER_UPDATE")
 RunTimers(1)
-check(F.GetOwnListing() == nil and LastAddonMessage() == "LFGEND" and ChatContains("Gruppe ist voll"), "a full group ends the listing")
+check(F.GetOwnListing() == nil and LastAddonMessage() == "LFGEND" and Said("Gruppe ist voll"), "a full group ends the listing")
 posted, postReason = F.Post({ 1 })
 check(not posted and postReason:find("schon voll"), "a full group cannot list for a dungeon")
 check(F.Post({ 20 }), "a full party can still look for a raid")
@@ -1322,10 +1350,10 @@ FireEvent("GROUP_ROSTER_UPDATE")
 RunTimers(1)
 check(F.Post({ 2 }), "leader lists the group")
 GROUP_LEADER = false
-ClearChat()
+ClearMessages()
 FireEvent("PARTY_LEADER_CHANGED")
 RunTimers(1)
-check(F.GetOwnListing() == nil and ChatContains("einer Gruppe beigetreten"), "no longer the leader: listing ends")
+check(F.GetOwnListing() == nil and Said("einer Gruppe beigetreten"), "no longer the leader: listing ends")
 posted, postReason = F.Post({ 2 })
 check(not posted and postReason:find("Nur der Gruppenleiter"), "only the leader can list the group")
 lfgFrom("Freund-ClassicBetaPvE2", "LFG\t0\t1\t0,0,2,0\t,WARRIOR,24,D,0;Magus,MAGE,20,D,63")
@@ -1381,18 +1409,18 @@ check(#SentMessages("LFG\t61\t1\t") == 1, "own listing repeated every minute")
 Advance(100)
 RunTickers()
 check(listingOf("freund-classicbetapve2") == nil and #F.GetListings() == 1, "listings without a sign of life for 150 seconds disappear")
-ClearChat()
+ClearMessages()
 Advance(1800)
 RunTickers()
-check(F.GetOwnListing() == nil and ChatContains("abgelaufen"), "own listing runs out after 30 minutes without changes")
+check(F.GetOwnListing() == nil and Said("abgelaufen"), "own listing runs out after 30 minutes without changes")
 ResetCalls()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "LFGJOIN\tWARRIOR\t21\tT\t73", "WHISPER", "Freund-ClassicBetaPvE2")
 check(LastAddonMessage() == "LFGGONE", "join request without a listing: told it is gone")
 lfgFrom("Freund-ClassicBetaPvE2", "LFG\t0\t1\t1,0,0,0\t,WARRIOR,24,T,73;Zwei,MAGE,20,D,0")
 F.RequestJoin(listingOf("freund-classicbetapve2"))
-ClearChat()
+ClearMessages()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "LFGGONE", "WHISPER", "Freund-ClassicBetaPvE2")
-check(listingOf("freund-classicbetapve2") == nil and ChatContains("gibt es nicht mehr"), "listing gone: removed and told")
+check(listingOf("freund-classicbetapve2") == nil and Said("gibt es nicht mehr"), "listing gone: removed and told")
 
 -- Dungeon finder: window ------------------------------------------------------------------------
 lfgFrom("Freund-ClassicBetaPvE2", "LFG\t300\t1,3\t1,1,1,0\t,WARRIOR,24,T,73;Heiler,PRIEST,22,H,257;Crossy-OtherRealm,ROGUE,23,D,0")
@@ -1436,54 +1464,54 @@ ResetCalls()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "PING", "GUILD", "Freund-ClassicBetaPvE2")
 local pong = LastCall("SendAddonMessage")
 check(pong and pong.args[2] == "PONG\t0.7.0" and pong.args[3] == "WHISPER", "PING answered with PONG")
-ClearChat()
+ClearMessages()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "HELLO\t0.8.0", "GUILD", "Freund-ClassicBetaPvE2")
-check(ChatContains("0.8.0"), "newer version announced")
+check(Said("0.8.0"), "newer version announced")
 local V = ns.Comm.VersionNumber
 check(V("0.7.0") == 700 and V("v1.2.3") == 10203 and V("0.7.0-beta") == 700 and V("1.0") == 10000 and V("dev") == 0 and V(nil) == 0, "version numbers from release tags")
 ResetCalls()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "PING", "GUILD", "Magus-ClassicBetaPvE2")
 check(CallCount("SendAddonMessage") == 0, "own messages ignored")
-ClearChat()
+ClearMessages()
 ns.Comm.StartCheck()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "PONG\t0.6.0", "WHISPER", "Freund-ClassicBetaPvE2")
 RunTimers()
-check(ChatContains("Mit Addon (2): Magus (0.7.0, du), Freund (0.6.0)"), "check lists the player first, then the members who answered")
-check(ChatContains("Online ohne Addon (1): Crossy"), "check lists online members without addon")
+check(Said("Mit Addon (2): Magus (0.7.0, du), Freund (0.6.0)"), "check lists the player first, then the members who answered")
+check(Said("Online ohne Addon (1): Crossy"), "check lists online members without addon")
 
 -- Bug report 26.09.2026: "Gilde prüfen" said messages could not be sent. In 12.x
 -- AreOutgoingAddonChatMessagesRestricted() reports "restricted" although sending works.
 RESTRICTED_CHECK = true
 ResetCalls()
-ClearChat()
+ClearMessages()
 ns.Comm.StartCheck()
-check(LastAddonMessage() == "PING" and ChatContains("Frage Gildenmitglieder ab"), "guild check sends although the restriction check says restricted")
+check(LastAddonMessage() == "PING" and Said("Frage Gildenmitglieder ab"), "guild check sends although the restriction check says restricted")
 RunTimers()
 ResetCalls()
 FireEvent("CHAT_MSG_LOOT", "You receive loot: " .. link(5500, "Blue Boots") .. ".")
 check(LastAddonMessage():find("ANN\trare", 1, true) == 1, "announcements go out as well")
 RESTRICTED_CHECK = false
 SEND_RESULT = 3
-ClearChat()
+ClearMessages()
 ns.Comm.StartCheck()
-check(ChatContains("zu viele auf einmal"), "throttled send explained")
+check(Said("zu viele auf einmal"), "throttled send explained")
 SEND_RESULT = 11
-ClearChat()
+ClearMessages()
 ns.Comm.StartCheck()
-check(ChatContains("gerade gesperrt"), "lockdown explained")
+check(Said("gerade gesperrt"), "lockdown explained")
 SEND_RESULT = 42
-ClearChat()
+ClearMessages()
 ns.Comm.StartCheck()
-check(ChatContains("(Code 42)"), "unknown result code shown")
+check(Said("(Code 42)"), "unknown result code shown")
 SEND_RESULT = nil
 
 -- Window and slash commands ------------------------------------------------
 ns.UI.Toggle()
 check(GuildFoundForeverFrame and GuildFoundForeverFrame:IsShown(), "window opens (officer, guild rules)")
 check(FindWidgetByText("Button", "In Gildeninfo veröffentlichen") and not FindWidgetByText("Button", "Aus Gildeninfo entfernen"), "publish button only, no remove button")
-ClearChat()
+ClearMessages()
 SlashCmdList.GUILDFOUNDFOREVER("unpublish")
-check(ChatContains("Befehle:") and not ChatContains("/gff unpublish"), "/gff unpublish is gone and not in the help")
+check(Said("Befehle:") and not Said("/gff unpublish"), "/gff unpublish is gone and not in the help")
 CAN_EDIT = false
 ns.UI.Refresh()
 GUILD_INFO_TEXT = "Willkommen"

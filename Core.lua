@@ -10,7 +10,6 @@ if ns.version:find("^@") then
 	ns.version = "dev"
 end
 
-local CHAT_PREFIX = "|cff66bbff" .. ns.title .. "|r: "
 local MAX_LOG_ENTRIES = 200
 
 ns.defaults = {
@@ -89,30 +88,47 @@ local function Format(msg, ...)
 	return msg
 end
 
-function ns.Print(msg, ...)
-	DEFAULT_CHAT_FRAME:AddMessage(CHAT_PREFIX .. Format(msg, ...))
+-- Messages go to the message window (Messages.lua), never to the chat. The first argument is the
+-- category: blocked, guild, audit, finder or system. Returns category and formatted text.
+local function Categorize(category, msg, ...)
+	if ns.Messages.IsCategory(category) then
+		return category, Format(msg, ...)
+	end
+	-- Old form ns.Print(msg, ...) while the modules move over; removed once every call has a category.
+	ns.Messages.legacyCalls = ns.Messages.legacyCalls + 1
+	return "system", Format(category, msg, ...)
+end
+
+function ns.Print(...)
+	local category, msg = Categorize(...)
+	ns.Messages.Add(category, msg)
 end
 
 local lastWarning, lastWarningTime = nil, 0
 
--- Red chat line plus the error text in the middle of the screen. Identical warnings within 2 seconds are shown once.
-function ns.Warn(msg, ...)
-	msg = Format(msg, ...)
+-- Message plus the red text in the middle of the screen; identical warnings within 2 seconds count
+-- once. Returns false for such a repeat.
+local function ShowWarning(category, msg)
 	local now = GetTime()
 	if msg == lastWarning and now - lastWarningTime < 2 then
-		return
+		return false
 	end
 	lastWarning, lastWarningTime = msg, now
-	DEFAULT_CHAT_FRAME:AddMessage(CHAT_PREFIX .. "|cffff5555" .. msg .. "|r")
+	ns.Messages.Add(category, msg)
 	if UIErrorsFrame then
 		UIErrorsFrame:AddMessage(msg, 1, 0.25, 0.25)
 	end
+	return true
+end
+
+function ns.Warn(...)
+	return ShowWarning(Categorize(...))
 end
 
 -- Warning plus raid warning and sound, for things that are about to happen to the player.
-function ns.Alert(msg, ...)
-	msg = Format(msg, ...)
-	ns.Warn(msg)
+function ns.Alert(...)
+	local category, msg = Categorize(...)
+	ShowWarning(category, msg)
 	if RaidNotice_AddMessage and RaidWarningFrame and ChatTypeInfo then
 		RaidNotice_AddMessage(RaidWarningFrame, msg, ChatTypeInfo["RAID_WARNING"])
 	end
@@ -121,9 +137,25 @@ function ns.Alert(msg, ...)
 	end
 end
 
+-- A message with marks: opts.important, opts.silent, opts.link (see Messages.Add). No formatting.
+function ns.Notify(category, text, opts)
+	return ns.Messages.Add(category, text, opts)
+end
+
+-- Longer output (status, help, lists): one message with a title, the lines as its details, shown
+-- in the message window right away.
+function ns.Report(category, title, lines, opts)
+	opts = opts or {}
+	local entry = ns.Messages.Add(category, title, { details = table.concat(lines, "\n"), important = opts.important })
+	if ns.MessageWindow then
+		ns.MessageWindow.Show(nil, entry)
+	end
+	return entry
+end
+
 function ns.Debug(msg, ...)
 	if ns.db and ns.db.debug then
-		DEFAULT_CHAT_FRAME:AddMessage(CHAT_PREFIX .. "|cff999999" .. Format(msg, ...) .. "|r")
+		ns.Messages.Add("system", "|cff999999" .. Format(msg, ...) .. "|r", { silent = true })
 	end
 end
 

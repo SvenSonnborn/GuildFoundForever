@@ -156,6 +156,7 @@ end
 
 UIParent = NewWidget("Frame", "UIParent")
 UIErrorsFrame = NewWidget("Frame", "UIErrorsFrame")
+function UIErrorsFrame:AddMessage(msg) record("UIError", msg) end
 RaidWarningFrame = NewWidget("Frame", "RaidWarningFrame")
 GameTooltip = NewWidget("GameTooltip", "GameTooltip")
 DEFAULT_CHAT_FRAME = { AddMessage = function(_, msg) CHAT[#CHAT + 1] = msg end }
