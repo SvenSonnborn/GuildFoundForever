@@ -35,6 +35,7 @@
 
 ## Guild features
 
+- **Messages window instead of chat:** nothing from the addon clutters your chat. Every message goes to a window in the style of the banners, with filters, details and item tooltips; a small counter button shows what you have not read yet, and important messages show a short hint.
 - **Announcements:** max level, deaths, and epic loot, rare loot and recipes once a member has looted them.
   - They show as chat lines and as banners: a gold banner for max level, a dark one with a skull for deaths, and the item icon for loot.
   - Optionally, they are also posted to guild chat for members without the addon.
@@ -65,10 +66,11 @@ Everything goes through addon messages to your own guild only (the dungeon finde
 |---|---|
 | `/gff` | open or close the window |
 | `/gff settings` | announcements and banners |
+| `/gff msg` | open or close the messages |
 | `/gff status` | the rules in force |
 | `/gff check` | who in the guild runs Guild Found Forever |
-| `/gff log [n]` | your last blocked actions |
-| `/gff deaths [n]` | the last deaths in the guild |
+| `/gff log` | the blocked actions in the messages |
+| `/gff deaths` | open the deathlog |
 | `/gff audit [name]` | open the audit |
 | `/gff dungeons` | the dungeons and raids the game delivers, with levels |
 | `/gff test` | send a test announcement to the guild |
@@ -127,6 +129,7 @@ Inspired by [GuildFound](https://www.curseforge.com/wow/addons/guildfound) by Lo
 
 ### Gildenfunktionen
 
+- **Meldungen statt Chat:** Das Addon müllt deinen Chat nicht mehr zu. Alle Meldungen stehen in einem Fenster im Stil der Banner, mit Filtern, Details und Item-Tooltips; ein kleiner Zähler-Knopf zeigt, was du noch nicht gelesen hast, und wichtige Meldungen blenden kurz einen Hinweis ein.
 - **Ankündigungen:** Höchstlevel, Tode sowie epische Beute, seltene Beute und Rezepte, sobald ein Mitglied sie gelootet hat.
   - Sie erscheinen als Chatzeilen und als Banner: golden beim Höchstlevel, düster mit Totenkopf beim Tod, mit Item-Symbol bei Beute.
   - Auf Wunsch gehen sie zusätzlich in den Gildenchat, für Mitglieder ohne Addon.
@@ -157,10 +160,11 @@ Alles geht per Addon-Nachricht nur an eure eigene Gilde (die Dungeonsuche nutzt 
 |---|---|
 | `/gff` | Fenster öffnen oder schließen |
 | `/gff settings` | Ankündigungen und Banner |
+| `/gff msg` | Meldungen öffnen oder schließen |
 | `/gff status` | die geltenden Regeln |
 | `/gff check` | wer in der Gilde Guild Found Forever nutzt |
-| `/gff log [n]` | eure zuletzt blockierten Aktionen |
-| `/gff deaths [n]` | die letzten Tode in der Gilde |
+| `/gff log` | blockierte Aktionen in den Meldungen |
+| `/gff deaths` | Deathlog öffnen |
 | `/gff audit [Name]` | das Audit öffnen |
 | `/gff dungeons` | Dungeons und Schlachtzüge aus dem Spiel, mit Stufen |
 | `/gff test` | Testmeldung an die Gilde schicken |

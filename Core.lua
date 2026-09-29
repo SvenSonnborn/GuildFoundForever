@@ -82,6 +82,9 @@ function ns.IsActive()
 end
 
 local function Format(msg, ...)
+	if msg == nil then
+		return nil
+	end
 	if select("#", ...) > 0 then
 		return msg:format(...)
 	end
@@ -91,12 +94,7 @@ end
 -- Messages go to the message window (Messages.lua), never to the chat. The first argument is the
 -- category: blocked, guild, audit, finder or system. Returns category and formatted text.
 local function Categorize(category, msg, ...)
-	if ns.Messages.IsCategory(category) then
-		return category, Format(msg, ...)
-	end
-	-- Old form ns.Print(msg, ...) while the modules move over; removed once every call has a category.
-	ns.Messages.legacyCalls = ns.Messages.legacyCalls + 1
-	return "system", Format(category, msg, ...)
+	return category, Format(msg, ...)
 end
 
 function ns.Print(...)

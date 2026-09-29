@@ -19,9 +19,6 @@ for _, category in ipairs(Messages.CATEGORIES) do
 	byKey[category.key] = category
 end
 
--- Calls of ns.Print/Warn/Alert without a category while the modules move over (Core.lua).
-Messages.legacyCalls = 0
-
 local pending = {} -- messages from before the saved variables are loaded
 
 function Messages.IsCategory(key)

@@ -161,7 +161,8 @@ function UIErrorsFrame:AddMessage(msg) record("UIError", msg) end
 RaidWarningFrame = NewWidget("Frame", "RaidWarningFrame")
 GameTooltip = NewWidget("GameTooltip", "GameTooltip")
 function GameTooltip:SetHyperlink(link) record("SetHyperlink", link) end
-DEFAULT_CHAT_FRAME = { AddMessage = function(_, msg) CHAT[#CHAT + 1] = msg end }
+CHAT_TOTAL = 0 -- every chat line of the whole run; ClearChat does not reset it
+DEFAULT_CHAT_FRAME = { AddMessage = function(_, msg) CHAT[#CHAT + 1] = msg CHAT_TOTAL = CHAT_TOTAL + 1 end }
 ChatTypeInfo = { RAID_WARNING = {} }
 SOUNDKIT = { RAID_WARNING = 8959 }
 UISpecialFrames = {}

@@ -93,9 +93,10 @@ ns.Debug("Spur %d", 7)
 ns.db.debug = false
 ns.Debug("Nicht da")
 check(Said("Spur 7", "system") and not Said("Nicht da") and M.GetList()[1].r, "debug only when switched on, as a silent message")
-local legacyBefore = M.legacyCalls
-ns.Print("Alte %s", "Form")
-check(Said("Alte Form", "system") and M.legacyCalls == legacyBefore + 1, "calls without a category land under system for now")
+local errorsBeforeLegacy = #ERRORS
+ns.Print("Alte Form")
+check(#ERRORS == errorsBeforeLegacy + 1, "a call without a category is an error now")
+table.remove(ERRORS) -- expected
 ClearMessages()
 ResetCalls()
 
@@ -1650,6 +1651,8 @@ for _, command in ipairs({ "status", "log", "help", "debug", "debug", "" }) do
 end
 RunTimers()
 check(#ns.char.log > 0, "blocked actions were logged")
+
+check(CHAT_TOTAL == 0, "nothing went to the chat")
 
 check(#ERRORS == 0, "no errors inside event handlers" .. (#ERRORS > 0 and (": " .. table.concat(ERRORS, " | ")) or ""))
 

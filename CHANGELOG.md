@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### New
+- **Messages window instead of chat:** the addon writes nothing to the chat any more. Every message goes to a window in the style of the banners, with filters (Blocked, Guild, Audit, Dungeon finder, System), time stamps, details and item tooltips. The last 300 messages stay after `/reload`.
+- **Counter button** below the minimap with the number of unread messages; important ones (join requests, audit fetched, rules changed, check result, newer version) show a short hint next to it. Move it by dragging, switch it off in the settings.
+- `/gff msg` opens the messages, `/gff log` shows the blocked actions there, `/gff deaths` opens the deathlog tab. `/gff status`, `/gff help`, `/gff dungeons` and **Check guild** open their result in the window.
+- The red text on screen for blocked actions, raid warnings, banners and the join request dialog stay as they were.
+
 ## 0.7.1-beta
 
 ### Fixes

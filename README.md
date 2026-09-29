@@ -186,6 +186,7 @@ Wunsch vom 26.09.2026: Gruppen melden sich an, um Mitglieder zu suchen. Was gesu
 - **Gilde prüfen:** zeigt, wer online das Addon nutzt (mit Version) und wer nicht. Neuere Versionen im Umlauf werden gemeldet.
 - **Log:** blockierte Aktionen werden pro Charakter gespeichert (maximal 200 Einträge).
 - **Oberfläche:**
+  - **Meldungen statt Chat** (seit 0.8.0): Das Addon schreibt nichts mehr in den Chat. Alle Meldungen stehen im Meldungsfenster (Stil der Banner) mit den Filtern Blockiert, Gilde, Audit, Dungeonsuche und System, Uhrzeit, Detailbereich und Item-Tooltips; die letzten 300 bleiben pro Charakter erhalten. Ein verschiebbarer Knopf unter der Minikarte zählt die ungelesenen, wichtige Meldungen blenden daneben 4 Sekunden einen Hinweis ein. Roter Bildschirmtext, Raid-Warnungen, Banner und der Beitrittsdialog bleiben. Spezifikation: `docs/specs/2026-09-30-meldungsfenster.md`.
   - Fenster über `/gff` mit den Tabs „Regeln“, „Berufe“ und „Dungeonsuche“ (beide nur, wenn die Gildenregel an ist), „Deathlog“ und „Audit“.
   - Im Tab „Regeln“ stehen Audit, Berufe und Dungeonsuche zusammen unter „Gildenfunktionen“.
   - Das Zahnrad in der Titelleiste neben dem X öffnet die Einstellungen: Gildenchat-Regeln, eigene Benachrichtigungen, Banner, Testmeldung und Banner-Vorschau. Nochmal klicken führt zum letzten Tab zurück.
@@ -202,8 +203,9 @@ Ohne Gilde sind alle Regeln und Ankündigungen inaktiv.
 | `/gff settings` | Einstellungen öffnen (wie das Zahnrad) |
 | `/gff status` | aktive Regeln anzeigen |
 | `/gff check` | prüfen, wer in der Gilde das Addon nutzt |
-| `/gff log [n]` | die letzten n blockierten Aktionen (Standard 15) |
-| `/gff deaths [n]` | die letzten n Tode in der Gilde (Standard 10) |
+| `/gff msg` | Meldungsfenster öffnen/schließen (auch `/gff messages`) |
+| `/gff log` | Meldungsfenster mit dem Filter „Blockiert“ |
+| `/gff deaths` | Tab „Deathlog“ öffnen |
 | `/gff audit [Name]` | Tab „Audit“ öffnen, optional direkt bei einem Mitglied |
 | `/gff dungeons` | Dungeons und Schlachtzüge aus dem Spiel mit Stufen und Quelle im Chat auflisten |
 | `/gff test` | Testmeldung an die Gilde schicken |
@@ -289,6 +291,7 @@ docs/curseforge.md       Projektbeschreibung für CurseForge; nicht in der ZIP
 tests/                   run.ps1, stubs.lua (nachgebaute WoW-API), tests.lua; nicht in der ZIP
 Locales.lua              Texte enUS (Standard) und deDE
 Core.lua                 Namespace, Events, Callbacks, SavedVariables, Log, Slash-Befehle
+Messages.lua             Meldungsspeicher: Arten, ungelesen, höchstens 300, Übernahme des alten Logs
 Data.lua                 Item- und Zauber-IDs: Essen/Wasser, Gesundheitssteine, Portale, Teleports
 Rules.lua                Aktive Regeln (Gildeninfo vor lokalen Einstellungen), Partnergilden-Liste
 Guild.lua                Mitgliederliste, Namensabgleich, Partner-Erkennung, Tags in der Gildeninfo
@@ -305,10 +308,11 @@ Modules/Professions.lua  Berufe: eigene Skills und Rezepte lesen, Verzeichnis de
 Modules/Finder.lua       Dungeonsuche: Dungeons und Stufen aus dem Spiel, Gruppe und Rollen lesen, Anmeldungen, Beitrittsanfragen
 MapPin.xml               Vorlage für die Pins der Gildenkarte (Verhalten in GuildMap.lua)
 Banner.lua               Banner für Ankündigungen: Stile Beute, Tod, Höchstlevel, Test; Warteschlange
+MessageWindow.lua        Meldungsfenster, Zähler-Knopf und Hinweis im Stil der Banner
 UI.lua                   Fenster mit Tabs, Einstellungs-Eintrag, Addon-Menü an der Minimap
 ```
 
-- Interne Nachrichten zwischen den Modulen: `INIT`, `LOGIN`, `RULES_CHANGED`, `ROSTER_UPDATED`, `DEATHLOG_UPDATED`, `AUDIT_UPDATED`, `PROFESSIONS_UPDATED`, `FINDER_UPDATED` (siehe `ns.RegisterCallback` / `ns.Fire`).
+- Interne Nachrichten zwischen den Modulen: `INIT`, `LOGIN`, `RULES_CHANGED`, `ROSTER_UPDATED`, `DEATHLOG_UPDATED`, `AUDIT_UPDATED`, `PROFESSIONS_UPDATED`, `FINDER_UPDATED`, `MESSAGES_UPDATED`, `SETTINGS_CHANGED` (siehe `ns.RegisterCallback` / `ns.Fire`).
 - Addon-Nachrichten (Präfix `GFForever`, Felder mit Tab getrennt):
 
   | Nachricht | Kanal | Inhalt |
@@ -405,6 +409,15 @@ Neu in 0.2.0 (in der Beta bis Level 20/30 testbar):
   - Handel und Gruppe mit deren Mitgliedern ohne Einschränkung
   - nach einmaligem Anvisieren ist auch Post erlaubt
 - [ ] Portale: erst ab Level 40, in der Beta nicht testbar
+
+Neu in 0.8.0 (Meldungsfenster):
+
+- [ ] Nach `/reload`: im Chat steht nichts vom Addon; der Knopf sitzt unter der Minikarte, lässt sich ziehen und bleibt nach `/reload` dort
+- [ ] Eine blockierte Aktion (z. B. Auktionshaus): roter Bildschirmtext wie bisher, im Fenster unter „Blockiert“
+- [ ] `/gff check`: das Fenster öffnet sich mit dem Ergebnis; Klick zeigt beide Listen im Detailbereich
+- [ ] Wichtige Meldung bei geschlossenem Fenster (z. B. Beitrittsanfrage mit zweitem Spieler): Hinweis neben dem Knopf, Knopf leuchtet; Klick auf den Hinweis öffnet das Fenster bei dieser Meldung
+- [ ] Symbole der Arten sichtbar, sonst farbige Quadrate; Item-Tooltip bei Beute-Meldungen
+- [ ] Einstellung „Meldungs-Knopf anzeigen“ blendet den Knopf aus und wieder ein
 
 Neu in 0.7.0 (Dungeonsuche):
 
@@ -573,7 +586,7 @@ Offen:
 ### Laufend
 
 - [x] Test-Umgebung im Projekt: `.\tests\run.ps1` (mit `-All` jede Prüfung einzeln).
-  - Besteht aus MoonSharp als Lua-Interpreter, einer nachgebauten WoW-API (`tests/stubs.lua`) und 367 Prüfungen (`tests/tests.lua`).
+  - Besteht aus MoonSharp als Lua-Interpreter, einer nachgebauten WoW-API (`tests/stubs.lua`) und 422 Prüfungen (`tests/tests.lua`).
   - Die nachgebauten Fenster verhalten sich wie echte: Unbekannte Methoden (Großbuchstabe am Anfang) tun nichts, eigene Felder sind `nil`, bis sie gesetzt werden.
   - MoonSharp 2.0.0 lädt das Skript beim ersten Lauf von NuGet nach `tests/.moonsharp`; der Ordner gehört nicht ins Repository.
   - Das Skript endet mit Code 1, wenn eine Prüfung fehlschlägt.
