@@ -412,7 +412,7 @@ Neu in 0.2.0 (in der Beta bis Level 20/30 testbar):
   - nach einmaligem Anvisieren ist auch Post erlaubt
 - [ ] Portale: erst ab Level 40, in der Beta nicht testbar
 
-Neu in 0.8.0 (Meldungsfenster):
+Neu in 0.8.0 (Meldungsfenster und Minimap-Icon):
 
 - [ ] Nach `/reload`: im Chat steht nichts vom Addon; das Minimap-Icon sitzt am Kartenrand (links, etwas unter der Mitte), lässt sich am Rand entlang ziehen und bleibt nach `/reload` dort
 - [ ] Minimap-Icon: Rahmen und Wappen sehen aus wie bei anderen Minimap-Icons; Linksklick öffnet/schließt das Fenster, Rechtsklick die Meldungen

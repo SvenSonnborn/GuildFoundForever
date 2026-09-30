@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.0-beta
 
 ### New
 - **Messages window instead of chat:** the addon writes nothing to the chat any more. Every message goes to a window in the style of the banners, with filters (Blocked, Guild, Audit, Dungeon finder, System), time stamps, details and item tooltips. The last 300 messages stay after `/reload`.
