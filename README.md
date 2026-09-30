@@ -186,10 +186,11 @@ Wunsch vom 26.09.2026: Gruppen melden sich an, um Mitglieder zu suchen. Was gesu
 - **Gilde prüfen:** zeigt, wer online das Addon nutzt (mit Version) und wer nicht. Neuere Versionen im Umlauf werden gemeldet.
 - **Log:** blockierte Aktionen werden pro Charakter gespeichert (maximal 200 Einträge).
 - **Oberfläche:**
-  - **Meldungen statt Chat** (seit 0.8.0): Das Addon schreibt nichts mehr in den Chat. Alle Meldungen stehen im Meldungsfenster (Stil der Banner) mit den Filtern Blockiert, Gilde, Audit, Dungeonsuche und System, Uhrzeit, Detailbereich und Item-Tooltips; die letzten 300 bleiben pro Charakter erhalten. Ein verschiebbarer Knopf unter der Minikarte zählt die ungelesenen, wichtige Meldungen blenden daneben 4 Sekunden einen Hinweis ein. Roter Bildschirmtext, Raid-Warnungen, Banner und der Beitrittsdialog bleiben. Spezifikation: `docs/specs/2026-09-30-meldungsfenster.md`.
+  - **Meldungen statt Chat** (seit 0.8.0): Das Addon schreibt nichts mehr in den Chat. Alle Meldungen stehen im Meldungsfenster (Stil der Banner) mit den Filtern Blockiert, Gilde, Audit, Dungeonsuche und System, Uhrzeit, Detailbereich und Item-Tooltips; die letzten 300 bleiben pro Charakter erhalten. Das Minimap-Icon zählt die ungelesenen, wichtige Meldungen blenden daneben 4 Sekunden einen Hinweis ein. Roter Bildschirmtext, Raid-Warnungen, Banner und der Beitrittsdialog bleiben. Spezifikation: `docs/specs/2026-09-30-meldungsfenster.md`.
   - Fenster über `/gff` mit den Tabs „Regeln“, „Berufe“ und „Dungeonsuche“ (beide nur, wenn die Gildenregel an ist), „Deathlog“ und „Audit“.
   - Im Tab „Regeln“ stehen Audit, Berufe und Dungeonsuche zusammen unter „Gildenfunktionen“.
   - Das Zahnrad in der Titelleiste neben dem X öffnet die Einstellungen: Gildenchat-Regeln, eigene Benachrichtigungen, Banner, Testmeldung und Banner-Vorschau. Nochmal klicken führt zum letzten Tab zurück.
+  - **Minimap-Icon** (seit 0.8.0): Linksklick öffnet das Fenster, Rechtsklick die Meldungen; am Kartenrand verschiebbar, in den Einstellungen abschaltbar.
   - Dazu ein Eintrag in Blizzards Einstellungen und im Addon-Menü an der Minimap.
   - Texte auf Deutsch und Englisch.
 
@@ -308,7 +309,8 @@ Modules/Professions.lua  Berufe: eigene Skills und Rezepte lesen, Verzeichnis de
 Modules/Finder.lua       Dungeonsuche: Dungeons und Stufen aus dem Spiel, Gruppe und Rollen lesen, Anmeldungen, Beitrittsanfragen
 MapPin.xml               Vorlage für die Pins der Gildenkarte (Verhalten in GuildMap.lua)
 Banner.lua               Banner für Ankündigungen: Stile Beute, Tod, Höchstlevel, Test; Warteschlange
-MessageWindow.lua        Meldungsfenster, Zähler-Knopf und Hinweis im Stil der Banner
+MessageWindow.lua        Meldungsfenster und Hinweis im Stil der Banner
+MinimapButton.lua        Minimap-Icon: Klicks, Zähler, Leuchten, Ziehen am Kartenrand
 UI.lua                   Fenster mit Tabs, Einstellungs-Eintrag, Addon-Menü an der Minimap
 ```
 
@@ -412,12 +414,13 @@ Neu in 0.2.0 (in der Beta bis Level 20/30 testbar):
 
 Neu in 0.8.0 (Meldungsfenster):
 
-- [ ] Nach `/reload`: im Chat steht nichts vom Addon; der Knopf sitzt unter der Minikarte, lässt sich ziehen und bleibt nach `/reload` dort
+- [ ] Nach `/reload`: im Chat steht nichts vom Addon; das Minimap-Icon sitzt am Kartenrand (links, etwas unter der Mitte), lässt sich am Rand entlang ziehen und bleibt nach `/reload` dort
+- [ ] Minimap-Icon: Rahmen und Wappen sehen aus wie bei anderen Minimap-Icons; Linksklick öffnet/schließt das Fenster, Rechtsklick die Meldungen
 - [ ] Eine blockierte Aktion (z. B. Auktionshaus): roter Bildschirmtext wie bisher, im Fenster unter „Blockiert“
 - [ ] `/gff check`: das Fenster öffnet sich mit dem Ergebnis; Klick zeigt beide Listen im Detailbereich
-- [ ] Wichtige Meldung bei geschlossenem Fenster (z. B. Beitrittsanfrage mit zweitem Spieler): Hinweis neben dem Knopf, Knopf leuchtet; Klick auf den Hinweis öffnet das Fenster bei dieser Meldung
+- [ ] Wichtige Meldung bei geschlossenem Fenster (z. B. Beitrittsanfrage mit zweitem Spieler): Hinweis neben dem Minimap-Icon, Icon leuchtet; Klick auf den Hinweis öffnet das Fenster bei dieser Meldung
 - [ ] Symbole der Arten sichtbar, sonst farbige Quadrate; Item-Tooltip bei Beute-Meldungen
-- [ ] Einstellung „Meldungs-Knopf anzeigen“ blendet den Knopf aus und wieder ein
+- [ ] Einstellung „Minimap-Icon anzeigen“ blendet das Icon aus und wieder ein
 
 Neu in 0.7.0 (Dungeonsuche):
 

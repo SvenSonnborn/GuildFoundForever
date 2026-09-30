@@ -34,4 +34,5 @@ Modules\Professions.lua
 Modules\Finder.lua
 Banner.lua
 MessageWindow.lua
+MinimapButton.lua
 UI.lua

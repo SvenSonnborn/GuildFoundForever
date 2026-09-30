@@ -4,11 +4,11 @@ Stand: 30.09.2026 · für Version 0.8.0-beta · Zweig `feature/message-window`
 
 ## Ziel
 
-Das Addon schreibt nichts mehr in den normalen Chat. Alle Meldungen landen in einem eigenen Meldungsfenster im Stil der Banner. Ein kleiner Zähler-Knopf zeigt ungelesene Meldungen, wichtige Meldungen blenden kurz einen Hinweis ein.
+Das Addon schreibt nichts mehr in den normalen Chat. Alle Meldungen landen in einem eigenen Meldungsfenster im Stil der Banner. Ein Zähler am Minimap-Icon zeigt ungelesene Meldungen, wichtige Meldungen blenden kurz einen Hinweis ein.
 
 Festgelegt mit dem Nutzer am 30.09.2026:
 - Im Chat steht danach nichts mehr vom Addon.
-- Neue Meldungen: Zähler-Knopf plus kurzer Hinweis bei wichtigen Meldungen.
+- Neue Meldungen: Zähler-Knopf plus kurzer Hinweis bei wichtigen Meldungen. Später am selben Tag: Der Zähler sitzt am neuen Minimap-Icon, das den Knopf ersetzt.
 - Eine Liste mit Filtern nach Art.
 - Die letzten 300 Meldungen bleiben pro Charakter über `/reload` und neues Einloggen erhalten.
 - Stil der Banner: dunkler, leicht durchsichtiger Hintergrund, feiner goldener Rahmen, goldene Überschrift.
@@ -38,7 +38,7 @@ Unverändert wie heute:
 
 ## Zuordnung der Meldungen
 
-`w` = Warnung (`ns.Warn`), `a` = Alarm (`ns.Alert`), sonst Info. **wichtig** = Hinweis neben dem Knopf. **still** = zählt nicht als ungelesen.
+`w` = Warnung (`ns.Warn`), `a` = Alarm (`ns.Alert`), sonst Info. **wichtig** = Hinweis neben dem Minimap-Icon. **still** = zählt nicht als ungelesen.
 
 | Stelle | Meldung | Art | Merkmale |
 |---|---|---|---|
@@ -134,17 +134,17 @@ Neue Datei, lädt nach `Banner.lua` und vor `UI.lua`. Hört nur auf `MESSAGES_UP
 - Fuß: Knopf „Leeren“ (leert die Meldungen des aktiven Filters).
 - Öffnen markiert alles als gelesen; die Hervorhebung der vorher ungelesenen Zeilen bleibt, bis das Fenster geschlossen wird. Neue Meldungen bei offenem Fenster erscheinen sofort, hervorgehoben wie ungelesene, und gelten als gelesen; der Zähler steigt dabei nicht.
 
-**Zähler-Knopf:**
-- Etwa 36 × 36, Symbol des Addons (Gildenwappen) mit goldenem Rahmen.
-- Standardposition rechts oben unter der Minikarte: `TOPRIGHT` von `UIParent`, Versatz (-40, -240). Mit gedrückter linker Maustaste verschiebbar, Position kontoweit gespeichert.
-- Zähler oben rechts als Kreis mit der Zahl ungelesener Meldungen, nur wenn es welche gibt.
-- Sanftes Leuchten des Rahmens, solange eine wichtige Meldung ungelesen ist.
-- Klick öffnet oder schließt das Fenster. Tooltip: Name, Zahl ungelesener Meldungen, Klicken und Ziehen.
-- Einstellung „Meldungs-Knopf anzeigen“ (persönlich, Standard an) auf der Einstellungsseite (Zahnrad).
+**Minimap-Icon** (ersetzt seit dem Wunsch vom 30.09.2026 den frei verschiebbaren Zähler-Knopf; `MinimapButton.lua`):
+- Runder Knopf am Rand der Minikarte (31 × 31, Rahmen wie andere Minimap-Icons), Symbol des Addons (Gildenwappen). Fehlen die Minimap-Texturen im Client, goldener Rahmen.
+- Standardposition links, etwas unter der Mitte (200°). Mit gedrückter linker Maustaste am Kartenrand entlang verschiebbar, Winkel kontoweit gespeichert.
+- Zähler oben rechts mit der Zahl ungelesener Meldungen (ab 100 „99+“), nur wenn es welche gibt.
+- Sanftes, rundes Leuchten, solange eine wichtige Meldung ungelesen ist.
+- Linksklick öffnet oder schließt das Addon-Fenster, Rechtsklick die Meldungen. Tooltip: Name, Zahl ungelesener Meldungen, Klicks und Ziehen.
+- Einstellung „Minimap-Icon anzeigen“ (persönlich, Standard an) auf der Einstellungsseite (Zahnrad).
 
 **Hinweis:**
 - Nur bei wichtigen Meldungen und nur, wenn das Fenster zu ist.
-- Schmaler Streifen im Stil der Banner links neben dem Knopf (ist der Knopf ausgeblendet, an seiner Position): Symbol der Art und erste Zeile der Meldung.
+- Schmaler Streifen im Stil der Banner links neben dem Minimap-Icon (ist es ausgeblendet, an seiner Position): Symbol der Art und erste Zeile der Meldung.
 - Blendet ein, bleibt 4 Sekunden, blendet aus; Maus darüber hält an.
 - Klick öffnet das Fenster bei genau dieser Meldung.
 - Eine neue wichtige Meldung ersetzt den laufenden Hinweis, es stapelt sich nichts.
@@ -154,8 +154,8 @@ Neue Datei, lädt nach `Banner.lua` und vor `UI.lua`. Hört nur auf `MESSAGES_UP
 | Was | Wo |
 |---|---|
 | Meldungen | `ns.char.messages` (pro Charakter) |
-| Position Fenster, Position Knopf | `ns.db.messages.window`, `ns.db.messages.button` |
-| Meldungs-Knopf anzeigen | `ns.db.messages.showButton`, Standard `true` |
+| Position Fenster | `ns.db.messages.window` |
+| Minimap-Icon anzeigen, Winkel | `ns.db.minimap.show` (Standard `true`), `ns.db.minimap.angle` (Standard 200) |
 
 ## Tests
 
@@ -170,7 +170,8 @@ Neue Datei, lädt nach `Banner.lua` und vor `UI.lua`. Hört nur auf `MESSAGES_UP
   - Filter, Zähler je Filter, „Leeren“ je Filter.
   - Detailtext und Item-Tooltip.
   - `/gff status`, `/gff help`, `/gff dungeons`, „Gilde prüfen“ öffnen das Fenster beim neuen Eintrag; `/gff log` mit Filter „Blockiert“; `/gff deaths` öffnet den Deathlog-Tab; `/gff msg` schaltet das Fenster.
-  - Einstellung „Meldungs-Knopf anzeigen“ blendet den Knopf aus; der Hinweis erscheint trotzdem.
+  - Einstellung „Minimap-Icon anzeigen“ blendet das Icon aus; der Hinweis erscheint trotzdem.
+  - Minimap-Icon: Links- und Rechtsklick, Position am Rand nach Winkel, Ziehen mit der Maus, kaputter Winkel fällt auf den Standard zurück.
 
 ## Außerhalb dieses Umfangs
 

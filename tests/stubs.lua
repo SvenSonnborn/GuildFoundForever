@@ -107,6 +107,7 @@ function Widget:SetChecked(c) self._checked = c end
 function Widget:GetChecked() return self._checked end
 function Widget:GetName() return self._name end
 function Widget:GetPoint() return "CENTER", nil, "CENTER", 0, 0 end
+function Widget:SetPoint(...) self._point = { ... } end
 function Widget:GetStringHeight() return 12 end
 function Widget:HasFocus() return rawget(self, "_focus") == true end
 -- The client passes script handlers more than the frame: a method set directly as handler gets
@@ -480,6 +481,15 @@ FILES["Interface\\CharacterFrame\\TempPortraitAlphaMask"] = 10
 FILES["Interface\\WorldStateFrame\\Icons-Classes"] = 11
 PINS = {}
 WORLD_MAP_ID = 1429
+-- Minimap: 140 x 140, centre at (1000, 600) in screen coordinates, scale 1.
+Minimap = NewWidget("Frame", "Minimap")
+function Minimap:GetCenter() return 1000, 600 end
+function Minimap:GetWidth() return 140 end
+function Minimap:GetHeight() return 140 end
+function Minimap:GetEffectiveScale() return 1 end
+CURSOR_X, CURSOR_Y = 0, 0
+function GetCursorPosition() return CURSOR_X, CURSOR_Y end
+
 WorldMapFrame = NewWidget("Frame", "WorldMapFrame")
 function WorldMapFrame:AddDataProvider(provider) self.provider = provider provider:OnAdded(self) end
 function WorldMapFrame:GetMapID() return WORLD_MAP_ID end

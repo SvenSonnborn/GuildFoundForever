@@ -10,12 +10,9 @@ local LIST_TOP = -76
 local DETAIL_TOP = LIST_TOP - ROWS * ROW_HEIGHT - 12
 local DETAIL_HEIGHT = 104
 local TOOLTIP_DETAIL_LINES = 10
-local BUTTON_SIZE = 36
-local MAX_BADGE = 99
 local TOAST_WIDTH, TOAST_HEIGHT = 300, 40
 local TOAST_SECONDS, TOAST_FADE_IN, TOAST_FADE_OUT = 4, 0.25, 0.5
 local DEFAULT_WINDOW = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 60 }
-local DEFAULT_BUTTON = { point = "TOPRIGHT", relativePoint = "TOPRIGHT", x = -40, y = -240 }
 local FILTERS = {
 	{ key = "all", width = 58 },
 	{ key = "blocked", width = 86 },
@@ -27,7 +24,6 @@ local FILTERS = {
 
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local BORDER = "Interface\\Tooltips\\UI-Tooltip-Border"
-local BUTTON_ICON = "Interface\\Icons\\INV_Shirt_GuildTabard_01"
 -- Banner style: dark, slightly transparent, thin gold frame
 local BACKGROUND = { 0.04, 0.04, 0.06, 0.94 }
 local GOLD = { 1, 0.82, 0 }
@@ -36,9 +32,8 @@ local PANEL = { 0, 0, 0, 0.35 }
 local PANEL_BORDER = { 0.35, 0.3, 0.2, 0.8 }
 local BUTTON_BACKGROUND = { 0.1, 0.09, 0.07, 0.9 }
 local BUTTON_BORDER = { 0.45, 0.38, 0.22, 0.9 }
-local BADGE_BACKGROUND = { 0.6, 0.08, 0.08, 1 }
 
-local window, counterButton, toast
+local window, toast
 local highlight = {} -- entries that were unread when the window opened, or arrived while it was open
 
 ---------------------------------------------------------------------------
@@ -362,82 +357,8 @@ function MessageWindow.Refresh()
 end
 
 ---------------------------------------------------------------------------
--- Hint next to the button
+-- Hint next to the minimap icon (MinimapButton.lua)
 ---------------------------------------------------------------------------
-
-local function CounterButton()
-	if counterButton then
-		return counterButton
-	end
-	local b = CreateFrame("Button", addonName .. "MessagesButton", UIParent, "BackdropTemplate")
-	b:SetSize(BUTTON_SIZE, BUTTON_SIZE)
-	b:SetFrameStrata("MEDIUM")
-	b:SetClampedToScreen(true)
-	b:SetMovable(true)
-	b:RegisterForDrag("LeftButton")
-	StyleBox(b, BACKGROUND, FRAME_BORDER, 12)
-	b.icon = b:CreateTexture(nil, "ARTWORK")
-	b.icon:SetPoint("TOPLEFT", 5, -5)
-	b.icon:SetPoint("BOTTOMRIGHT", -5, 5)
-	b.icon:SetTexture(BUTTON_ICON)
-	b.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-	b.glow = b:CreateTexture(nil, "OVERLAY")
-	b.glow:SetTexture(WHITE)
-	b.glow:SetPoint("TOPLEFT", -4, 4)
-	b.glow:SetPoint("BOTTOMRIGHT", 4, -4)
-	b.glow:SetBlendMode("ADD")
-	b.glow:SetVertexColor(GOLD[1], GOLD[2], GOLD[3], 0.35)
-	b.glow:Hide()
-	b.pulse = b.glow:CreateAnimationGroup()
-	b.pulse:SetLooping("BOUNCE")
-	local fade = b.pulse:CreateAnimation("Alpha")
-	fade:SetFromAlpha(0.15)
-	fade:SetToAlpha(0.8)
-	fade:SetDuration(0.9)
-	b.badge = CreateFrame("Frame", nil, b, "BackdropTemplate")
-	b.badge:SetSize(24, 18)
-	b.badge:SetPoint("TOPRIGHT", 10, 8)
-	StyleBox(b.badge, BADGE_BACKGROUND, FRAME_BORDER, 8)
-	b.count = b.badge:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	b.count:SetPoint("CENTER", 0, 0)
-	b:SetScript("OnClick", function() MessageWindow.Toggle() end)
-	b:SetScript("OnDragStart", function(self) self:StartMoving() end)
-	b:SetScript("OnDragStop", function(self)
-		self:StopMovingOrSizing()
-		SavePosition(self, "button")
-	end)
-	b:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-		GameTooltip:SetText(ns.title, 1, 1, 1)
-		GameTooltip:AddLine(L.MSG_UNREAD:format(ns.Messages.CountUnread()), GOLD[1], GOLD[2], GOLD[3])
-		GameTooltip:AddLine(L.MSG_BUTTON_TIP, 0.8, 0.8, 0.8, true)
-		GameTooltip:Show()
-	end)
-	b:SetScript("OnLeave", GameTooltip_Hide)
-	RestorePosition(b, "button", DEFAULT_BUTTON)
-	counterButton = b
-	return b
-end
-
-local function UpdateButton()
-	if not (ns.db and ns.char) then
-		return
-	end
-	local b = CounterButton()
-	b:SetShown(ns.db.messages.showButton and true or false)
-	local unread = ns.Messages.CountUnread()
-	b.badge:SetShown(unread > 0)
-	b.count:SetText(unread > MAX_BADGE and (MAX_BADGE .. "+") or tostring(unread))
-	local important = ns.Messages.HasImportantUnread()
-	b.glow:SetShown(important)
-	if important then
-		if not b.pulse:IsPlaying() then
-			b.pulse:Play()
-		end
-	else
-		b.pulse:Stop()
-	end
-end
 
 local function Toast()
 	if toast then
@@ -495,7 +416,7 @@ end
 local function ShowToast(entry)
 	local t = Toast()
 	t:ClearAllPoints()
-	t:SetPoint("RIGHT", CounterButton(), "LEFT", -8, 0)
+	t:SetPoint("RIGHT", ns.MinimapButton.GetFrame(), "LEFT", -8, 0)
 	t.entry = entry
 	SetCategoryIcon(t.icon, entry.c)
 	local color = ns.Messages.GetCategory(entry.c).color
@@ -549,13 +470,10 @@ function MessageWindow.IsShown()
 	return window ~= nil and window:IsShown()
 end
 
--- Puts window and button where they were saved, or at their default place.
+-- Puts the window where it was saved, or at its default place.
 function MessageWindow.RestorePositions()
 	if window then
 		RestorePosition(window, "window", DEFAULT_WINDOW)
-	end
-	if counterButton then
-		RestorePosition(counterButton, "button", DEFAULT_BUTTON)
 	end
 end
 
@@ -578,7 +496,4 @@ ns.RegisterCallback("MESSAGES_UPDATED", function(entry)
 		end
 	end
 	MessageWindow.Refresh()
-	UpdateButton()
 end)
-ns.RegisterCallback("LOGIN", UpdateButton)
-ns.RegisterCallback("SETTINGS_CHANGED", UpdateButton)

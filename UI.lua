@@ -248,8 +248,8 @@ local function BuildSettingsPanel(panel)
 	end
 	CreateNote(panel, LEFT + 4, y - 8, RIGHT - LEFT - 20):SetText(L.ANNOUNCE_NOTE)
 
-	CreateHeader(panel, LEFT, -262, L.SECTION_MESSAGES)
-	AddPersonalCheckbox(panel, LEFT, -280, "messages", "showButton", L.MSG_BUTTON_SHOW, L.MSG_BUTTON_SHOW_TIP)
+	CreateHeader(panel, LEFT, -262, L.SECTION_MINIMAP)
+	AddPersonalCheckbox(panel, LEFT, -280, "minimap", "show", L.MINIMAP_SHOW, L.MINIMAP_SHOW_TIP)
 
 	AddPersonalCheckbox(panel, RIGHT, y, "notify", "screen", L.NOTIFY_SCREEN, L.NOTIFY_SCREEN_TIP)
 	controls.deathMinLevel = CreateNumberBox(panel, RIGHT, y - 34, L.DEATH_MIN_LEVEL, L.DEATH_MIN_LEVEL_TIP, function(value)

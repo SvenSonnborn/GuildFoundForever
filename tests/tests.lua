@@ -1487,16 +1487,18 @@ ns.db.lastTab = "rules"
 local MW = ns.MessageWindow
 CloseMessages()
 ClearMessages()
-ns.db.messages.window, ns.db.messages.button = "kaputt", { x = 5 }
-check(pcall(MW.RestorePositions), "broken saved positions fall back to the defaults")
-ns.db.messages.window, ns.db.messages.button = {}, {}
+ns.db.messages.window = "kaputt"
+check(pcall(MW.RestorePositions), "a broken saved window position falls back to the default")
+ns.db.messages.window = {}
 local m1 = M.Add("blocked", "Handel blockiert")
 M.Add("audit", "Daten abgerufen", { important = true })
 M.Add("guild", "Freund hat Beute", { link = link(12345, "Epic Sword") })
 M.Add("system", "Status", { details = "Zeile 1\nZeile 2" })
 check(M.CountUnread() == 4 and M.CountUnread("audit") == 1 and M.HasImportantUnread(), "four unread, one of them important")
-local Btn, Toast = GuildFoundForeverMessagesButton, GuildFoundForeverMessagesToast
-check(Btn and Btn:IsShown() and Btn.badge:IsShown() and Btn.count:GetText() == "4" and Btn.glow:IsShown(), "button counts the unread messages and glows for the important one")
+-- The minimap icon replaces the free counter button (wish of 30.09.2026).
+local Btn, Toast = GuildFoundForeverMinimapButton, GuildFoundForeverMessagesToast
+check(GuildFoundForeverMessagesButton == nil, "no separate counter button any more")
+check(Btn and Btn:IsShown() and Btn.badge:IsShown() and Btn.count:GetText() == "4" and Btn.glow:IsShown(), "the minimap icon counts the unread messages and glows for the important one")
 check(Toast and Toast:IsShown() and Toast.text:GetText() == "Daten abgerufen", "the important message showed a hint")
 MW.Show()
 local W = GuildFoundForeverMessages
@@ -1549,17 +1551,39 @@ check(W:IsShown() and not Toast:IsShown() and W.rows[1].text:GetText() == "Anfra
 MW.Toggle()
 M.Add("system", "Still", { silent = true })
 check(not Btn.badge:IsShown(), "silent messages do not count")
-ns.db.messages.showButton = false
+ns.db.minimap.show = false
 ns.Fire("SETTINGS_CHANGED")
-check(not Btn:IsShown(), "the button can be switched off")
+check(not Btn:IsShown(), "the minimap icon can be switched off")
 M.Add("guild", "Regeln übernommen", { important = true })
-check(Toast:IsShown(), "the hint still appears without the button")
-ns.db.messages.showButton = true
+check(Toast:IsShown(), "the hint still appears without the icon")
+ns.db.minimap.show = true
 ns.Fire("SETTINGS_CHANGED")
-Btn:RunScript("OnClick")
-check(W:IsShown(), "the button opens the window")
-Btn:RunScript("OnClick")
-check(not W:IsShown(), "and closes it")
+Btn:RunScript("OnClick", "RightButton")
+check(W:IsShown(), "right-click on the minimap icon opens the messages")
+Btn:RunScript("OnClick", "RightButton")
+check(not W:IsShown(), "and closes them")
+Btn:RunScript("OnClick", "LeftButton")
+check(GuildFoundForeverFrame:IsShown() and not W:IsShown(), "left-click opens the main window")
+Btn:RunScript("OnClick", "LeftButton")
+check(not GuildFoundForeverFrame:IsShown(), "and closes it")
+Btn:RunScript("OnEnter")
+Btn:RunScript("OnLeave")
+ns.db.minimap.angle = 0
+ns.MinimapButton.Update()
+check(Btn._point and Btn._point[1] == "CENTER" and Btn._point[2] == Minimap and math.abs(Btn._point[4] - 75) < 0.01 and math.abs(Btn._point[5]) < 0.01,
+	"the icon sits on the minimap edge at its saved angle")
+CURSOR_X, CURSOR_Y = 1000, 650
+Btn:RunScript("OnDragStart")
+Btn:RunScript("OnUpdate", 0.1)
+Btn:RunScript("OnDragStop")
+check(math.abs(ns.db.minimap.angle - 90) < 0.01 and math.abs(Btn._point[4]) < 0.01 and math.abs(Btn._point[5] - 75) < 0.01,
+	"dragging moves the icon along the edge and remembers the angle")
+check(Btn:GetScript("OnUpdate") == nil, "the icon stops following the mouse when released")
+ns.db.minimap.angle = "kaputt"
+ns.MinimapButton.Update()
+check(Btn._point[4] < 0 and Btn._point[5] < 0, "a broken saved angle falls back to the default place, left and a bit below the middle")
+ns.db.minimap.angle = nil
+ns.MinimapButton.Update()
 
 -- F1: the detail area renders from the scroll offset to the end and clips at the bottom instead
 -- of clamping the scroll at a fixed line count.

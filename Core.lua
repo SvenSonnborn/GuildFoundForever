@@ -55,7 +55,8 @@ ns.defaults = {
 	debug = false,
 	window = {},
 	lastTab = "rules", -- page of the window: rules, professions, finder, deathlog, audit or settings
-	messages = { showButton = true, window = {}, button = {} }, -- message window: button on/off, positions
+	messages = { window = {} }, -- message window: position
+	minimap = { show = true, angle = 200 }, -- minimap icon: on/off, degrees on the minimap's edge
 }
 
 ns.charDefaults = {
