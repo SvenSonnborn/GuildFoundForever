@@ -902,6 +902,22 @@ check(Said("keine Kartenposition"), "test pin without a map position explains wh
 PLAYER_MAP = nil
 RunTickers()
 
+-- Audit: records -------------------------------------------------------------------
+local R = ns.AuditRecords
+do
+	local hintRaw = R.Encode("H", { t = 500, hk = "trade", sev = "r", a = "Fremder", b = "2500", c = "0", d = "0" })
+	check(hintRaw == "H\t500\ttrade\tr\tFremder\t2500\t0\t0", "hint encoded")
+	local rt, hint = R.Decode(hintRaw)
+	check(rt == "H" and hint.t == 500 and hint.hk == "trade" and hint.a == "Fremder" and R.HintId(hint) == "500:trade:Fremder", "hint decoded, its id")
+	local oldStyle = "S\t100\t10\t0\t1000\t\tout"
+	local srt, s = R.Decode(oldStyle)
+	check(srt == "S" and s.p == nil and s.m == 1000 and R.Encode("S", s) == oldStyle, "snapshots keep the old format, empty played time stays empty")
+	check(R.Tier("H") == 1 and R.Tier("C") == 1 and R.Tier("E") == 1 and R.Tier("T") == 2 and R.Tier("L") == 2, "tiers")
+	local logRaw = R.Encode("L", { t = 1, k = "ah", m = "a\tb\030c " .. ("x"):rep(300) })
+	check(not logRaw:find("\030", 1, true) and select(2, logRaw:gsub("\t", "")) == 3 and #logRaw <= 190, "free text cleaned and cut")
+	check(R.Decode("Q\t1\tx") == nil and R.Decode("S\tabc") == nil and R.Time("E\t77\t1\tMagus\t5:blocked:ah") == 77, "unknown kinds and broken times rejected")
+end
+
 -- Audit: recording --------------------------------------------------------------
 MAX_LEVEL = 60
 local A = ns.Audit

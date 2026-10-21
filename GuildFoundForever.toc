@@ -29,6 +29,9 @@ Modules\Group.lua
 Modules\Announce.lua
 Modules\GuildMap.lua
 MapPin.xml
+Modules\AuditRecords.lua
+Modules\AuditStore.lua
+Modules\AuditSync.lua
 Modules\Audit.lua
 Modules\Professions.lua
 Modules\Finder.lua

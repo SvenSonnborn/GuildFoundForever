@@ -307,36 +307,31 @@ end)
 -- Records: "S t l x m p r", "T t n k gm rm gi ri", "M t d n k m c i", "L t kind text" (tab separated)
 ---------------------------------------------------------------------------
 
--- Log texts contain item links; send them as plain "[Name]".
-local function PlainText(text)
-	text = tostring(text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|H.-|h(.-)|h", "%1")
-	return (text:gsub("[\t\030]", " "):sub(1, 180))
-end
-
 local function EncodeRecords(since)
 	local records = {}
-	local function Add(...)
-		records[#records + 1] = table.concat({ ... }, "\t")
+	local R = ns.AuditRecords
+	local function Add(rt, rec)
+		records[#records + 1] = R.Encode(rt, rec)
 	end
 	local data = Records()
 	for _, s in ipairs(data.snapshots) do
 		if s.t >= since then
-			Add("S", s.t, s.l, s.x, s.m, s.p or "", s.r)
+			Add("S", s)
 		end
 	end
 	for _, tr in ipairs(data.trades) do
 		if tr.t >= since then
-			Add("T", tr.t, tr.n, tr.k, tr.gm, tr.rm, tr.gi, tr.ri)
+			Add("T", tr)
 		end
 	end
 	for _, mail in ipairs(data.mail) do
 		if mail.t >= since then
-			Add("M", mail.t, mail.d, mail.n, mail.k, mail.m, mail.c, mail.i)
+			Add("M", mail)
 		end
 	end
 	for _, entry in ipairs(ns.char.log) do
 		if entry.t >= since then
-			Add("L", entry.t, entry.k, PlainText(entry.m))
+			Add("L", entry)
 		end
 	end
 	return records
@@ -429,20 +424,19 @@ local function BuildSeen(cache)
 end
 
 local function StoreRecord(cache, record, seen)
-	local fields = { strsplit("\t", record) }
-	local t = tonumber(fields[2])
-	if not t or seen[record] then
+	local kind, rec = ns.AuditRecords.Decode(record)
+	if not kind or seen[record] then
 		return false
 	end
-	local kind, list, entry = fields[1], nil, nil
+	local t, list, entry = rec.t, nil, nil
 	if kind == "S" then
-		list, entry = cache.snapshots, { l = tonumber(fields[3]) or 0, x = tonumber(fields[4]) or 0, m = tonumber(fields[5]) or 0, p = tonumber(fields[6]), r = fields[7] }
+		list, entry = cache.snapshots, { l = rec.l or 0, x = rec.x or 0, m = rec.m or 0, p = rec.p, r = rec.r }
 	elseif kind == "T" then
-		list, entry = cache.trades, { n = fields[3] or "?", k = fields[4], gm = tonumber(fields[5]) or 0, rm = tonumber(fields[6]) or 0, gi = fields[7] or "", ri = fields[8] or "" }
+		list, entry = cache.trades, { n = rec.n or "?", k = rec.k, gm = rec.gm or 0, rm = rec.rm or 0, gi = rec.gi or "", ri = rec.ri or "" }
 	elseif kind == "M" then
-		list, entry = cache.mail, { d = fields[3], n = fields[4] or "?", k = fields[5], m = tonumber(fields[6]) or 0, c = tonumber(fields[7]) or 0, i = fields[8] or "" }
+		list, entry = cache.mail, { d = rec.d, n = rec.n or "?", k = rec.k, m = rec.m or 0, c = rec.c or 0, i = rec.i or "" }
 	elseif kind == "L" then
-		list, entry = cache.log, { k = fields[3], m = fields[4] or "" }
+		list, entry = cache.log, { k = rec.k, m = rec.m or "" }
 	else
 		return false
 	end
