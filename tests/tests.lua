@@ -15,7 +15,7 @@ local function itemChanged(side, slot)
 	FireEvent(side == "player" and "TRADE_PLAYER_ITEM_CHANGED" or "TRADE_TARGET_ITEM_CHANGED", slot)
 	RunTimers()
 end
-local DEFAULT_TAG = "[GuildFoundForever A=1 M=1 C=1 H=1 G=0 Q=1 O=1 I=0 S=0 P=0 L=50 X=1 D=0 E=1 R=0 B=1 U=1 T=0 F=0]"
+local DEFAULT_TAG = "[GuildFoundForever A=1 M=1 C=1 H=1 G=0 Q=1 O=1 I=0 S=0 P=0 L=50 X=1 D=0 E=1 R=0 B=1 T=0 F=0 V=0]"
 local function coloredLink(color, id, name) return ("|c%s|Hitem:%d::::::::20:::::::|h[%s]|h|r"):format(color, id, name) end
 local function deathsOf(name) local n = 0 for _, e in ipairs(ns.db.deathlog) do if e.n == name then n = n + 1 end end return n end
 
@@ -796,6 +796,12 @@ drain()
 local provider = WorldMapFrame.provider
 check(provider ~= nil, "data provider added to the world map")
 check(G.ParseRulesTag("[GuildFoundForever K=0]").guildMap == nil, "old guild map code K is ignored: the map is always on")
+local oldRules = G.ParseRulesTag("[GuildFoundForever A=1 U=0]")
+check(oldRules and oldRules.audit == nil and oldRules.blockAuctionHouse == true, "code U of older tags is ignored")
+local relayRules = G.ParseRulesTag("[GuildFoundForever V=1]")
+check(relayRules and relayRules.auditRelay == true, "code V switches the relay on")
+check(ns.db.rules.audit == nil and ns.db.rules.auditRelay == false, "the old setting is gone, the relay is off by default")
+check(FindWidgetByText("FontString", "Mitglieder speichern Audit-Daten für Offiziere zwischen") ~= nil, "relay rule in the rules tab")
 
 -- Sending
 PLAYER_MAP, PLAYER_POS = 1429, { 0.5, 0.5 }
@@ -979,11 +985,6 @@ check(LastAddonMessage() == "AUDNO", "permissions unreadable: only the top two r
 ResetCalls()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDREQ\t0", "GUILD", "Freund-ClassicBetaPvE2")
 check(CallCount("SendAddonMessage") == 0, "requests over the guild channel ignored")
-ns.Rules.Set("audit", false)
-ResetCalls()
-FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDREQ\t0", "WHISPER", "Freund-ClassicBetaPvE2")
-check(LastAddonMessage() == "AUDNO", "audit switched off by the guild: refused")
-ns.Rules.Set("audit", true)
 RunTimers()
 
 -- Audit: officer fetches -------------------------------------------------------

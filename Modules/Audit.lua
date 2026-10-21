@@ -359,12 +359,9 @@ local function Pack(records)
 	return messages
 end
 
--- Whether the sender's guild rank may view officer notes.
-local function MayRequest(sender)
-	if not ns.IsActive() or not ns.Rules.Get("audit") then
-		return false
-	end
-	local rankIndex = ns.Guild.GetRankIndex(sender)
+-- Whether the named guild member's rank may view officer notes (false for names outside the guild).
+function Audit.IsOfficer(name)
+	local rankIndex = ns.Guild.GetRankIndex(name)
 	if not rankIndex then
 		return false
 	end
@@ -376,6 +373,10 @@ local function MayRequest(sender)
 	end
 	-- Permissions not readable: only the guild master and the rank below.
 	return rankIndex <= 1
+end
+
+local function MayRequest(sender)
+	return ns.IsActive() and Audit.IsOfficer(sender)
 end
 
 ns.Comm.RegisterHandler("AUDREQ", function(sender, channel, payload)

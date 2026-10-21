@@ -225,7 +225,7 @@ local function BuildRulesPanel(panel)
 	end)
 
 	CreateHeader(panel, RIGHT, -226, L.SECTION_FEATURES)
-	AddRuleCheckbox(panel, RIGHT, -244, "audit", L.RULE_AUDIT, L.RULE_AUDIT_TIP)
+	AddRuleCheckbox(panel, RIGHT, -244, "auditRelay", L.RULE_RELAY, L.RULE_RELAY_TIP)
 	AddRuleCheckbox(panel, RIGHT, -268, "professions", L.RULE_PROFESSIONS, L.RULE_PROFESSIONS_TIP)
 	AddRuleCheckbox(panel, RIGHT, -292, "dungeonFinder", L.RULE_FINDER, L.RULE_FINDER_TIP)
 end
