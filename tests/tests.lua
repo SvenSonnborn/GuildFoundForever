@@ -1106,19 +1106,32 @@ ns.db.lastTab = "rules"
 do
 	local own = ns.char.audit
 	local function lastHint() return own.hints[#own.hints] end
+	local function joinNotices() local n = 0 for _, h in ipairs(own.hints) do if h.hk == "join" then n = n + 1 end end return n end
 	-- Earlier sections ran the interval ticker before /played was known, so the oldest snapshot is an
 	-- interval snapshot without played time; the first login took it as the first state.
 	check(own.first and own.first.t == own.snapshots[1].t and own.first.l == 20 and own.first.p == nil, "first state with the addon kept: the oldest snapshot")
 	local installHint
 	for _, h in ipairs(own.hints) do if h.hk == "install" then installHint = h end end
 	check(installHint and installHint.sev == "r" and tonumber(installHint.b) == 3600, "played before the addon was installed: notice")
-	check(own.join and own.join.g == "Testgilde" and own.guild == "Testgilde", "joining the guild recorded")
+	-- The run started in the guild without a first state: that join time is unknown, without a notice.
+	-- The guild map section left the guild and came back, which is a real join with one notice.
+	check(own.join and own.join.g == "Testgilde" and own.join.t > 0 and own.guild == "Testgilde" and joinNotices() == 1,
+		"joining the guild recorded: unknown on the first run, real after leaving")
 	local hk, sev, a = A.CheckLogin({ t = 1, l = 5, x = 0, m = 0, p = 1000, r = "out" }, { t = 2, l = 5, x = 0, m = 0, p = 4600, r = "in" })
 	check(hk == "played" and sev == "r" and tonumber(a) == 3600, "login check: played without the addon")
 	check(A.CheckLogin({ t = 1, l = 5, x = 0, m = 0, p = 1000, r = "int" }, { t = 2, l = 5, x = 0, m = 0, p = 1700, r = "in" }) == nil, "login check: crash within the tolerance")
 	check(A.CheckLogin({ t = 1, l = 5, x = 0, m = 100, p = 1000, r = "out" }, { t = 2, l = 6, x = 0, m = 900, p = 1000, r = "in" }) == "changed", "login check: changed offline")
 	local recorded = {}
 	ns.RegisterCallback("AUDIT_RECORDED", function(raw) recorded[#recorded + 1] = raw end)
+	MONEY = MONEY + 1
+	local recordedBefore = #recorded
+	RunTickers()
+	local intervalAsLast, intervalAsSnapshot = false, false
+	for i = recordedBefore + 1, #recorded do
+		if recorded[i]:find("^C\t") and recorded[i]:find("\tint$") then intervalAsLast = true end
+		if recorded[i]:find("^S\t") and recorded[i]:find("\tint$") then intervalAsSnapshot = true end
+	end
+	check(intervalAsLast and not intervalAsSnapshot, "interval snapshot reported as the last state only")
 	UNITS.NPC = { name = "Fremder", guild = false }
 	TRADE = { player = {}, target = {}, playerMoney = 0, targetMoney = 2500 }
 	FireEvent("TRADE_SHOW")
@@ -1137,8 +1150,17 @@ do
 	Advance(11)
 	ns.Log("ah", "Versuch, das Auktionshaus zu öffnen")
 	check(lastHint().hk == "blocked" and lastHint().sev == "y" and lastHint().a == "ah", "blocked auction house: yellow notice")
+	-- The client may say "no guild" for a moment at login: the guild stays unless it is still gone 10 s later.
+	local joinsBefore = joinNotices()
 	IN_GUILD = false
 	FireEvent("PLAYER_GUILD_UPDATE")
+	IN_GUILD = true
+	RunTimers()
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(own.guild == "Testgilde" and joinNotices() == joinsBefore, "no guild for a moment: the guild is kept, no new join")
+	IN_GUILD = false
+	FireEvent("PLAYER_GUILD_UPDATE")
+	RunTimers()
 	check(own.guild == nil, "leaving the guild forgets it")
 	INBOX = { { sender = "Fremder", canReply = true, money = 50, items = {} } }
 	TakeInboxMoney(1)
@@ -1156,6 +1178,7 @@ do
 	end
 	check(kinds.C and kinds.J and kinds.F and kinds.H and kinds.T and not hasInterval, "own records to send: last, join and first state, no interval snapshots")
 	check(A.FormatHint(lastHint()):find("Testgilde", 1, true) ~= nil and A.HintColor(lastHint()) == "999999" and A.HintFilter("install") == "noaddon", "notice text, colour and filter")
+	check(A.FormatHint({ t = 1, hk = "changed", sev = "o", a = "5", b = "6", c = "100:900" }) == "Level 5 -> 6, Gold 100c -> 900c", "offline change: plain arrows the game fonts can show")
 	local savedAudit, savedLog = ns.char.audit, ns.char.log
 	-- First run after the update from 0.8: records without a first state, already in a guild.
 	ns.char.audit = { snapshots = { { t = 50, l = 7, x = 0, m = 0, p = 4000, r = "out" }, { t = 60, l = 8, x = 0, m = 0, p = 5000, r = "out" } },
@@ -1166,6 +1189,25 @@ do
 	check(upgraded.first and upgraded.first.t == 50 and upgraded.first.l == 7 and upgraded.first.p == 4000, "update from 0.8: the oldest snapshot is the first state")
 	check(upgraded.join and upgraded.join.t == 0 and upgraded.join.l == 0 and upgraded.join.g == "Testgilde" and upgraded.guild == "Testgilde" and #upgraded.hints == 0,
 		"update from 0.8: joined before 1.0, no notice")
+	-- First run with the addon, no older records, already in a guild: when they joined is unknown.
+	ns.char.audit = { snapshots = {}, trades = {}, mail = {}, hints = {}, sent = {} }
+	ns.Fire("INIT")
+	FireEvent("GUILD_ROSTER_UPDATE")
+	local fresh = ns.char.audit
+	check(fresh.join and fresh.join.t == 0 and fresh.join.l == 0 and fresh.join.g == "Testgilde" and #fresh.hints == 0, "first run already in a guild: join time unknown, no notice")
+	-- First run without a guild: joining later in the session is a real join.
+	ns.char.audit = { snapshots = {}, trades = {}, mail = {}, hints = {}, sent = {} }
+	ns.Fire("INIT")
+	IN_GUILD = false
+	FireEvent("PLAYER_GUILD_UPDATE")
+	RunTimers()
+	Advance(5)
+	IN_GUILD = true
+	FireEvent("PLAYER_GUILD_UPDATE")
+	FireEvent("GUILD_ROSTER_UPDATE")
+	local joinedLater = ns.char.audit
+	check(joinedLater.join and joinedLater.join.t == GetServerTime() and #joinedLater.hints == 1 and joinedLater.hints[1].hk == "join",
+		"first run without a guild: joining later is a real join with a notice")
 	ns.char.audit = { snapshots = { { t = 1, l = 5, x = 0, m = 0, p = 10, r = "out" }, { t = 2, l = 6, x = 0, m = 0, p = 20, r = "out" } },
 		trades = { { t = 1, n = "X", k = "g", gm = 0, rm = 0, gi = "", ri = "" } }, mail = {}, hints = { { t = 1, hk = "mail", sev = "o" } },
 		first = { t = 1, l = 1, p = 0 }, join = { t = 1, l = 1, g = "Testgilde" }, sent = {} }

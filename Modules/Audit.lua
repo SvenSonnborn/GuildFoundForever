@@ -10,6 +10,7 @@ local MAX_TRADES = 300
 local MAX_MAIL = 300
 local MAX_HINTS = 500
 local KEEP_SECONDS = 864000 -- own records older than 10 days go at login
+local GUILD_RECHECK_SECONDS = 10 -- "no guild" must still hold this much later before the guild is forgotten
 local SNAPSHOT_INTERVAL_SECONDS = 600
 local PLAYED_TIMEOUT_SECONDS = 10
 local REQUEST_TIMEOUT_SECONDS = 180
@@ -27,7 +28,7 @@ local silencedChatFrames = {}
 local trade                       -- trade in progress: partner, kind and the latest contents
 local pendingMail                 -- mail being sent, recorded on MAIL_SEND_SUCCESS
 local requests = {}               -- normalized member name -> { name, records, state }
-local joinedBeforeUpdate = false  -- records from 0.8 at load: the guild seen first was joined before 1.0
+local joinUnknown = false         -- first run with the addon: a guild the character is already in was joined at an unknown time
 
 ---------------------------------------------------------------------------
 -- Local records (per character)
@@ -42,7 +43,8 @@ local joinedBeforeUpdate = false  -- records from 0.8 at load: the guild seen fi
 -- guild:    the guild the character was last seen in, or nil
 -- sent:     recipient -> time up to which the own records went out (AuditSync)
 -- The log of blocked actions (ns.char.log) is part of the audit as well. Every new own record
--- except interval snapshots fires AUDIT_RECORDED with its encoded line.
+-- except interval snapshots fires AUDIT_RECORDED with its encoded line; every snapshot also goes
+-- out as C, the last state.
 ---------------------------------------------------------------------------
 
 local function Records()
@@ -150,11 +152,11 @@ local function TakeSnapshot(reason)
 	}
 	snapshots[#snapshots + 1] = snapshot
 	Trim(snapshots, MAX_SNAPSHOTS, function(s) return s.r == "lvl" end)
-	-- Interval snapshots stay with the member.
-	if reason == "int" then
-		return
+	-- Interval snapshots stay with the member; they only go out as the last state.
+	if reason ~= "int" then
+		Recorded("S", snapshot)
 	end
-	Recorded("S", snapshot)
+	Recorded("C", snapshot)
 	if reason ~= "in" then
 		return
 	end
@@ -263,11 +265,39 @@ end)
 
 ns.RegisterCallback("INIT", function()
 	local data = Records()
+	if data.first then
+		return
+	end
+	-- First run with the addon (or the first after 0.8): a guild the character is already in at
+	-- the first roster update was joined at an unknown time.
+	joinUnknown = true
 	-- Records from 0.8 have no first state: the oldest snapshot is it, taken now before PruneOwn
-	-- can drop it at login. A guild the character is in on this run was joined before 1.0.
-	if not data.first and #data.snapshots > 0 then
-		joinedBeforeUpdate = true
+	-- can drop it at login.
+	if #data.snapshots > 0 then
 		SetFirst(data.snapshots[1])
+	end
+end)
+
+-- The client may report "no guild" for a moment at login; the guild is forgotten only if that
+-- still holds a little later. Without a guild, a guild seen later is a real join.
+local function ForgetGuildIfGone()
+	C_Timer.After(GUILD_RECHECK_SECONDS, function()
+		if ns.char and not IsInGuild() then
+			Records().guild = nil
+			joinUnknown = false
+		end
+	end)
+end
+
+ns.RegisterCallback("LOGIN", function()
+	if not IsInGuild() then
+		ForgetGuildIfGone()
+	end
+end)
+
+ns.On("PLAYER_GUILD_UPDATE", function()
+	if not IsInGuild() then
+		ForgetGuildIfGone()
 	end
 end)
 
@@ -281,7 +311,7 @@ ns.RegisterCallback("ROSTER_UPDATED", function()
 		return
 	end
 	data.guild = name
-	if joinedBeforeUpdate and not data.join then
+	if joinUnknown and not data.join then
 		data.join = { t = 0, l = 0, g = name }
 		Recorded("J", data.join)
 	else
@@ -290,14 +320,7 @@ ns.RegisterCallback("ROSTER_UPDATED", function()
 		Recorded("J", data.join)
 		Audit.AddHint("join", "g", data.join.l, played, name)
 	end
-	joinedBeforeUpdate = false
-end)
-
-ns.On("PLAYER_GUILD_UPDATE", function()
-	if ns.char and not IsInGuild() then
-		Records().guild = nil
-		joinedBeforeUpdate = false
-	end
+	joinUnknown = false
 end)
 
 ---------------------------------------------------------------------------
