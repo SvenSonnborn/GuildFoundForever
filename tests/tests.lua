@@ -980,6 +980,249 @@ do
 	check(gs.members["y-r"].j == j2 and gs.members["y-r"].recs[j1] == nil, "a replaced join state leaves recs")
 end
 
+-- Audit: sync between players ---------------------------------------------------------
+local S = ns.AuditSync
+do
+	local net = { now = 0, seq = 0, timers = {}, players = {}, log = {}, relay = false }
+	local function NetAfter(at, fn) net.seq = net.seq + 1 net.timers[#net.timers + 1] = { at = at, seq = net.seq, fn = fn } end
+	local function NetPlayer(name, holder)
+		local p = { name = name, key = name:lower(), online = false, holder = holder, own = {}, sent = {} }
+		local function isHolder(other) return other.holder or net.relay end
+		p.engine = S.New({
+			self = p.key, selfName = name, key = function(n) return n:lower() end,
+			now = function() return net.now end,
+			after = function(delay, fn) NetAfter(net.now + delay, fn) end,
+			send = function(message, target)
+				local to = net.players[target:lower()]
+				if not p.online or not to or not to.online then return false, 12 end
+				net.log[#net.log + 1] = { from = p.key, to = to.key, message = message, at = net.now }
+				local command, payload = strsplit("\t", message, 2)
+				NetAfter(net.now, function() if to.online then to.engine:Handle(name, command, payload) end end)
+				return true
+			end,
+			holders = function()
+				local list = {}
+				for key, other in pairs(net.players) do
+					if other ~= p and other.online and isHolder(other) then list[#list + 1] = { key = key, name = other.name } end
+				end
+				return list
+			end,
+			isHolder = function(key) local o = net.players[key] return o ~= nil and isHolder(o) end,
+			capable = function(key) local o = net.players[key] return o ~= nil and o.online end,
+			isMember = function() return true end, -- everybody in the test net is in the guild
+			amHolder = function() return isHolder(p) end,
+			store = function() if isHolder(p) then p.store = p.store or St.New() return p.store end end,
+			ownSince = function(since)
+				local list = {}
+				for _, raw in ipairs(p.own) do if R.Time(raw) >= since then list[#list + 1] = raw end end
+				return list
+			end,
+			sent = function() return p.sent end,
+			onStored = function() end,
+			onSyncDone = function() end,
+		})
+		net.players[p.key] = p
+		return p
+	end
+	-- Runs every due timer in time order; holders tick every INTERVAL_SECONDS.
+	local function NetRun(seconds)
+		local stop = net.now + seconds
+		while true do
+			table.sort(net.timers, function(a, b) if a.at ~= b.at then return a.at < b.at end return a.seq < b.seq end)
+			local nextTick = (math.floor(net.now / S.INTERVAL_SECONDS) + 1) * S.INTERVAL_SECONDS
+			local t = net.timers[1]
+			if nextTick <= stop and (not t or nextTick < t.at) then
+				net.now = nextTick
+				for _, p in pairs(net.players) do if p.online then p.engine:Tick() end end
+			elseif t and t.at <= stop then
+				table.remove(net.timers, 1)
+				net.now = math.max(net.now, t.at)
+				t.fn()
+			else
+				break
+			end
+		end
+		net.now = stop
+	end
+	local function NetOnline(p, online)
+		p.online = online
+		for _, other in pairs(net.players) do if other.online and other ~= p then other.engine:PeersChanged() end end
+		if online then p.engine:Start() end
+	end
+	local function NetRecord(p, raw) p.own[#p.own + 1] = raw p.engine:Record(raw) end
+	local function Has(p, memberKey, raw) local m = p.store and p.store.members[memberKey] return m ~= nil and m.recs[raw] ~= nil end
+	local function NetReset(relay)
+		net.now, net.timers, net.players, net.log, net.relay = 0, {}, {}, {}, relay or false
+	end
+	local H = 3600
+	local ahHint = R.Encode("H", { t = 11.5 * H, hk = "blocked", sev = "y", a = "ah", b = "AH" })
+
+	-- The example from the spec: member 10-12, officer A 11-13, officer B logs in later.
+	NetReset()
+	local m, a, b = NetPlayer("Mitglied", false), NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	NetRun(10 * H) NetOnline(m, true)
+	NetRun(1 * H) NetOnline(a, true)
+	NetRun(0.5 * H) NetRecord(m, ahHint)
+	NetRun(0.5 * H) NetOnline(m, false)
+	NetRun(0.5 * H) NetOnline(b, true)
+	NetRun(10 * 60)
+	check(Has(a, "mitglied", ahHint) and Has(b, "mitglied", ahHint), "B logs in at 12:30 while A is online: B gets the notice from A")
+	NetReset()
+	m, a, b = NetPlayer("Mitglied", false), NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	NetRun(10 * H) NetOnline(m, true)
+	NetRun(1 * H) NetOnline(a, true)
+	NetRun(0.5 * H) NetRecord(m, ahHint)
+	NetRun(0.5 * H) NetOnline(m, false)
+	NetRun(1 * H) NetOnline(a, false)
+	NetRun(1 * H) NetOnline(b, true)
+	NetRun(10 * 60)
+	check(not Has(b, "mitglied", ahHint), "B logs in at 14:00, nobody who has it is online: not yet")
+	NetOnline(m, true)
+	NetRun(10 * 60)
+	check(Has(b, "mitglied", ahHint), "the member comes back: B gets it on first contact")
+
+	-- Relay: with the guild rule, a member online 10-15 passes it on, with and without A.
+	for _, withA in ipairs({ false, true }) do
+		NetReset(true)
+		m, a, b = NetPlayer("Mitglied", false), NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+		local relay = NetPlayer("Lager", false)
+		NetRun(10 * H) NetOnline(m, true) NetOnline(relay, true)
+		NetRun(1 * H) if withA then NetOnline(a, true) end
+		NetRun(0.5 * H) NetRecord(m, ahHint)
+		NetRun(0.5 * H) NetOnline(m, false)
+		NetRun(1 * H) if withA then NetOnline(a, false) end
+		NetRun(1 * H) NetOnline(b, true)
+		NetRun(10 * 60)
+		check(Has(b, "mitglied", ahHint), "relay keeps the notice for B" .. (withA and " (A was online too)" or ""))
+	end
+
+	-- Many officers: three direct recipients, the rest through the rounds.
+	NetReset()
+	m = NetPlayer("Mitglied", false)
+	local officers = {}
+	for i = 1, 30 do officers[i] = NetPlayer("Offi" .. i, true) NetOnline(officers[i], true) end
+	NetOnline(m, true)
+	NetRun(60)
+	local before = #net.log
+	NetRecord(m, ahHint)
+	NetRun(10)
+	local direct = 0
+	for i = before + 1, #net.log do if net.log[i].from == "mitglied" and net.log[i].message:find("^AUDX") then direct = direct + 1 end end
+	check(direct == 3, "a new record goes to three officers directly")
+	NetRun(12 * S.INTERVAL_SECONDS)
+	local holding = 0
+	for _, o in ipairs(officers) do if Has(o, "mitglied", ahHint) then holding = holding + 1 end end
+	check(holding == 30, "after some rounds every officer has it")
+
+	-- Done marks: the later one wins everywhere.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	a.store, b.store = St.New(), St.New()
+	NetOnline(a, true) NetOnline(b, true)
+	St.Add(a.store, "mitglied", "Mitglied", ahHint, net.now)
+	local hintId = R.HintId(select(2, R.Decode(ahHint)))
+	St.SetDone(a.store, "mitglied", hintId, 1, "OffiA", net.now)
+	NetRun(S.INTERVAL_SECONDS * 3)
+	check(St.Timeline(b.store)[1] and St.Timeline(b.store)[1].done.s == 1, "a done mark reaches the other officer")
+	St.SetDone(b.store, "mitglied", hintId, 0, "OffiB", net.now)
+	NetRun(S.INTERVAL_SECONDS * 3)
+	check(St.Timeline(a.store)[1].done.s == 0 and St.Timeline(a.store)[1].done.by == "OffiB", "done marks: the later one wins on both sides")
+
+	-- Permissions: no holder, no data; foreign data only from holders.
+	NetReset()
+	m = NetPlayer("Mitglied", false)
+	local other = NetPlayer("Anderer", false)
+	a = NetPlayer("OffiA", true)
+	NetOnline(m, true) NetOnline(other, true) NetOnline(a, true)
+	other.engine:Handle("Mitglied", "AUDX", "Mitglied\t" .. ahHint)
+	a.engine:Handle("Anderer", "AUDX", "Mitglied\t" .. ahHint)
+	check(other.store == nil and not Has(a, "mitglied", ahHint), "a normal member keeps nothing; a non-holder cannot forward")
+
+	-- Same second as the end of a sync: still delivered (Prüfschwerpunkt 1).
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	a.store, b.store = St.New(), St.New()
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(60)
+	local mark = b.store.peers.offia and b.store.peers.offia.s1
+	check(mark ~= nil, "B noted how far it synced with A")
+	local lateHint = R.Encode("H", { t = mark, hk = "mail", sev = "o", a = "X", b = "s" })
+	St.Add(a.store, "mitglied", "Mitglied", lateHint, mark)
+	NetRun(S.INTERVAL_SECONDS * 3)
+	check(Has(b, "mitglied", lateHint), "a record from the same second as the sync end arrives with the next sync")
+
+	-- Details on request: from a holder while the member is offline.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	a.store, b.store = St.New(), St.New()
+	b.store.peers.offia = { s1 = 1e9, s2 = 1e9 }
+	local tradeRaw = R.Encode("T", { t = 5, n = "X", k = "e", gm = 0, rm = 1, gi = "", ri = "" })
+	St.Add(a.store, "mitglied", "Mitglied", tradeRaw, 1)
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(60)
+	check(not Has(b, "mitglied", tradeRaw), "nothing new by the sync")
+	b.engine:RequestMember("mitglied", "Mitglied")
+	NetRun(60)
+	check(Has(b, "mitglied", tradeRaw), "details on request from a holder")
+
+	-- First sync of a new officer: tier 1 first, paced.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	NetOnline(a, true)
+	a.store = a.store or St.New()
+	for i = 1, 300 do
+		St.Add(a.store, "m" .. i, "M" .. i, R.Encode("H", { t = i, hk = "mail", sev = "o", a = "X", b = "s" }), 1)
+		St.Add(a.store, "m" .. i, "M" .. i, R.Encode("T", { t = i, n = "X", k = "e", gm = 0, rm = 1, gi = "", ri = "" }), 1)
+	end
+	-- The entries arrived at 1: let the clock pass that before B asks, or A's answer at 0 marks 0
+	-- and the inclusive boundary sends everything again with the next sync.
+	NetRun(60)
+	net.log = {}
+	NetOnline(b, true)
+	NetRun(3 * H)
+	local firstTier2, lastTier1 = nil, 0
+	for i, entry in ipairs(net.log) do
+		if entry.from == "offia" and entry.message:find("^AUDX") then
+			if entry.message:find("\tT\t", 1, true) then firstTier2 = firstTier2 or i else lastTier1 = i end
+		end
+	end
+	check(firstTier2 and lastTier1 < firstTier2, "first sync: all notices before the details")
+	check(#St.Timeline(b.store) == 300 and #St.GetMember(b.store, "m300").trades == 1, "first sync complete")
+	local lastAt, paced = nil, true
+	for _, entry in ipairs(net.log) do
+		if entry.from == "offia" then
+			if lastAt and entry.at - lastAt < S.PACE_SECONDS then paced = false end
+			lastAt = entry.at
+		end
+	end
+	check(paced, "at most one message per second")
+
+	-- An AUDE nobody asked for; a failed send drops what waits for that target, the watermark stays.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	a.store = St.New()
+	NetOnline(a, true) NetOnline(m, true)
+	NetRun(10)
+	a.engine:Handle("OffiB", "AUDE", "1\t500")
+	check(a.store.peers.offib == nil, "an AUDE nobody asked for changes nothing")
+	local logRaws = {}
+	for i = 1, 6 do
+		logRaws[i] = R.Encode("L", { t = 100 + i, k = "ah", m = ("x"):rep(150) })
+		NetRecord(m, logRaws[i])
+	end
+	NetRun(S.BUNDLE_SECONDS)
+	a.online = false -- gone before anyone noticed
+	NetRun(S.PACE_SECONDS)
+	check(m.engine:Queued() == 0 and m.sent.offia == nil and Has(a, "mitglied", logRaws[1]) and not Has(a, "mitglied", logRaws[2]),
+		"a failed send drops the rest for that target, the watermark stays")
+	NetRun(10)
+	NetOnline(a, true)
+	NetRun(30)
+	local got = 0
+	for _, raw in ipairs(logRaws) do if Has(a, "mitglied", raw) then got = got + 1 end end
+	check(got == 6 and m.sent.offia ~= nil, "back online: everything since the watermark comes again")
+end
+
 -- Audit: recording --------------------------------------------------------------
 MAX_LEVEL = 60
 local A = ns.Audit
