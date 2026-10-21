@@ -1,0 +1,13 @@
+# Commands for Solo (https://soloterm.com/docs/projects/solo-yml). Terminals, agents and process
+# state stay local in Solo. Solo asks to trust each command before it runs it the first time.
+name: Guild Found Forever
+icon_initials: GF
+processes:
+  Tests:
+    # Runs the tests and waits; Solo runs them again whenever an addon file changes.
+    command: powershell -NoProfile -ExecutionPolicy Bypass -File tests/watch.ps1
+    auto_start: true
+    restart_when_changed:
+      - "**/*.lua"
+      - "**/*.toc"
+      - "**/*.xml"

@@ -3,6 +3,9 @@ package-as: GuildFoundForever
 # Only the addon goes into the ZIP. Files and folders starting with a dot are left out anyway.
 ignore:
   - README.md
+  - AGENTS.md
+  - CLAUDE.md
+  - solo.yml
   - tests
   - docs
 
