@@ -14,6 +14,8 @@ local PACE_SECONDS = 0.3
 local PACE_RETRY_SECONDS = 1.5
 local PACE_MAX_RETRIES = 20
 
+Comm.CAPABILITIES = "A" -- "A": automatic audit
+
 -- Enum.SendAddonMessageResult
 local RESULT_ADDON_THROTTLE = 3
 local RESULT_CHANNEL_THROTTLE = 8
@@ -24,6 +26,7 @@ local handlers = {}      -- command -> fn(sender, channel, payload)
 local queue = {}         -- messages waiting for a chat lockdown to end
 local checkResults       -- normalized name -> { name, version } while a check is running
 local newerVersionSeen = false
+local peers = {}         -- normalized name -> { caps, version } of players running the addon
 
 -- "1.2.3", "v1.2.3" or "1.2.3-beta" -> 10203; anything else (e.g. "dev") -> 0.
 local function VersionNumber(version)
@@ -178,7 +181,7 @@ ns.On("CHAT_MSG_ADDON", function(_, prefix, message, channel, sender)
 end)
 
 ---------------------------------------------------------------------------
--- Versions: "HELLO <version>" to the guild on login
+-- Versions and presence: "HELLO <version> <caps>" to the guild on login, answered with "HI"
 ---------------------------------------------------------------------------
 
 -- Development copies ("dev") have no number to compare with.
@@ -192,15 +195,78 @@ local function NoteVersion(version)
 	end
 end
 
-Comm.RegisterHandler("HELLO", function(_, _, version)
+function Comm.BuildHello()
+	return "HELLO\t" .. ns.version .. "\t" .. Comm.CAPABILITIES
+end
+
+-- Remembers what a player announced; PEERS_CHANGED fires when their capabilities change.
+local function NotePeer(sender, version, caps)
+	local key = ns.Guild.NormalizeName(sender)
+	if not key then
+		return
+	end
+	caps = caps or ""
+	local before = peers[key]
+	peers[key] = { caps = caps, version = version }
+	if (before and before.caps or "") ~= caps then
+		ns.Fire("PEERS_CHANGED")
+	end
+end
+
+-- True if the guild member is online and announced the capability.
+function Comm.HasCapability(name, cap)
+	local key = ns.Guild.NormalizeName(name)
+	local peer = key and peers[key]
+	return peer ~= nil and ns.Guild.GetOnlineMembers()[key] ~= nil and peer.caps:find(cap, 1, true) ~= nil
+end
+
+-- Sorted keys of the other online players who announced the capability.
+function Comm.GetCapablePeers(cap)
+	local result = {}
+	for key in pairs(peers) do
+		if Comm.HasCapability(key, cap) then
+			result[#result + 1] = key
+		end
+	end
+	table.sort(result)
+	return result
+end
+
+-- Players who went offline lose their presence.
+ns.RegisterCallback("ROSTER_UPDATED", function()
+	local online = ns.Guild.GetOnlineMembers()
+	local changed = false
+	for key, peer in pairs(peers) do
+		if not online[key] then
+			peers[key] = nil
+			changed = changed or peer.caps ~= ""
+		end
+	end
+	if changed then
+		ns.Fire("PEERS_CHANGED")
+	end
+end)
+
+Comm.RegisterHandler("HELLO", function(sender, _, payload)
+	local version, caps = strsplit("\t", payload or "")
 	NoteVersion(version)
+	NotePeer(sender, version, caps)
+	-- Answer after a random delay so a login does not make the whole guild whisper at once.
+	C_Timer.After(math.random(1, 20), function()
+		Comm.Send("HI\t" .. ns.version .. "\t" .. Comm.CAPABILITIES, "WHISPER", sender)
+	end)
+end)
+
+Comm.RegisterHandler("HI", function(sender, _, payload)
+	local version, caps = strsplit("\t", payload or "")
+	NotePeer(sender, version, caps)
 end)
 
 ns.RegisterCallback("LOGIN", function()
 	C_Timer.NewTicker(QUEUE_RETRY_SECONDS, FlushQueue)
 	C_Timer.After(HELLO_DELAY, function()
 		if IsInGuild() then
-			Comm.Send("HELLO\t" .. ns.version, "GUILD")
+			Comm.Send(Comm.BuildHello(), "GUILD")
 		end
 	end)
 end)
