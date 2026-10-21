@@ -38,8 +38,9 @@ function St.Add(gs, key, name, raw, at)
 		local old = member[slot]
 		if old then
 			local oldT = R.Time(old)
-			-- C replaces on equal or newer time, J only on a newer one, F never.
-			if rt == "F" or (rt == "J" and rec.t <= oldT) or (rt == "C" and rec.t < oldT) then
+			-- C replaces on a newer time, or on an equal time when its raw sorts after the stored one
+			-- (so peers converge); J only on a newer time, F never.
+			if rt == "F" or (rt == "J" and rec.t <= oldT) or (rt == "C" and (rec.t < oldT or (rec.t == oldT and raw < old))) then
 				return false
 			end
 			member.recs[old] = nil

@@ -942,8 +942,33 @@ do
 	check(data.name == "X-R" and #data.hints == 1 and #data.trades == 1 and data.last.l == 10 and data.first.l == 1 and data.latest == 1100, "member data decoded")
 	St.Prune(gs, 1000 + 864001)
 	check(#St.Timeline(gs) == 0 and gs.members["x-r"].c and gs.members["x-r"].f and #St.GetMember(gs, "x-r").trades == 1, "pruning: the notice and its marks go, states stay, the newer trade stays")
+	local leftover = false
+	for raw in pairs(gs.members["x-r"].recs) do
+		if raw:find("^E\t") then
+			leftover = true
+		end
+	end
+	check(not leftover, "pruning: done marks of a pruned notice leave recs")
 	St.RemoveMembers(gs, function(key) return key ~= "x-r" end)
 	check(gs.members["x-r"] == nil, "former members removed")
+	-- The id time decides, not the mark's own time (cutoff here is 1001).
+	local ps = St.New()
+	local oldMark = R.Encode("E", { t = 5000, s = 1, by = "A", id = "500:blocked:ah" })
+	local newMark = R.Encode("E", { t = 100, s = 1, by = "A", id = "2000:blocked:ah" })
+	St.Add(ps, "p-r", "P-R", oldMark, 5000)
+	St.Add(ps, "p-r", "P-R", newMark, 5000)
+	St.Prune(ps, 1000 + 864001)
+	check(ps.members["p-r"] and ps.members["p-r"].recs[oldMark] == nil and ps.members["p-r"].recs[newMark] == 5000, "pruning marks: by the time in the id")
+	-- Equal-time last states converge: the larger raw wins whatever the arrival order.
+	local c1 = R.Encode("C", { t = 2000, l = 10, x = 0, m = 5, p = 100, r = "int" })
+	local c2 = R.Encode("C", { t = 2000, l = 11, x = 0, m = 5, p = 100, r = "int" })
+	local s1, s2 = St.New(), St.New()
+	St.Add(s1, "k", "K", c1, 1)
+	St.Add(s1, "k", "K", c2, 2)
+	St.Add(s2, "k", "K", c2, 1)
+	St.Add(s2, "k", "K", c1, 2)
+	local want = c1 > c2 and c1 or c2
+	check(s1.members.k.c == want and s2.members.k.c == want and s1.members.k.recs[c1 == want and c2 or c1] == nil, "equal-time last states converge on the larger raw")
 	-- Tie of two marks: done wins. A replaced J leaves recs too.
 	St.Add(gs, "y-r", "Y-R", h1, 1)
 	St.SetDone(gs, "y-r", id, 0, "A", 50)
