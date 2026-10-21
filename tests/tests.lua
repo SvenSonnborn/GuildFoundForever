@@ -918,6 +918,43 @@ do
 	check(R.Decode("Q\t1\tx") == nil and R.Decode("S\tabc") == nil and R.Time("E\t77\t1\tMagus\t5:blocked:ah") == 77, "unknown kinds and broken times rejected")
 end
 
+-- Audit: store ---------------------------------------------------------------------
+local St = ns.AuditStore
+do
+	local gs = St.New()
+	local h1 = R.Encode("H", { t = 1000, hk = "blocked", sev = "y", a = "ah", b = "AH" })
+	check(St.Add(gs, "x-r", "X-R", h1, 5000) and not St.Add(gs, "x-r", "X-R", h1, 6000) and gs.members["x-r"].recs[h1] == 5000, "stored once, the first arrival time counts")
+	St.Add(gs, "x-r", "X-R", R.Encode("C", { t = 2000, l = 10, x = 0, m = 5, p = 100, r = "int" }), 5000)
+	St.Add(gs, "x-r", "X-R", R.Encode("C", { t = 1500, l = 9, x = 0, m = 5, p = 90, r = "int" }), 5001)
+	check(R.Time(gs.members["x-r"].c) == 2000, "an older last state does not replace a newer one")
+	St.Add(gs, "x-r", "X-R", R.Encode("F", { t = 10, l = 1, p = 0 }), 5000)
+	St.Add(gs, "x-r", "X-R", R.Encode("F", { t = 20, l = 2, p = 5 }), 5000)
+	check(R.Time(gs.members["x-r"].f) == 10, "the first state stays the first")
+	St.Add(gs, "x-r", "X-R", R.Encode("T", { t = 1100, n = "Y", k = "e", gm = 0, rm = 1, gi = "", ri = "" }), 7000)
+	local tier1, tier2 = St.Since(gs, 5000, 1), St.Since(gs, 6000, 2)
+	check(#tier1 == 1 and #tier1[1].raws == 3 and #tier2 == 1 and tier2[1].raws[1]:find("^T\t") ~= nil, "since: by tier and arrival time, inclusive")
+	local id = R.HintId(select(2, R.Decode(h1)))
+	St.SetDone(gs, "x-r", id, 1, "Offi", 3000)
+	St.SetDone(gs, "x-r", id, 0, "Andere", 3500)
+	local timeline = St.Timeline(gs)
+	check(#timeline == 1 and timeline[1].at == 5000 and timeline[1].done.s == 0 and timeline[1].done.by == "Andere", "timeline: the later mark wins")
+	local data = St.GetMember(gs, "x-r")
+	check(data.name == "X-R" and #data.hints == 1 and #data.trades == 1 and data.last.l == 10 and data.first.l == 1 and data.latest == 1100, "member data decoded")
+	St.Prune(gs, 1000 + 864001)
+	check(#St.Timeline(gs) == 0 and gs.members["x-r"].c and gs.members["x-r"].f and #St.GetMember(gs, "x-r").trades == 1, "pruning: the notice and its marks go, states stay, the newer trade stays")
+	St.RemoveMembers(gs, function(key) return key ~= "x-r" end)
+	check(gs.members["x-r"] == nil, "former members removed")
+	-- Tie of two marks: done wins. A replaced J leaves recs too.
+	St.Add(gs, "y-r", "Y-R", h1, 1)
+	St.SetDone(gs, "y-r", id, 0, "A", 50)
+	St.SetDone(gs, "y-r", id, 1, "B", 50)
+	check(St.Timeline(gs)[1].done.s == 1, "tie: done wins")
+	local j1, j2 = R.Encode("J", { t = 5, l = 1, p = 0, g = "" }), R.Encode("J", { t = 6, l = 2, p = 0, g = "" })
+	St.Add(gs, "y-r", "Y-R", j1, 1)
+	St.Add(gs, "y-r", "Y-R", j2, 1)
+	check(gs.members["y-r"].j == j2 and gs.members["y-r"].recs[j1] == nil, "a replaced join state leaves recs")
+end
+
 -- Audit: recording --------------------------------------------------------------
 MAX_LEVEL = 60
 local A = ns.Audit
