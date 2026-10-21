@@ -109,7 +109,7 @@ ns.On("PARTY_INVITE_REQUEST", function(_, inviter)
 	DeclineGroup()
 	StaticPopup_Hide("PARTY_INVITE")
 	ns.Warn("blocked", L.GROUP_INVITE_DECLINED, inviter, ns.Rules.GetGroupLockLevel())
-	ns.Log("group", L.LOG_GROUP_INVITE:format(inviter))
+	ns.Log("invite", L.LOG_GROUP_INVITE:format(inviter))
 end)
 
 if C_PartyInfo and C_PartyInfo.InviteUnit then

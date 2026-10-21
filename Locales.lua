@@ -68,6 +68,7 @@ L.COMM_FAILED = "Addon message could not be sent (code %s)."
 -- Auction house
 L.AH_BLOCKED = "The auction house is off limits for your guild."
 L.LOG_AH = "Tried to open the auction house"
+L.LOG_AH_OPENED = "Opened the auction house (no guild)"
 
 -- Mail
 L.MAIL_SEND_BLOCKED = "Mail to %s blocked: not in your guild or a partner guild."
@@ -471,6 +472,7 @@ if GetLocale() == "deDE" then
 
 	L.AH_BLOCKED = "Das Auktionshaus ist für deine Gilde tabu."
 	L.LOG_AH = "Versuch, das Auktionshaus zu öffnen"
+	L.LOG_AH_OPENED = "Auktionshaus geöffnet (ohne Gilde)"
 
 	L.MAIL_SEND_BLOCKED = "Post an %s blockiert: nicht in deiner Gilde oder einer Partnergilde."
 	L.MAIL_HINT_PARTNER = "Partnergilde"

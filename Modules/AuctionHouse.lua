@@ -14,7 +14,12 @@ local function CloseAuctionHouseWindow()
 end
 
 ns.On("AUCTION_HOUSE_SHOW", function()
-	if not ns.IsActive() or not ns.Rules.Get("blockAuctionHouse") then
+	if not ns.IsActive() then
+		-- Without a guild the rules are off and the window stays open; the visit is only recorded.
+		ns.Log("ah", L.LOG_AH_OPENED)
+		return
+	end
+	if not ns.Rules.Get("blockAuctionHouse") then
 		return
 	end
 	CloseAuctionHouseWindow()

@@ -217,6 +217,17 @@ ResetCalls()
 FireEvent("AUCTION_HOUSE_SHOW")
 check(CallCount("CloseAuctionHouse") == 0, "inactive without guild")
 IN_GUILD = true
+do
+	local logged = {}
+	ns.RegisterCallback("LOGGED", function(entry) logged[#logged + 1] = entry end)
+	Advance(11) -- the visit above was logged just now; the 10 s duplicate guard would skip this one
+	IN_GUILD = false
+	ResetCalls()
+	FireEvent("AUCTION_HOUSE_SHOW")
+	check(CallCount("HideUIPanel") == 0 and ns.char.log[#ns.char.log].k == "ah" and lastLog() == "Auktionshaus geöffnet (ohne Gilde)", "without a guild the auction house stays open, the visit is recorded")
+	check(logged[#logged] and logged[#logged].k == "ah", "LOGGED fired for the new entry")
+	IN_GUILD = true
+end
 
 -- Mail ---------------------------------------------------------------------
 ResetCalls()
@@ -389,6 +400,7 @@ GROUP = {}
 ResetCalls()
 FireEvent("PARTY_INVITE_REQUEST", "Fremder")
 check(CallCount("DeclineGroup") == 1, "stranger's invite declined at 50")
+check(ns.char.log[#ns.char.log].k == "invite", "declined invite logged as invite")
 ResetCalls()
 FireEvent("PARTY_INVITE_REQUEST", "Freund")
 check(CallCount("DeclineGroup") == 0, "guild invite accepted")
@@ -413,6 +425,7 @@ SUMMONER = "Fremder"
 ResetCalls()
 FireEvent("CONFIRM_SUMMON")
 check(CallCount("CancelSummon") == 1, "summon by stranger cancelled")
+check(ns.char.log[#ns.char.log].k == "summon", "declined summon logged as summon")
 StaticPopup_Show("CONFIRM_SUMMON")
 local hidden = 0
 for _, c in ipairs(CALLS) do if c.name == "StaticPopup_Hide" and c.args[1] == "CONFIRM_SUMMON" then hidden = hidden + 1 end end
@@ -443,6 +456,7 @@ ZONE = "Stormwind City"
 FireEvent("ZONE_CHANGED_NEW_AREA")
 RunTimers()
 check(lastLog():find("Portal von Fremder nach Stormwind", 1, true) ~= nil, "arriving at the destination is logged")
+check(ns.char.log[#ns.char.log].k == "portal", "portal logged as portal")
 
 local logCount = #ns.char.log
 ZONE = "Elwynn Forest"

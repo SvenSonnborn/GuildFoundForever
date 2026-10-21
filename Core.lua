@@ -264,10 +264,12 @@ function ns.Log(kind, msg)
 	if last and last.m == msg and now - last.t < 10 then
 		return
 	end
-	log[#log + 1] = { t = now, k = kind, m = msg }
+	local entry = { t = now, k = kind, m = msg }
+	log[#log + 1] = entry
 	while #log > MAX_LOG_ENTRIES do
 		table.remove(log, 1)
 	end
+	ns.Fire("LOGGED", entry)
 end
 
 ---------------------------------------------------------------------------
