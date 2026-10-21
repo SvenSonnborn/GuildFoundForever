@@ -1102,6 +1102,81 @@ check(GuildFoundForeverFrame:IsShown() and ns.db.lastTab == "audit", "/gff audit
 ns.UI.Toggle()
 ns.db.lastTab = "rules"
 
+-- Audit: own notices ----------------------------------------------------------------
+do
+	local own = ns.char.audit
+	local function lastHint() return own.hints[#own.hints] end
+	-- Earlier sections ran the interval ticker before /played was known, so the oldest snapshot is an
+	-- interval snapshot without played time; the first login took it as the first state.
+	check(own.first and own.first.t == own.snapshots[1].t and own.first.l == 20 and own.first.p == nil, "first state with the addon kept: the oldest snapshot")
+	local installHint
+	for _, h in ipairs(own.hints) do if h.hk == "install" then installHint = h end end
+	check(installHint and installHint.sev == "r" and tonumber(installHint.b) == 3600, "played before the addon was installed: notice")
+	check(own.join and own.join.g == "Testgilde" and own.guild == "Testgilde", "joining the guild recorded")
+	local hk, sev, a = A.CheckLogin({ t = 1, l = 5, x = 0, m = 0, p = 1000, r = "out" }, { t = 2, l = 5, x = 0, m = 0, p = 4600, r = "in" })
+	check(hk == "played" and sev == "r" and tonumber(a) == 3600, "login check: played without the addon")
+	check(A.CheckLogin({ t = 1, l = 5, x = 0, m = 0, p = 1000, r = "int" }, { t = 2, l = 5, x = 0, m = 0, p = 1700, r = "in" }) == nil, "login check: crash within the tolerance")
+	check(A.CheckLogin({ t = 1, l = 5, x = 0, m = 100, p = 1000, r = "out" }, { t = 2, l = 6, x = 0, m = 900, p = 1000, r = "in" }) == "changed", "login check: changed offline")
+	local recorded = {}
+	ns.RegisterCallback("AUDIT_RECORDED", function(raw) recorded[#recorded + 1] = raw end)
+	UNITS.NPC = { name = "Fremder", guild = false }
+	TRADE = { player = {}, target = {}, playerMoney = 0, targetMoney = 2500 }
+	FireEvent("TRADE_SHOW")
+	FireEvent("TRADE_ACCEPT_UPDATE", 1, 1)
+	FireEvent("UI_INFO_MESSAGE", 0, "Trade complete.")
+	check(lastHint().hk == "trade" and lastHint().sev == "r" and lastHint().a == "Fremder" and lastHint().c == "2500", "gold from a non-guild player: red notice")
+	check(recorded[#recorded]:find("^H\t") ~= nil and recorded[#recorded - 1]:find("^T\t") ~= nil, "trade and notice reported as new records")
+	FireEvent("TRADE_CLOSED")
+	RunTimers()
+	local hintCount = #own.hints
+	ns.Log("invite", "Gruppeneinladung von Fremder abgelehnt")
+	Advance(11)
+	ns.Log("summon", "Beschwörung durch Fremder abgelehnt")
+	check(#own.hints == hintCount, "declined invites and summons are no notices")
+	check(recorded[#recorded]:find("^L\t") ~= nil, "log entries reported as new records")
+	Advance(11)
+	ns.Log("ah", "Versuch, das Auktionshaus zu öffnen")
+	check(lastHint().hk == "blocked" and lastHint().sev == "y" and lastHint().a == "ah", "blocked auction house: yellow notice")
+	IN_GUILD = false
+	FireEvent("PLAYER_GUILD_UPDATE")
+	check(own.guild == nil, "leaving the guild forgets it")
+	INBOX = { { sender = "Fremder", canReply = true, money = 50, items = {} } }
+	TakeInboxMoney(1)
+	check(lastHint().hk == "mail" and lastHint().a == "Fremder" and lastHint().b == "r", "mail from anyone without a guild: notice")
+	Advance(10)
+	IN_GUILD = true
+	FireEvent("PLAYER_GUILD_UPDATE")
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(lastHint().hk == "join" and lastHint().sev == "g" and own.join.t == GetServerTime(), "joining again: join notice and new join state")
+	local raws = A.OwnRaws(0)
+	local kinds, hasInterval = {}, false
+	for _, raw in ipairs(raws) do
+		kinds[raw:sub(1, 1)] = true
+		if raw:find("^S\t") and raw:find("\tint$") then hasInterval = true end
+	end
+	check(kinds.C and kinds.J and kinds.F and kinds.H and kinds.T and not hasInterval, "own records to send: last, join and first state, no interval snapshots")
+	check(A.FormatHint(lastHint()):find("Testgilde", 1, true) ~= nil and A.HintColor(lastHint()) == "999999" and A.HintFilter("install") == "noaddon", "notice text, colour and filter")
+	local savedAudit, savedLog = ns.char.audit, ns.char.log
+	-- First run after the update from 0.8: records without a first state, already in a guild.
+	ns.char.audit = { snapshots = { { t = 50, l = 7, x = 0, m = 0, p = 4000, r = "out" }, { t = 60, l = 8, x = 0, m = 0, p = 5000, r = "out" } },
+		trades = {}, mail = {}, hints = {}, sent = {} }
+	ns.Fire("INIT")
+	FireEvent("GUILD_ROSTER_UPDATE")
+	local upgraded = ns.char.audit
+	check(upgraded.first and upgraded.first.t == 50 and upgraded.first.l == 7 and upgraded.first.p == 4000, "update from 0.8: the oldest snapshot is the first state")
+	check(upgraded.join and upgraded.join.t == 0 and upgraded.join.l == 0 and upgraded.join.g == "Testgilde" and upgraded.guild == "Testgilde" and #upgraded.hints == 0,
+		"update from 0.8: joined before 1.0, no notice")
+	ns.char.audit = { snapshots = { { t = 1, l = 5, x = 0, m = 0, p = 10, r = "out" }, { t = 2, l = 6, x = 0, m = 0, p = 20, r = "out" } },
+		trades = { { t = 1, n = "X", k = "g", gm = 0, rm = 0, gi = "", ri = "" } }, mail = {}, hints = { { t = 1, hk = "mail", sev = "o" } },
+		first = { t = 1, l = 1, p = 0 }, join = { t = 1, l = 1, g = "Testgilde" }, sent = {} }
+	ns.char.log = { { t = 1, k = "ah", m = "alt" } }
+	A.PruneOwn(2 + 864001)
+	check(#ns.char.audit.snapshots == 1 and ns.char.audit.snapshots[1].t == 2 and #ns.char.audit.trades == 0 and #ns.char.audit.hints == 0 and #ns.char.log == 0, "older than 10 days dropped, the newest snapshot stays")
+	check(ns.char.audit.first and ns.char.audit.join, "join and first state stay")
+	ns.char.audit, ns.char.log = savedAudit, savedLog
+	UNITS.NPC = nil
+end
+
 -- Professions: skills ------------------------------------------------------------
 local P = ns.Professions
 local ownProfs = ns.char.professions

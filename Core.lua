@@ -61,7 +61,7 @@ ns.defaults = {
 
 ns.charDefaults = {
 	log = {},
-	audit = { snapshots = {}, trades = {}, mail = {} },
+	audit = { snapshots = {}, trades = {}, mail = {}, hints = {}, sent = {} }, -- also join, first, guild (Audit.lua)
 	professions = {},
 	finder = { selected = {}, onlyFitting = false }, -- dungeon finder: picked activities (ID -> true)
 	messages = {}, -- message window, newest last (Messages.lua)
