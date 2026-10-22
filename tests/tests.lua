@@ -1657,6 +1657,25 @@ CAN_VIEW_OFFICER = false
 SlashCmdList.GUILDFOUNDFOREVER("audit")
 check(GuildFoundForeverFrame:IsShown() and ns.db.lastTab == "audit", "/gff audit opens the tab, also without officer rights")
 ns.UI.Toggle()
+do
+	CAN_VIEW_OFFICER = true
+	local now = os.time({ year = 2026, month = 11, day = 4, hour = 12 }) -- midday, so "today" and "yesterday" are clear
+	local function e(t, hk, at, doneState) return { key = "x", name = "X", hint = { t = t, hk = hk, sev = "o" }, id = t .. ":" .. hk .. ":", at = at, done = doneState and { s = doneState, by = "O", t = t } or nil, new = at > now - 100 } end
+	local entries = { e(now - 10, "mail", now - 5), e(now - 20, "trade", now - 5000, 1), e(now - 86400, "blocked", now - 86400) }
+	local lines = ns.UI.BuildAuditTimeline(entries, nil, false, now)
+	check(#lines == 5 and lines[1].day:find("Heute", 1, true) and lines[1].day:find("1 neu", 1, true) and lines[4].day == "Gestern", "timeline: days, newest first, new count today")
+	check(#ns.UI.BuildAuditTimeline(entries, nil, true, now) == 4, "done notices hidden")
+	check(#ns.UI.BuildAuditTimeline(entries, "trade", false, now) == 2, "filter by kind")
+	ns.UI.ShowAudit()
+	check(FindWidgetByText("Button", "Hinweise") and FindWidgetByText("Button", "Beitritt") and FindWidgetByText("FontString", "Erledigte ausblenden"), "officers see the timeline with its filters")
+	ns.UI.ShowAudit("Freund-ClassicBetaPvE2")
+	check(FindWidgetByText("Button", "Daten anfordern"):IsShown(), "a name opens the member view")
+	ns.UI.Toggle()
+	CAN_VIEW_OFFICER = false
+	ns.UI.ShowAudit()
+	check(not FindWidgetByText("Button", "Hinweise"):IsShown() and FindWidgetByText("FontString", "Deine Audit-Daten gehen automatisch an die Offiziere deiner Gilde."), "members: own data with the note")
+	ns.UI.Toggle()
+end
 ns.db.lastTab = "rules"
 
 -- Audit: own notices ----------------------------------------------------------------

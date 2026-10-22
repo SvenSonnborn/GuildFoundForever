@@ -307,23 +307,45 @@ function UI.RefreshDeathlog()
 end
 
 ---------------------------------------------------------------------------
--- Tab: audit (officers see every member, everybody else their own data)
+-- Tab: audit (officers: notices timeline and every member; everybody else: their own data)
 ---------------------------------------------------------------------------
 
 local AUDIT_LIST_WIDTH = 220
-local AUDIT_MEMBER_ROWS = 17
-local AUDIT_DETAIL_ROWS = 11
+local AUDIT_TOP = 30 -- room above the lists for the mode buttons (or the note for members)
+local AUDIT_MEMBER_ROWS = 15
+local AUDIT_DETAIL_ROWS = 8
+local AUDIT_HINT_ROWS = 15
 local AUDIT_ROW_HEIGHT = 18
 local AUDIT_DETAIL_X = LEFT + AUDIT_LIST_WIDTH + 20
 local AUDIT_DETAIL_WIDTH = WIDTH - AUDIT_DETAIL_X - 16
+local AUDIT_FOOTER_Y = -336
 local AUDIT_VIEWS = {
 	{ key = "snapshots", label = "AUDIT_VIEW_HISTORY", format = "FormatSnapshot" },
 	{ key = "trades", label = "AUDIT_VIEW_TRADES", format = "FormatTrade" },
 	{ key = "mail", label = "AUDIT_VIEW_MAIL", format = "FormatMail" },
 	{ key = "log", label = "AUDIT_VIEW_BLOCKED", format = "FormatLog" },
 }
+local AUDIT_MODES = {
+	{ key = "hints", label = "AUDIT_MODE_HINTS" },
+	{ key = "members", label = "AUDIT_MODE_MEMBERS" },
+}
+-- value = what Audit.HintFilter returns for the kind; nil shows everything
+local AUDIT_FILTERS = {
+	{ label = "AUDIT_FILTER_ALL", width = 50 },
+	{ value = "noaddon", label = "AUDIT_FILTER_NOADDON", width = 90 },
+	{ value = "trade", label = "AUDIT_FILTER_TRADE", width = 64 },
+	{ value = "mail", label = "AUDIT_FILTER_MAIL", width = 56 },
+	{ value = "offline", label = "AUDIT_FILTER_OFFLINE", width = 64 },
+	{ value = "blocked", label = "AUDIT_FILTER_BLOCKED", width = 74 },
+	{ value = "join", label = "AUDIT_FILTER_JOIN", width = 70 },
+}
 
-local audit = { view = 1, memberOffset = 0, detailOffset = 0, memberRows = {}, detailRows = {}, viewButtons = {} }
+local audit = {
+	mode = "hints", hideDone = false, filter = nil,
+	hintOffset = 0, memberOffset = 0, detailOffset = 0, view = 1,
+	hintRows = {}, memberRows = {}, detailRows = {}, viewButtons = {}, modeButtons = {}, filterButtons = {},
+	widgets = { hints = {}, members = {} }, -- widgets that belong to one mode only
+}
 
 local function CreateListRow(parent, x, y, width)
 	local row = CreateFrame("Button", nil, parent)
@@ -344,6 +366,53 @@ local function CreateListRow(parent, x, y, width)
 	return row
 end
 
+-- Lists a widget as belonging to one mode of the tab.
+local function ForMode(mode, widget)
+	local list = audit.widgets[mode]
+	list[#list + 1] = widget
+	return widget
+end
+
+-- Pure: the lines of the timeline for the given notices (newest first, as AuditAuto.GetTimeline
+-- gives them): { day = "Today ..." } headings and { entry = e } lines.
+function UI.BuildAuditTimeline(entries, filter, hideDone, now)
+	local lines, dayKey, heading, newCount = {}, nil, nil, 0
+	local todayKey = date("%Y%m%d", now)
+	local yesterdayKey = date("%Y%m%d", now - 86400)
+	local function FinishHeading()
+		if heading and dayKey == todayKey and newCount > 0 then
+			heading.day = heading.day .. " " .. L.AUDIT_NEW_SINCE:format(newCount)
+		end
+	end
+	for _, e in ipairs(entries) do
+		local done = e.done and e.done.s == 1
+		if (not filter or ns.Audit.HintFilter(e.hint.hk) == filter) and not (hideDone and done) then
+			local key = date("%Y%m%d", e.hint.t)
+			if key ~= dayKey then
+				FinishHeading()
+				dayKey, newCount = key, 0
+				heading = { day = key == todayKey and L.AUDIT_TODAY or key == yesterdayKey and L.AUDIT_YESTERDAY or date("%d.%m.", e.hint.t) }
+				lines[#lines + 1] = heading
+			end
+			if e.new then
+				newCount = newCount + 1
+			end
+			lines[#lines + 1] = { entry = e }
+		end
+	end
+	FinishHeading()
+	return lines
+end
+
+-- Selects a member for the member view; officers ask for the details that are still missing.
+local function SelectAuditMember(key)
+	audit.selected = key
+	audit.detailOffset = 0
+	if key and ns.Audit.CanView() and not ns.Guild.IsSelf(key) and ns.AuditAuto.LatestTime(key) == 0 then
+		ns.AuditAuto.RequestDetails(key)
+	end
+end
+
 local function AuditEntries()
 	if ns.Audit.CanView() then
 		return ns.Guild.GetRosterEntries()
@@ -358,28 +427,133 @@ local function AuditEntries()
 	} }
 end
 
+local function ColoredName(name, class, online)
+	name = Ambiguate(name, "guild")
+	return online and ns.Announce.ClassColored(name, class) or ("|cff777777" .. name .. "|r")
+end
+
+local function ShowRowTooltip(self)
+	if self.fullText and self.fullText ~= "" then
+		GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
+		GameTooltip:SetText(self.fullText, 1, 1, 1, 1, true)
+		GameTooltip:Show()
+	end
+end
+
+local function CreateHintRow(panel, index)
+	local row = CreateListRow(panel, LEFT, -(AUDIT_TOP + 28) - (index - 1) * AUDIT_ROW_HEIGHT, WIDTH - 2 * LEFT)
+	row.shade = row:CreateTexture(nil, "BACKGROUND")
+	row.shade:SetAllPoints()
+	row.day = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	row.day:SetPoint("LEFT", 4, 0)
+	row.time = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	row.time:SetPoint("LEFT", 4, 0)
+	row.time:SetWidth(40)
+	row.time:SetJustifyH("LEFT")
+	row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.name:SetPoint("LEFT", 48, 0)
+	row.name:SetWidth(130)
+	row.name:SetJustifyH("LEFT")
+	row.name:SetWordWrap(false)
+	row.tag = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.tag:SetPoint("LEFT", 184, 0)
+	row.tag:SetWidth(72)
+	row.tag:SetJustifyH("LEFT")
+	row.tag:SetWordWrap(false)
+	row.text:ClearAllPoints()
+	row.text:SetPoint("LEFT", 260, 0)
+	row.text:SetPoint("RIGHT", -30, 0)
+	row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
+	row.check:SetSize(20, 20)
+	row.check:SetPoint("RIGHT", -4, 0)
+	row.check:SetScript("OnClick", function(self)
+		local entry = row.entry
+		if entry then
+			ns.AuditAuto.SetDone(entry.key, entry.id, self:GetChecked() and true or false)
+			UI.RefreshAudit()
+		end
+	end)
+	row.check:SetScript("OnEnter", function(self)
+		local done = row.entry and row.entry.done
+		if done and done.s == 1 then
+			GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+			GameTooltip:SetText(L.AUDIT_DONE_BY:format(Ambiguate(done.by or "?", "guild"), date("%d.%m. %H:%M", done.t or 0)), 1, 1, 1)
+			GameTooltip:Show()
+		end
+	end)
+	row.check:SetScript("OnLeave", GameTooltip_Hide)
+	row:SetScript("OnClick", function()
+		if row.entry then
+			audit.mode = "members"
+			SelectAuditMember(row.entry.key)
+			UI.RefreshAudit()
+		end
+	end)
+	row:SetScript("OnEnter", ShowRowTooltip)
+	row:SetScript("OnLeave", GameTooltip_Hide)
+	return row
+end
+
 local function BuildAuditPanel(panel)
-	controls.auditListHeader = CreateHeader(panel, LEFT, -4, "")
-	for i = 1, AUDIT_MEMBER_ROWS do
-		local row = CreateListRow(panel, LEFT, -22 - (i - 1) * AUDIT_ROW_HEIGHT, AUDIT_LIST_WIDTH)
-		row:SetScript("OnClick", function(self)
-			audit.selected = self.key
-			audit.detailOffset = 0
+	-- mode buttons (officers) or the note (everybody else)
+	for i, mode in ipairs(AUDIT_MODES) do
+		local button = CreateButton(panel, L[mode.label], 110, function()
+			audit.mode = mode.key
 			UI.RefreshAudit()
 		end)
-		audit.memberRows[i] = row
+		button:SetPoint("TOPLEFT", LEFT + (i - 1) * 116, -2)
+		audit.modeButtons[i] = button
+	end
+	controls.auditNote = CreateNote(panel, LEFT, -6, WIDTH - 2 * LEFT)
+	controls.auditNote:SetText(L.AUDIT_AUTO_NOTE)
+
+	-- notices timeline
+	local x = LEFT
+	for i, def in ipairs(AUDIT_FILTERS) do
+		local button = CreateButton(panel, L[def.label], def.width, function()
+			audit.filter = def.value
+			audit.hintOffset = 0
+			UI.RefreshAudit()
+		end)
+		button:SetPoint("TOPLEFT", x, -30)
+		x = x + def.width + 4
+		audit.filterButtons[i] = ForMode("hints", button)
+	end
+	controls.auditHideDone = ForMode("hints", CreateCheckbox(panel, WIDTH - 200, -2, L.AUDIT_HIDE_DONE, L.AUDIT_HIDE_DONE, function(self)
+		audit.hideDone = self:GetChecked() and true or false
+		audit.hintOffset = 0
+		UI.RefreshAudit()
+	end))
+	for i = 1, AUDIT_HINT_ROWS do
+		audit.hintRows[i] = ForMode("hints", CreateHintRow(panel, i))
+	end
+	controls.auditSyncFooter = ForMode("hints", CreateNote(panel, LEFT + 4, AUDIT_FOOTER_Y, 440))
+	controls.auditOpenCount = ForMode("hints", CreateNote(panel, WIDTH - 216, AUDIT_FOOTER_Y, 200))
+	controls.auditOpenCount:SetJustifyH("RIGHT")
+
+	-- member view
+	controls.auditListHeader = ForMode("members", CreateHeader(panel, LEFT, -4 - AUDIT_TOP, ""))
+	for i = 1, AUDIT_MEMBER_ROWS do
+		local row = CreateListRow(panel, LEFT, -22 - AUDIT_TOP - (i - 1) * AUDIT_ROW_HEIGHT, AUDIT_LIST_WIDTH)
+		row:SetScript("OnClick", function(self)
+			SelectAuditMember(self.key)
+			UI.RefreshAudit()
+		end)
+		audit.memberRows[i] = ForMode("members", row)
 	end
 
-	controls.auditName = CreateHeader(panel, AUDIT_DETAIL_X, -4, "")
-	controls.auditStatus = CreateNote(panel, AUDIT_DETAIL_X, -24, AUDIT_DETAIL_WIDTH - 170)
-	controls.auditRequest = CreateButton(panel, L.BTN_AUDIT_REQUEST, 160, function()
+	controls.auditName = ForMode("members", CreateHeader(panel, AUDIT_DETAIL_X, -4 - AUDIT_TOP, ""))
+	controls.auditStatus = ForMode("members", CreateNote(panel, AUDIT_DETAIL_X, -24 - AUDIT_TOP, AUDIT_DETAIL_WIDTH - 170))
+	controls.auditRequest = ForMode("members", CreateButton(panel, L.BTN_AUDIT_REQUEST, 160, function()
 		ns.Audit.Request(audit.selectedName)
-	end)
-	controls.auditRequest:SetPoint("TOPRIGHT", -16, -2)
+	end))
+	controls.auditRequest:SetPoint("TOPRIGHT", -16, -2 - AUDIT_TOP)
 	AttachTooltip(controls.auditRequest, L.BTN_AUDIT_REQUEST, L.BTN_AUDIT_REQUEST_TIP)
-	controls.auditSummary = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	controls.auditSummary:SetPoint("TOPLEFT", AUDIT_DETAIL_X, -46)
-	controls.auditFlags = CreateNote(panel, AUDIT_DETAIL_X, -68, AUDIT_DETAIL_WIDTH)
+	controls.auditSummary = ForMode("members", panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight"))
+	controls.auditSummary:SetPoint("TOPLEFT", AUDIT_DETAIL_X, -46 - AUDIT_TOP)
+	controls.auditJoin = ForMode("members", CreateNote(panel, AUDIT_DETAIL_X, -64 - AUDIT_TOP, AUDIT_DETAIL_WIDTH))
+	controls.auditJoin:SetFontObject("GameFontHighlightSmall")
+	controls.auditFlags = ForMode("members", CreateNote(panel, AUDIT_DETAIL_X, -82 - AUDIT_TOP, AUDIT_DETAIL_WIDTH))
 	controls.auditFlags:SetFontObject("GameFontNormalSmall")
 	controls.auditFlags:SetSpacing(2)
 
@@ -389,44 +563,144 @@ local function BuildAuditPanel(panel)
 			audit.detailOffset = 0
 			UI.RefreshAudit()
 		end)
-		button:SetPoint("TOPLEFT", AUDIT_DETAIL_X + (i - 1) * 116, -114)
-		audit.viewButtons[i] = button
+		button:SetPoint("TOPLEFT", AUDIT_DETAIL_X + (i - 1) * 116, -142 - AUDIT_TOP)
+		audit.viewButtons[i] = ForMode("members", button)
 	end
 	for i = 1, AUDIT_DETAIL_ROWS do
-		local row = CreateListRow(panel, AUDIT_DETAIL_X, -142 - (i - 1) * AUDIT_ROW_HEIGHT, AUDIT_DETAIL_WIDTH)
-		row:SetScript("OnEnter", function(self)
-			if self.fullText and self.fullText ~= "" then
-				GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
-				GameTooltip:SetText(self.fullText, 1, 1, 1, 1, true)
-				GameTooltip:Show()
-			end
-		end)
+		local row = CreateListRow(panel, AUDIT_DETAIL_X, -170 - AUDIT_TOP - (i - 1) * AUDIT_ROW_HEIGHT, AUDIT_DETAIL_WIDTH)
+		row:SetScript("OnEnter", ShowRowTooltip)
 		row:SetScript("OnLeave", GameTooltip_Hide)
-		audit.detailRows[i] = row
+		audit.detailRows[i] = ForMode("members", row)
 	end
 
 	panel:EnableMouseWheel(true)
 	panel:SetScript("OnMouseWheel", function(_, delta)
-		local x = GetCursorPosition() / panel:GetEffectiveScale()
-		if x - panel:GetLeft() < AUDIT_DETAIL_X then
-			audit.memberOffset = audit.memberOffset - delta * 3
+		if audit.mode == "hints" then
+			audit.hintOffset = audit.hintOffset - delta * 3
 		else
-			audit.detailOffset = audit.detailOffset - delta * 3
+			local x = GetCursorPosition() / panel:GetEffectiveScale()
+			if x - panel:GetLeft() < AUDIT_DETAIL_X then
+				audit.memberOffset = audit.memberOffset - delta * 3
+			else
+				audit.detailOffset = audit.detailOffset - delta * 3
+			end
 		end
 		UI.RefreshAudit()
 	end)
 end
 
-local function RefreshAuditMembers(entries)
+local function RefreshAuditHints(timeline)
+	for i, button in ipairs(audit.filterButtons) do
+		if AUDIT_FILTERS[i].value == audit.filter then
+			button:LockHighlight()
+		else
+			button:UnlockHighlight()
+		end
+	end
+	controls.auditHideDone:SetChecked(audit.hideDone)
+
+	local lines = UI.BuildAuditTimeline(timeline, audit.filter, audit.hideDone, GetServerTime())
+	audit.hintOffset = math.min(math.max(audit.hintOffset, 0), math.max(0, #lines - AUDIT_HINT_ROWS))
+	for i, row in ipairs(audit.hintRows) do
+		local line = lines[audit.hintOffset + i]
+		row.entry, row.fullText = nil, nil
+		row.shade:Hide()
+		row.day:SetText("")
+		for _, region in ipairs({ row.time, row.name, row.tag, row.text }) do
+			region:SetText("")
+		end
+		row.check:Hide()
+		row:Show()
+		if line and line.day then
+			row.day:SetText(line.day)
+		elseif line then
+			local e = line.entry
+			local done = e.done and e.done.s == 1
+			local text = ns.Audit.FormatHint(e.hint)
+			if e.pre then
+				text = text .. " " .. L.HINT_PRE_JOIN
+			end
+			local tag = ns.Audit.HintTag(e.hint)
+			row.entry = e
+			row.fullText = ("%s  %s  %s"):format(Ambiguate(e.name, "guild"), tag, text)
+			row.time:SetText(date("%H:%M", e.hint.t))
+			row.name:SetText(ColoredName(e.name, e.class, e.online))
+			row.tag:SetText(("|cff%s%s|r"):format(ns.Audit.HintColor(e.hint), tag))
+			row.text:SetText(done and ("|cff777777" .. text .. "|r") or text)
+			row.check:SetChecked(done and true or false)
+			row.check:Show()
+			if done then
+				row.shade:SetColorTexture(0.5, 0.5, 0.5, 0.12)
+				row.shade:Show()
+			elseif e.new then
+				row.shade:SetColorTexture(1, 1, 1, 0.07)
+				row.shade:Show()
+			end
+		elseif i == 1 and #lines == 0 then
+			row.day:SetText("|cff999999" .. L.AUDIT_NO_HINTS .. "|r")
+		else
+			row:Hide()
+		end
+	end
+
+	local queued, syncedAt, peer = ns.AuditAuto.Status()
+	if queued and queued > 0 then
+		controls.auditSyncFooter:SetText(L.AUDIT_SYNC_RUNNING:format(queued))
+	elseif syncedAt and syncedAt > 0 then
+		controls.auditSyncFooter:SetText(L.AUDIT_SYNC_FOOTER:format(date("%d.%m. %H:%M", syncedAt), Ambiguate(peer or "?", "guild")))
+	else
+		controls.auditSyncFooter:SetText(L.AUDIT_SYNC_NEVER)
+	end
+	local open = 0
+	for _, e in ipairs(timeline) do
+		if not (e.done and e.done.s == 1) then
+			open = open + 1
+		end
+	end
+	controls.auditOpenCount:SetText(L.AUDIT_OPEN_COUNT:format(open))
+end
+
+-- Open notices per member, from the timeline.
+local function OpenNotices(timeline)
+	local open = {}
+	for _, e in ipairs(timeline) do
+		if not (e.done and e.done.s == 1) then
+			open[e.key] = (open[e.key] or 0) + 1
+		end
+	end
+	return open
+end
+
+-- Members with open notices first, then online, then by name.
+local function SortedMembers(entries, open)
+	local sorted = {}
+	for i, entry in ipairs(entries) do
+		sorted[i] = entry
+	end
+	table.sort(sorted, function(a, b)
+		local oa, ob = open[a.key] or 0, open[b.key] or 0
+		if oa ~= ob then
+			return oa > ob
+		end
+		if (a.online and true or false) ~= (b.online and true or false) then
+			return a.online and true or false
+		end
+		return Ambiguate(a.fullName, "guild"):lower() < Ambiguate(b.fullName, "guild"):lower()
+	end)
+	return sorted
+end
+
+local function RefreshAuditMembers(entries, open)
 	audit.memberOffset = math.min(math.max(audit.memberOffset, 0), math.max(0, #entries - AUDIT_MEMBER_ROWS))
 	for i, row in ipairs(audit.memberRows) do
 		local entry = entries[audit.memberOffset + i]
 		if entry then
-			local name = Ambiguate(entry.fullName, "guild")
-			name = entry.online and ns.Announce.ClassColored(name, entry.class) or ("|cff777777" .. name .. "|r")
+			local name = ColoredName(entry.fullName, entry.class, entry.online)
+			local count = open[entry.key]
+			local notices = count and (" |cffff5555%d|r"):format(count) or ""
 			local fetched = ns.AuditAuto.HasData(entry.key) and " |cff66bbff*|r" or ""
 			row.key = entry.key
-			row.text:SetText(("%s |cff999999%d|r%s"):format(name, entry.level or 0, fetched))
+			row.text:SetText(("%s |cff999999%d|r%s%s"):format(name, entry.level or 0, notices, fetched))
 			row.selected:SetShown(entry.key == audit.selected)
 			row:Show()
 		else
@@ -446,20 +720,56 @@ local function AuditStatus(key, data)
 		return L.AUDIT_STATUS_DENIED
 	elseif state == "timeout" then
 		return L.AUDIT_STATUS_TIMEOUT
-	elseif data and data.fetched then
-		return L.AUDIT_STATUS_FETCHED:format(date("%d.%m. %H:%M", data.fetched))
+	elseif data then
+		local text = L.AUDIT_STATUS_DATA:format(date("%d.%m. %H:%M", data.last and data.last.t or data.fetched or 0))
+		if (data.latest or 0) == 0 then
+			text = text .. " " .. L.AUDIT_STATUS_PARTIAL
+		end
+		return text
 	end
 	return L.AUDIT_STATUS_NONE
 end
 
+-- When and at which level the member joined the guild and started with the addon.
+local function AuditJoinText(data)
+	local join = data.own and ns.char.audit.join or data.join
+	local first = data.own and ns.char.audit.first or data.first
+	if not join then
+		return ""
+	end
+	if (join.t or 0) == 0 then
+		return L.AUDIT_JOIN_UNKNOWN
+	end
+	local function Played(p)
+		return p and ns.Audit.FormatDuration(p) or L.HINT_JOIN_UNKNOWN_PLAYED
+	end
+	if not first then
+		return L.HINT_JOIN:format(join.g or "?", join.l or 0, Played(join.p))
+	end
+	return L.AUDIT_JOIN_STATE:format(date("%d.%m.%Y", join.t), join.l or 0, Played(join.p), first.l or 0, Played(first.p))
+end
+
+-- The newest notices of the member; data of older versions has none, then the records are analysed.
 local function AuditFlagsText(data)
-	local flags = ns.Audit.GetFlags(data)
-	if #flags == 0 then
+	local hints = data.hints
+	if (not hints or #hints == 0) and data.own then
+		hints = ns.char.audit.hints
+	end
+	local items = {}
+	if hints and #hints > 0 then
+		for _, hint in ipairs(hints) do
+			items[#items + 1] = { t = hint.t, text = ("|cff%s%s|r  %s"):format(ns.Audit.HintColor(hint), ns.Audit.HintTag(hint), ns.Audit.FormatHint(hint)) }
+		end
+		table.sort(items, function(a, b) return a.t > b.t end)
+	else
+		items = ns.Audit.GetFlags(data)
+	end
+	if #items == 0 then
 		return "|cff55ff55" .. L.AUDIT_NO_FLAGS .. "|r"
 	end
-	local lines = { "|cffff5555" .. L.AUDIT_FLAGS:format(#flags) .. "|r" }
-	for i = 1, math.min(3, #flags) do
-		lines[#lines + 1] = ("|cff999999%s|r  %s"):format(date("%d.%m. %H:%M", flags[i].t), flags[i].text)
+	local lines = { "|cffff5555" .. L.AUDIT_FLAGS:format(#items) .. "|r" }
+	for i = 1, math.min(3, #items) do
+		lines[#lines + 1] = ("|cff999999%s|r  %s"):format(date("%d.%m. %H:%M", items[i].t), items[i].text)
 	end
 	return table.concat(lines, "\n")
 end
@@ -489,18 +799,15 @@ local function RefreshAuditDetails(data)
 	end
 end
 
-function UI.RefreshAudit()
-	if not frame or not frame:IsShown() or not pages.audit:IsShown() then
-		return
-	end
-	local officer = ns.Audit.CanView()
+local function RefreshAuditMemberView(officer, timeline)
 	local entries = AuditEntries()
 	local ownKey = ns.Guild.GetPlayerKey()
 	if not officer or not audit.selected then
 		audit.selected = ownKey
 	end
+	local open = OpenNotices(timeline)
 	controls.auditListHeader:SetText(officer and L.AUDIT_MEMBERS:format(#entries) or L.AUDIT_OWN_DATA)
-	RefreshAuditMembers(entries)
+	RefreshAuditMembers(SortedMembers(entries, open), open)
 
 	local selected
 	for _, entry in ipairs(entries) do
@@ -510,7 +817,7 @@ function UI.RefreshAudit()
 	end
 	audit.selectedName = selected and selected.fullName
 	local data = ns.Audit.GetData(audit.selected)
-	controls.auditName:SetText(selected and ns.Announce.ClassColored(Ambiguate(selected.fullName, "guild"), selected.class) or "")
+	controls.auditName:SetText(selected and ColoredName(selected.fullName, selected.class, true) or "")
 	controls.auditStatus:SetText(AuditStatus(audit.selected, data))
 
 	local isOwn = audit.selected == ownKey
@@ -524,8 +831,52 @@ function UI.RefreshAudit()
 	else
 		controls.auditSummary:SetText("")
 	end
+	controls.auditJoin:SetText(data and AuditJoinText(data) or "")
 	controls.auditFlags:SetText(data and AuditFlagsText(data) or "")
 	RefreshAuditDetails(data)
+end
+
+function UI.RefreshAudit()
+	if not frame or not frame:IsShown() or not pages.audit:IsShown() then
+		return
+	end
+	local officer = ns.Audit.CanView()
+	if not officer then
+		audit.mode = "members"
+	end
+	for i, button in ipairs(audit.modeButtons) do
+		button:SetShown(officer)
+		if AUDIT_MODES[i].key == audit.mode then
+			button:LockHighlight()
+		else
+			button:UnlockHighlight()
+		end
+	end
+	controls.auditNote:SetShown(not officer)
+	for mode, list in pairs(audit.widgets) do
+		for _, widget in ipairs(list) do
+			widget:SetShown(mode == audit.mode)
+		end
+	end
+	local timeline = officer and ns.AuditAuto.GetTimeline() or {}
+	if audit.mode == "hints" then
+		RefreshAuditHints(timeline)
+	else
+		RefreshAuditMemberView(officer, timeline)
+	end
+end
+
+-- AUDIT_UPDATED fires once per stored entry: refresh once per short delay, and only while the page is shown.
+local auditRefreshPending = false
+local function ScheduleAuditRefresh()
+	if auditRefreshPending or not frame or not frame:IsShown() or not pages.audit:IsShown() then
+		return
+	end
+	auditRefreshPending = true
+	C_Timer.After(0.2, function()
+		auditRefreshPending = false
+		UI.RefreshAudit()
+	end)
 end
 
 ---------------------------------------------------------------------------
@@ -1287,7 +1638,10 @@ end
 
 function UI.ShowAudit(name)
 	if name then
-		audit.selected = ns.Guild.NormalizeName(name)
+		audit.mode = "members"
+		SelectAuditMember(ns.Guild.NormalizeName(name))
+	elseif ns.Audit.CanView() then
+		audit.mode = "hints"
 	end
 	OpenPage("audit")
 end
@@ -1497,11 +1851,11 @@ ns.RegisterCallback("RULES_CHANGED", UI.Refresh)
 ns.RegisterCallback("RULES_CHANGED", CheckCopyDialog)
 ns.RegisterCallback("ROSTER_UPDATED", UI.Refresh)
 ns.RegisterCallback("DEATHLOG_UPDATED", UI.RefreshDeathlog)
-ns.RegisterCallback("AUDIT_UPDATED", UI.RefreshAudit)
+ns.RegisterCallback("AUDIT_UPDATED", ScheduleAuditRefresh)
 ns.RegisterCallback("PROFESSIONS_UPDATED", UI.RefreshProfessions)
 ns.RegisterCallback("FINDER_UPDATED", UI.RefreshFinder)
 ns.RegisterCallback("AUDIT_ITEMS_LOADED", function()
-	C_Timer.After(0.2, UI.RefreshAudit)
+	ScheduleAuditRefresh()
 end)
 ns.On("PLAYER_LEVEL_UP", function()
 	C_Timer.After(0.5, UI.Refresh)
