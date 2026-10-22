@@ -3326,6 +3326,13 @@ do
 	check(_G[F.Highlight]:GetFont() == "Fonts\\FRIZQT__.TTF", "modern without Arial Narrow glyphs (ruRU): the client's font stays")
 	LOCALE = "deDE"
 	T.Set("classic")
+	local plain = CreateFrame("Button", nil, UIParent, "UIPanelButtonTemplate")
+	plain.Left:SetAlpha(0.6)
+	T.SkinButton(plain)
+	T.Set("modern")
+	local hidden = plain.Left:GetAlpha()
+	T.Set("classic")
+	check(hidden == 0 and plain.Left:GetAlpha() == 0.6, "back to classic: template art gets its own alpha back")
 
 	ns.db.lastTab = "rules"
 	ns.UI.Show()
@@ -3406,6 +3413,12 @@ do
 	GUILD_NAME = "Andere Gilde"
 	check(#D.Chronicle() == 0, "chronicle: every guild has its own")
 	GUILD_NAME = "Testgilde"
+	-- A time from the future (a broken or modified client) counts as now, in the deathlog as well.
+	Ann("Crossy-OtherRealm", "death", 1e18, 33, "ROGUE", "Zukunft", "Uhr")
+	local future
+	for _, e in ipairs(ns.db.chronicle.Testgilde) do if e.z == "Zukunft" then future = e end end
+	local futureDeath = ns.Announce.GetDeaths()[1]
+	check(future and future.t <= GetServerTime() and futureDeath.z == "Zukunft" and futureDeath.t <= GetServerTime(), "chronicle: a time from the future counts as now")
 
 	-- Who was there: different players online per day, counted while we are online.
 	FireEvent("GUILD_ROSTER_UPDATE")
@@ -3484,6 +3497,13 @@ do
 	Advance(10)
 	RunTickers()
 	check(waitingCode == "queued" and #SentMessages("LFG\tweg") == 0, "budget: what waits is dropped when we leave the guild")
+	-- An alert with the same key takes the waiting message out (a listing ended while it waited).
+	while C.Send("x", "GUILD", nil, "bulk") do end
+	C.Send("LFG\talt", "GUILD", nil, "normal", "LFG")
+	C.Send("LFGEND", "GUILD", nil, "alert", "LFG")
+	Advance(10)
+	RunTickers()
+	check(#SentMessages("LFG\talt") == 0 and #SentMessages("LFGEND") >= 1, "budget: an alert with the same key takes the waiting message out")
 	C.SetBudget(1e12, 1e12)
 	FireEvent("GUILD_ROSTER_UPDATE")
 	RunTimers()
@@ -3497,6 +3517,21 @@ do
 	local justAfter = C.Send("x", "GUILD", nil, "bulk")
 	Advance(6)
 	check(not justAfter and C.Send("x", "GUILD", nil, "bulk"), "combat: bulk messages go out again 5 seconds after the fight")
+	-- A long answer waits out a long fight instead of giving up after its 20 tries.
+	local answered
+	FireEvent("PLAYER_REGEN_DISABLED")
+	ResetCalls()
+	C.SendPaced({ "PROFR\t1\t2", "PROFEND\t1\t1\t0" }, "WHISPER", "Freund-ClassicBetaPvE2", function(ok) answered = ok end)
+	for _ = 1, 30 do -- 30 retry rounds in the fight, 45 s
+		local pending = TIMERS
+		TIMERS = {}
+		for _, t in ipairs(pending) do if not t.cancelled then t.fn() end end
+	end
+	local duringFight = #SentMessages("PROF")
+	FireEvent("PLAYER_REGEN_ENABLED")
+	Advance(6)
+	RunTimers()
+	check(duringFight == 0 and answered == true and #SentMessages("PROFEND") == 1, "combat: a long answer waits out the fight and goes out in full")
 	-- Tidying up the audit store waits for the end of the fight too.
 	CAN_VIEW_OFFICER = true
 	local gs = ns.AuditAuto.GetStore()

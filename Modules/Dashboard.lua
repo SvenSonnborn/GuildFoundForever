@@ -44,7 +44,8 @@ end
 local function AddEntry(entry)
 	local list = Record("chronicle", true)
 	local now = GetServerTime()
-	if not list or not entry.t or entry.t < now - KEPT_SECONDS then
+	-- Announce already takes later times as now; anything else that is no plausible time stays out.
+	if not list or type(entry.t) ~= "number" or entry.t < now - KEPT_SECONDS or entry.t > now + DAY then
 		return
 	end
 	for i = #list, math.max(1, #list - DUPLICATE_SCAN), -1 do

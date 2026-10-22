@@ -23,6 +23,10 @@
 - The roster now keeps each member's days since last online and a revision that moves only on real changes; the audit timeline is rebuilt only then instead of every minute.
 - **Classic or modern look:** a switch in the title bar, left of the gear, changes the look of the addon's windows at once, for the whole account (also `/gff style`). Classic is the WoW look as before. Modern is flat and dark: square surfaces with thin frames, Arial Narrow and gold as the only accent; tabs are text with the open one underlined. Main window, copy dialog, message window and the hint at the minimap follow the switch; banners, the minimap icon, map pins and tooltips stay the same.
 
+### Fixes
+- An announcement with a time in the future (from a broken or modified client) counts as now; such a time could break the deathlog.
+- Long answers (recipes, "Request data") wait out a fight instead of giving up after 30 seconds.
+
 ## 0.8.0-beta
 
 ### New

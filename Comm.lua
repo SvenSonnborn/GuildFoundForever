@@ -14,6 +14,7 @@ local QUEUE_MAX_ENTRIES = 30
 local PACE_SECONDS = 0.3
 local PACE_RETRY_SECONDS = 1.5
 local PACE_MAX_RETRIES = 20
+local PACE_MAX_WAITS = 400 -- 10 minutes of PACE_RETRY_SECONDS
 -- A HELLO or HI keeps the presence this long even if the roster does not show the sender online:
 -- a recruit or a player who just logged in may be missing from the next roster (it refreshes every
 -- 60 s).
@@ -148,6 +149,15 @@ function Comm.Send(message, channel, target, priority, key)
 	Refill()
 	priority = priority or "normal"
 	local cost = Cost(message)
+	-- An alert or bulk message with a key takes a waiting one with that key out (LFGEND ends the
+	-- listing that still waits).
+	if key and priority ~= "normal" then
+		for i = #waiting, 1, -1 do
+			if waiting[i].key == key then
+				table.remove(waiting, i)
+			end
+		end
+	end
 	if priority == "bulk" then
 		if budget.tokens < cost or Comm.InCombat() then
 			return false, "wait"
@@ -232,8 +242,10 @@ end
 -- Sends many messages one after another, slow enough for the server's addon message throttle and
 -- within the shared budget ("bulk"). A message that cannot go out is retried; onDone(success)
 -- runs at the end.
+-- Waiting for the budget (or for a fight to end) is no failed try; it is given up only after
+-- PACE_MAX_WAITS rounds.
 function Comm.SendPaced(messages, channel, target, onDone)
-	local index, retries = 1, 0
+	local index, retries, waits = 1, 0, 0
 	local function Step()
 		local message = messages[index]
 		if not message then
@@ -242,10 +254,14 @@ function Comm.SendPaced(messages, channel, target, onDone)
 			end
 			return
 		end
-		if Comm.Send(message, channel, target, "bulk") then
+		local ok, code = Comm.Send(message, channel, target, "bulk")
+		if ok then
 			index, retries = index + 1, 0
 			C_Timer.After(PACE_SECONDS, Step)
-		elseif retries < PACE_MAX_RETRIES then
+		elseif code == "wait" and waits < PACE_MAX_WAITS then
+			waits = waits + 1
+			C_Timer.After(PACE_RETRY_SECONDS, Step)
+		elseif code ~= "wait" and retries < PACE_MAX_RETRIES then
 			retries = retries + 1
 			C_Timer.After(PACE_RETRY_SECONDS, Step)
 		elseif onDone then

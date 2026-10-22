@@ -524,7 +524,7 @@ function Finder.Cancel(reason)
 		return
 	end
 	own = nil
-	ns.Comm.Send("LFGEND", "GUILD", nil, "alert")
+	ns.Comm.Send("LFGEND", "GUILD", nil, "alert", "LFG")
 	if reason then
 		ns.Print("finder", reason)
 	end

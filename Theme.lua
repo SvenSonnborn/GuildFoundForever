@@ -184,31 +184,34 @@ local function SetShown(list, shown)
 end
 
 -- The template's own art: its textures so far, its button state textures and the frames some
--- templates add for it (NineSlice, Inset).
+-- templates add for it (NineSlice, Inset), each with the alpha the template gave it.
 local function TemplateArt(widget)
-	local art = {}
+	local art, seen = {}, {}
+	local function Add(region)
+		if region and not seen[region] then
+			seen[region] = true
+			art[#art + 1] = { region = region, alpha = region:GetAlpha() }
+		end
+	end
 	for _, region in ipairs({ widget:GetRegions() }) do
 		if region:GetObjectType() == "Texture" then
-			art[#art + 1] = region
+			Add(region)
 		end
 	end
 	for _, getter in ipairs({ "GetNormalTexture", "GetPushedTexture", "GetHighlightTexture", "GetDisabledTexture" }) do
-		local texture = widget[getter] and widget[getter](widget)
-		if texture then
-			art[#art + 1] = texture
-		end
+		Add(widget[getter] and widget[getter](widget))
 	end
 	for _, key in ipairs({ "NineSlice", "Inset" }) do
 		if type(widget[key]) == "table" and widget[key].SetAlpha then
-			art[#art + 1] = widget[key]
+			Add(widget[key])
 		end
 	end
 	return art
 end
 
 local function ShowArt(art, shown)
-	for _, region in ipairs(art) do
-		region:SetAlpha(shown and 1 or 0)
+	for _, part in ipairs(art) do
+		part.region:SetAlpha(shown and part.alpha or 0)
 	end
 end
 

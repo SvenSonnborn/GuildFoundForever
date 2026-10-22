@@ -10,6 +10,7 @@ local DEDUPE_SECONDS = 60
 local DEATHLOG_MAX = 500
 local MAX_MESSAGE_LENGTH = 250
 local LOGIN_GRACE_SECONDS = 5
+local FUTURE_SECONDS = 300 -- clocks differ a little; later times of received announcements count as now
 local CHAT_TAG = "[" .. ns.title .. "] "
 
 -- chatRule: guild rule to also post it to guild chat; notify: personal setting to see it;
@@ -326,8 +327,14 @@ ns.Comm.RegisterHandler("ANN", function(sender, _, payload)
 	if not KINDS[kind] then
 		return
 	end
+	-- A time that is no number, lies ahead or is negative (a broken or modified client) counts as
+	-- now: dates far out of range break date() in the deathlog and the overview.
+	t = tonumber(t)
+	if not t or t ~= t or t < 0 or t > GetServerTime() + FUTURE_SECONDS then
+		t = GetServerTime()
+	end
 	local data = {
-		t = tonumber(t) or GetServerTime(),
+		t = t,
 		level = tonumber(level) or 0,
 		class = (class and class ~= "") and class or nil,
 		zone = zone or "",
