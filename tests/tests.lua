@@ -28,6 +28,12 @@ ns.Banner.Show = function(info)
 end
 FireEvent("ADDON_LOADED", "GuildFoundForever")
 check(ns.db ~= nil and ns.db.rules.groupLockLevel == 50 and ns.db.rules.transportSummon == false, "saved variables initialised with defaults")
+-- The shared sending budget has its own section at the end; elsewhere it must not get in the way.
+local REAL_BUDGET = { rate = ns.Comm.BUDGET.rate, burst = ns.Comm.BUDGET.burst }
+ns.Comm.SetBudget(1e12, 1e12)
+-- The same goes for the limit on incoming messages: time hardly moves in these tests.
+local REAL_RATE = { window = ns.Comm.RATE.window, limit = ns.Comm.RATE.limit }
+ns.Comm.RATE.limit = math.huge
 check(CallCount("RegisterAddOnCategory") == 1, "settings category registered")
 FireEvent("PLAYER_LOGIN")
 local loadedMessage
@@ -112,6 +118,38 @@ check(not G.IsMemberName("Fremder"), "stranger")
 check(not G.IsMemberName(SECRET), "secret name is not a member")
 check(G.NormalizeName("Foo-Azjol-Nerub") == "foo-azjolnerub", "realm containing a dash")
 check(G.IsSelf("Magus"), "self detection")
+do
+	-- Days since last online from the roster (0 while online), and a revision that moves only when
+	-- members, ranks, levels, classes, the online state or the full days offline change.
+	local function Entry(key) for _, e in ipairs(G.GetRosterEntries()) do if e.key == key then return e end end end
+	LAST_ONLINE[3] = { 0, 1, 2, 6 }
+	FireEvent("GUILD_ROSTER_UPDATE")
+	local offline, online = Entry("offline-classicbetapve2"), Entry("freund-classicbetapve2")
+	check(offline and offline.lastOnline and math.abs(offline.lastOnline - 32.25) < 0.001 and online.lastOnline == 0, "roster: days since last online, 0 while online")
+	local revision = G.GetRosterRevision and G.GetRosterRevision() or -1
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(G.GetRosterRevision() == revision, "roster: an unchanged roster keeps its revision")
+	ROSTER[4][2] = false
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(G.GetRosterRevision() == revision + 1, "roster: someone going offline is a change")
+	ROSTER[4][2] = true
+	ROSTER[2][5] = 21
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(G.GetRosterRevision() == revision + 2, "roster: a level up is a change")
+	ROSTER[2][5] = nil
+	FireEvent("GUILD_ROSTER_UPDATE")
+	revision = G.GetRosterRevision()
+	LAST_ONLINE[3] = { 0, 1, 2, 20 }
+	FireEvent("GUILD_ROSTER_UPDATE")
+	local sameDay = G.GetRosterRevision() == revision
+	LAST_ONLINE[3] = { 0, 1, 3, 0 }
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(sameDay and G.GetRosterRevision() == revision + 1, "roster: hours offline alone are no change, another full day is")
+	LAST_ONLINE[3] = nil
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(Entry("offline-classicbetapve2").lastOnline == nil, "roster: offline without a last-online time: unknown")
+	RunTimers()
+end
 
 -- Tags ---------------------------------------------------------------------
 local rules, tag = G.ParseRulesTag("Hallo\n[GuildFoundForever A=1 M=0 C=1 H=0 G=1 L=40]\nTschüss")
@@ -1031,7 +1069,8 @@ do
 	-- to such a target is noted in attempts. lose[targetKey]: messages to that target are sent but
 	-- never handled (lost on the way or dropped by the receiver). unseen[key]: online, but the others'
 	-- rosters do not show it yet (it just logged in), so nobody counts it as online or capable.
-	local net = { now = 0, seq = 0, timers = {}, players = {}, log = {}, relay = false, retry = {}, attempts = {}, lose = {}, unseen = {} }
+	-- wait[targetKey] = n: the next n sends to that target hear "wait" from the shared budget.
+	local net = { now = 0, seq = 0, timers = {}, players = {}, log = {}, relay = false, retry = {}, attempts = {}, lose = {}, unseen = {}, wait = {} }
 	local function NetAfter(at, fn) net.seq = net.seq + 1 net.timers[#net.timers + 1] = { at = at, seq = net.seq, fn = fn } end
 	-- p.session counts the logins: every login (and /reload) runs a fresh engine, as in the game; the
 	-- saved data (p.store, p.sent, p.own) stays. p.ready = false: no store (yet, or during a /reload).
@@ -1048,6 +1087,10 @@ do
 					local to = net.players[target:lower()]
 					-- net.offlineOk: a whisper to an offline player reports success (not known for Forever)
 					if not p.online or session ~= p.session or not to or not (to.online or net.offlineOk) then return false, 12 end
+					if (net.wait[to.key] or 0) > 0 then
+						net.wait[to.key] = net.wait[to.key] - 1
+						return false, "wait"
+					end
 					local retry = net.retry[to.key]
 					if retry then
 						net.attempts[#net.attempts + 1] = { from = p.key, to = to.key, at = net.now, retry = retry > 0 }
@@ -1152,7 +1195,7 @@ do
 	local function Has(p, memberKey, raw) local m = p.store and p.store.members[memberKey] return m ~= nil and m.recs[raw] ~= nil end
 	local function NetReset(relay)
 		net.now, net.timers, net.players, net.log, net.relay = 0, {}, {}, {}, relay or false
-		net.retry, net.attempts, net.offlineOk, net.lose, net.unseen = {}, {}, false, {}, {}
+		net.retry, net.attempts, net.offlineOk, net.lose, net.unseen, net.wait = {}, {}, false, {}, {}, {}
 	end
 	-- Messages from one player to another from the log entry `from` on.
 	local function Between(fromKey, toKey, first, pattern)
@@ -1828,6 +1871,18 @@ do
 	NetRun(30)
 	check(Has(a, "mitglied", earlyHint) and #Between("mitglied", "offia", 1, "^AUDE\t4\t") == 1, "a holder not in our roster yet still gets the answer to its ask")
 
+	-- The shared sending budget says "wait": the message keeps its place and does not count as a
+	-- retry, however long it takes.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(a, true) NetOnline(m, true)
+	NetRun(60)
+	net.wait.offia = S.RETRIES * 3
+	local waitHint = R.Encode("H", { t = net.now, hk = "mail", sev = "o", a = "Warten", b = "s" })
+	NetRecord(m, waitHint)
+	NetRun(120)
+	check(Has(a, "mitglied", waitHint) and net.wait.offia == 0, "a send told to wait keeps its place and goes out later")
+
 	-- Done marks are officer state: a member cannot mark its own notices done (a modified client
 	-- could hide them from every officer), its other entries still count.
 	NetReset()
@@ -2316,7 +2371,13 @@ do
 	ns.char.auditSeen.prev = savedPrev
 	cachedAgain = AA.GetTimeline()
 	FireEvent("GUILD_ROSTER_UPDATE")
-	check(AA.GetTimeline() ~= cachedAgain, "a roster update (names, online state): the timeline is built again")
+	check(AA.GetTimeline() == cachedAgain, "an unchanged roster update keeps the cached timeline")
+	ROSTER[4][2] = false
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(AA.GetTimeline() ~= cachedAgain, "a roster change (names, online state): the timeline is built again")
+	ROSTER[4][2] = true
+	FireEvent("GUILD_ROSTER_UPDATE")
+	RunTimers()
 	cachedAgain = AA.GetTimeline()
 	ns.Log("ah", "Eigener Hinweis im Cache")
 	local ownInLine = false
@@ -2613,7 +2674,7 @@ end
 check(#recipeAnswer == 2 and recipeAnswer[1] == "PROFR\t197\t2386,3915" and recipeAnswer[2]:find("^PROFEND\t197\t2\t%d+$"), "recipes sent on request")
 ResetCalls()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "PROFREQ\t197", "WHISPER", "Fremder-ClassicBetaPvE2")
-check(LastAddonMessage() == "PROFNO\t197", "requests from non-members refused")
+check(CallCount("SendAddonMessage") == 0, "requests from non-members are ignored: whispers only count from guild members")
 local savedRecipes = ownProfs[197].recipes
 ownProfs[197].recipes = {}
 for i = 1, 200 do ownProfs[197].recipes[i] = 10000 + i end
@@ -3242,6 +3303,298 @@ for _, command in ipairs({ "status", "log", "help", "debug", "debug", "" }) do
 end
 RunTimers()
 check(#ns.char.log > 0, "blocked actions were logged")
+
+-- Styles: classic and modern -----------------------------------------------------------
+do
+	local T = ns.Theme
+	local WHITE8 = "Interface\\Buttons\\WHITE8X8"
+	local function near(value, expected) return math.abs(value - expected) < 0.01 end
+	local fired = 0
+	ns.RegisterCallback("STYLE_CHANGED", function() fired = fired + 1 end)
+	check(T.Get() == "classic" and ns.db.style == "classic", "styles: classic is the default")
+	local F = T.Fonts
+	check(_G[F.Highlight]:GetFont() == "Fonts\\FRIZQT__.TTF" and _G[F.Normal]:GetTextColor() == 1, "classic: the addon's fonts copy Blizzard's")
+	T.Set("modern")
+	check(T.Get() == "modern" and ns.db.style == "modern" and fired == 1, "switching to modern saves the style and fires STYLE_CHANGED")
+	local file, size = _G[F.Highlight]:GetFont()
+	check(file == "Fonts\\ARIALN.TTF" and size >= 12 and near(_G[F.Normal]:GetTextColor(), 0.886), "modern: Arial Narrow, headers in the accent colour")
+	T.Set("bogus")
+	check(T.Get() == "modern" and fired == 1, "an unknown style is ignored")
+	LOCALE = "ruRU"
+	T.Set("classic")
+	T.Set("modern")
+	check(_G[F.Highlight]:GetFont() == "Fonts\\FRIZQT__.TTF", "modern without Arial Narrow glyphs (ruRU): the client's font stays")
+	LOCALE = "deDE"
+	T.Set("classic")
+	local plain = CreateFrame("Button", nil, UIParent, "UIPanelButtonTemplate")
+	plain.Left:SetAlpha(0.6)
+	T.SkinButton(plain)
+	T.Set("modern")
+	local hidden = plain.Left:GetAlpha()
+	T.Set("classic")
+	check(hidden == 0 and plain.Left:GetAlpha() == 0.6, "back to classic: template art gets its own alpha back")
+
+	ns.db.lastTab = "rules"
+	ns.UI.Show()
+	local f = GuildFoundForeverFrame
+	local switch = GuildFoundForeverStyleSwitch
+	local publish = FindWidgetByText("Button", "In Gildeninfo veröffentlichen")
+	local rulesTab, auditTab = FindWidgetByText("Button", "Regeln"), FindWidgetByText("Button", "Audit")
+	local checkbox = FindWidgetByText("FontString", "Auktionshaus sperren"):GetParent()
+	local box = FindWidgetByText("EditBox", "50")
+	check(switch ~= nil and f.Bg:GetAlpha() == 1 and publish.Left:GetAlpha() == 1, "classic: the templates' art shows, the style switch sits in the title bar")
+	switch:RunScript("OnClick")
+	check(T.Get() == "modern", "the style switch changes the style")
+	check(f.Bg:GetAlpha() == 0 and f.Inset:GetAlpha() == 0 and f.skin.bg:IsShown() and f.CloseButton:GetNormalTexture():GetAlpha() == 0,
+		"modern: the window's template art is hidden, the flat background shows")
+	check(publish.Left:GetAlpha() == 0 and publish.skin.bg:IsShown() and box.Left:GetAlpha() == 0 and box.skin.bg:IsShown(), "modern: buttons and edit boxes are flat")
+	check(rulesTab.skin.line:IsShown() and not auditTab.skin.line:IsShown() and rulesTab.Left:GetAlpha() == 0, "modern: tabs are text, the open one underlined")
+	local checked = checkbox:GetCheckedTexture()
+	check(checked._texture == WHITE8 and near(checked:GetVertexColor(), 0.886), "modern: a checked box is a square in the accent colour")
+	FindWidgetByText("Button", "Audit"):RunScript("OnClick")
+	check(auditTab.skin.line:IsShown() and not rulesTab.skin.line:IsShown(), "modern: the underline follows the open tab")
+	switch:RunScript("OnClick")
+	check(T.Get() == "classic" and f.Bg:GetAlpha() == 1 and not f.skin.bg:IsShown() and publish.Left:GetAlpha() == 1 and not rulesTab.skin.line:IsShown(),
+		"back to classic: the templates' art returns, the flat parts go")
+	check(checkbox:GetCheckedTexture()._texture == "Interface\\Buttons\\UI-CheckBox-Check" and checkbox:GetNormalTexture()._texture == "Interface\\Buttons\\UI-CheckBox-Up",
+		"back to classic: check boxes get Blizzard's textures again")
+	ns.UI.Toggle()
+
+	SlashCmdList.GUILDFOUNDFOREVER("style")
+	check(T.Get() == "modern", "/gff style switches")
+	SlashCmdList.GUILDFOUNDFOREVER("style klassisch")
+	check(T.Get() == "classic", "/gff style klassisch picks the classic style")
+	SlashCmdList.GUILDFOUNDFOREVER("style modern")
+	check(T.Get() == "modern", "/gff style modern picks the modern style")
+
+	ns.MessageWindow.Show()
+	local messages = GuildFoundForeverMessages
+	check(messages._backdrop.edgeFile == WHITE8 and near(messages._backdropColor[1], 0.071), "modern: the message window is flat with a thin border")
+	T.Set("classic")
+	check(messages._backdrop.edgeFile == "Interface\\Tooltips\\UI-Tooltip-Border" and near(messages._backdropBorder[1], 0.85),
+		"classic, switched while open: the message window has its gold banner frame again")
+	CloseMessages()
+end
+
+-- Dashboard ------------------------------------------------------------------------------------
+do
+	local D = ns.Dashboard
+	local now = GetServerTime()
+	-- Earlier sections announced and changed the roster as well: start from empty records.
+	ns.db.chronicle.Testgilde, ns.db.activity.Testgilde = nil, nil
+	local function Find(kind, name) for _, e in ipairs(D.Chronicle()) do if e.k == kind and e.n == name then return e end end end
+	local function Count(kind, name) local n = 0 for _, e in ipairs(D.Chronicle()) do if e.k == kind and e.n == name then n = n + 1 end end return n end
+	local function Ann(sender, kind, t, level, class, zone, extra)
+		FireEvent("CHAT_MSG_ADDON", "GFForever", table.concat({ "ANN", kind, t, level, class, zone, extra or "" }, "\t"), "GUILD", sender)
+	end
+	Ann("Freund-ClassicBetaPvE2", "cap", now - 60, 60, "WARRIOR", "Tanaris")
+	Ann("Crossy-OtherRealm", "death", now - 120, 34, "ROGUE", "Todesminen", "Rhahk'Zor")
+	Ann("Freund-ClassicBetaPvE2", "epic", now - 180, 60, "WARRIOR", "Schwarzfelstiefen", link(11684, "Eisenfeind"))
+	Ann("Crossy-OtherRealm", "recipe", now - 240, 34, "ROGUE", "Eisenschmiede", "Arkanitbarren")
+	Ann("Crossy-OtherRealm", "rare", now - 300, 34, "ROGUE", "Eisenschmiede", link(1, "Blaues"))
+	Ann("Freund-ClassicBetaPvE2", "test", now - 360, 60, "WARRIOR", "Eisenschmiede")
+	RunTimers()
+	local cap, death = Find("cap", "Freund-ClassicBetaPvE2"), Find("death", "Crossy-OtherRealm")
+	check(cap and cap.l == 60 and cap.c == "WARRIOR" and D.Chronicle()[1] == cap, "chronicle: a max level announcement, newest first")
+	check(death and death.z == "Todesminen" and death.x == "Rhahk'Zor" and Find("epic", "Freund-ClassicBetaPvE2") and Find("recipe", "Crossy-OtherRealm"),
+		"chronicle: deaths with their cause, epic loot and recipes")
+	check(not Find("rare", "Crossy-OtherRealm") and not Find("test", "Freund-ClassicBetaPvE2"), "chronicle: no rare loot, no tests")
+	FireEvent("CHAT_MSG_SYSTEM", ERR_GUILD_JOIN_S:format("Fenna"))
+	check(Find("join", "Fenna") ~= nil, "chronicle: a join from the system message")
+	local twice = { t = now - 30, level = 12, class = "MAGE", zone = "Wald", extra = "Wolf" }
+	ns.Fire("ANNOUNCED", "Doppelt-ClassicBetaPvE2", "death", twice)
+	ns.Fire("ANNOUNCED", "Doppelt-ClassicBetaPvE2", "death", twice)
+	check(Count("death", "Doppelt-ClassicBetaPvE2") == 1, "chronicle: the same entry only once")
+	ns.Fire("ANNOUNCED", "Alt-ClassicBetaPvE2", "cap", { t = now - 8 * 86400, level = 60, class = "MAGE", zone = "", extra = "" })
+	ns.Fire("ANNOUNCED", "Uralt-ClassicBetaPvE2", "cap", { t = now - 15 * 86400, level = 60, class = "MAGE", zone = "", extra = "" })
+	local stored = {}
+	for _, e in ipairs(ns.db.chronicle.Testgilde) do stored[e.n] = true end
+	check(not Find("cap", "Alt-ClassicBetaPvE2") and stored["Alt-ClassicBetaPvE2"] and not stored["Uralt-ClassicBetaPvE2"], "chronicle: 7 days shown, 14 kept")
+	GUILD_NAME = "Andere Gilde"
+	check(#D.Chronicle() == 0, "chronicle: every guild has its own")
+	GUILD_NAME = "Testgilde"
+	-- A time from the future (a broken or modified client) counts as now, in the deathlog as well.
+	Ann("Crossy-OtherRealm", "death", 1e18, 33, "ROGUE", "Zukunft", "Uhr")
+	local future
+	for _, e in ipairs(ns.db.chronicle.Testgilde) do if e.z == "Zukunft" then future = e end end
+	local futureDeath = ns.Announce.GetDeaths()[1]
+	check(future and future.t <= GetServerTime() and futureDeath.z == "Zukunft" and futureDeath.t <= GetServerTime(), "chronicle: a time from the future counts as now")
+
+	-- Who was there: different players online per day, counted while we are online.
+	FireEvent("GUILD_ROSTER_UPDATE")
+	local days = D.Activity()
+	check(#days == 14 and days[14].count == 3, "who was there: today counts the members online")
+	ROSTER[3][2] = true
+	FireEvent("GUILD_ROSTER_UPDATE")
+	ROSTER[3][2], ROSTER[4][2] = false, false
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(D.Activity()[14].count == 4, "who was there: each player once a day, also after going offline")
+	ROSTER[4][2] = true
+	Advance(86400)
+	FireEvent("GUILD_ROSTER_UPDATE")
+	days = D.Activity()
+	check(days[14].count == 3 and days[13].count == 4, "who was there: a new day starts over")
+
+	-- Numbers from the roster: online, classes, levels, activity, the addon.
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "HI\t0.7.0\tA", "WHISPER", "Freund-ClassicBetaPvE2")
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "HI\t0.7.0\tA", "WHISPER", "Crossy-OtherRealm")
+	ROSTER[2][5] = 60
+	LAST_ONLINE[3] = { 0, 1, 5, 0 }
+	FireEvent("GUILD_ROSTER_UPDATE")
+	local s = D.Summary()
+	check(s.members == 4 and s.online == 3 and s.classes.WARRIOR == 1 and s.classes.MAGE == 1 and s.classes.ROGUE == 1, "numbers: members online by class")
+	check(#s.levels == 12 and s.levels[12] == 1 and s.levels[4] == 3 and s.maxLevel == 1, "numbers: levels in 12 steps of 5, one at the max level")
+	check(s.active7 == 3 and s.away30 == 1, "numbers: active within 7 days, away for 30 days or more")
+	check(s.withAddon == 3, "numbers: online with the addon, ourselves included")
+
+	-- The tab
+	CAN_VIEW_OFFICER = true
+	ns.db.lastTab = "dashboard"
+	ns.UI.Show()
+	check(FindWidgetByText("Button", "Übersicht") ~= nil and ns.db.lastTab == "dashboard", "dashboard: the overview tab")
+	check(FindWidgetContaining("FontString", "erreicht Level 60") ~= nil and FindWidgetContaining("FontString", "tritt der Gilde bei") ~= nil, "dashboard: the chronicle in the window")
+	local open = FindWidgetContaining("FontString", "Offene Audit-Hinweise")
+	check(open and open:IsShown() and open:GetParent():IsShown(), "dashboard: officers see their box")
+	open:GetParent():RunScript("OnClick")
+	check(ns.db.lastTab == "audit", "dashboard: a click on the open notices opens the audit timeline")
+	CAN_VIEW_OFFICER = false
+	FindWidgetByText("Button", "Übersicht"):RunScript("OnClick")
+	check(not open:GetParent():IsShown() and FindWidgetContaining("FontString", "Tode diese Woche"):GetParent():IsShown(), "dashboard: members see the week in numbers instead")
+	ns.UI.Toggle()
+	ROSTER[2][5], LAST_ONLINE[3] = nil, nil
+	FireEvent("GUILD_ROSTER_UPDATE")
+	RunTimers()
+end
+
+-- Sending: one budget for every addon message ---------------------------------------------------
+do
+	local C = ns.Comm
+	C.SetBudget(100, 300) -- 100 characters per second, 300 saved up; 40 more per message
+	local message = string.rep("x", 60) -- costs 100
+	ResetCalls()
+	local sent = { C.Send(message, "GUILD", nil, "bulk"), C.Send(message, "GUILD", nil, "bulk"), C.Send(message, "GUILD", nil, "bulk") }
+	local fourth, code = C.Send(message, "GUILD", nil, "bulk")
+	check(sent[1] and sent[2] and sent[3] and not fourth and code == "wait" and CallCount("SendAddonMessage") == 3, "budget: bulk messages go out while it lasts, then they wait")
+	check(C.Send("PING", "GUILD", nil, "alert") and CallCount("SendAddonMessage") == 4, "budget: an alert goes out even without budget")
+	local queued, queuedCode = C.Send("POS\t1", "GUILD", nil, "normal", "POS")
+	C.Send("POS\t2", "GUILD", nil, "normal", "POS")
+	check(queued and queuedCode == "queued" and CallCount("SendAddonMessage") == 4, "budget: a normal message waits in the queue")
+	RunTickers()
+	check(#SentMessages("POS\t") == 0, "budget: without new budget nothing more goes out")
+	Advance(3)
+	RunTickers()
+	local positions = SentMessages("POS\t")
+	check(#positions == 1 and positions[1].args[2] == "POS\t2", "budget: the newest position replaced the waiting one and goes out with new budget")
+	check(C.Send("POS\t3", "GUILD", nil, "bulk"), "budget: refilled over time")
+	check(REAL_BUDGET.rate == 800 and REAL_BUDGET.burst == 4000 and C.BUDGET.overhead == 40, "budget: as ChatThrottleLib, 800 characters a second, 4000 saved up")
+	-- Leaving the guild drops what still waits.
+	while C.Send("x", "GUILD", nil, "bulk") do end -- less than 41 left
+	local _, waitingCode = C.Send("LFG\tweg", "GUILD")
+	IN_GUILD = false
+	FireEvent("PLAYER_GUILD_UPDATE")
+	IN_GUILD = true
+	FireEvent("PLAYER_GUILD_UPDATE")
+	Advance(10)
+	RunTickers()
+	check(waitingCode == "queued" and #SentMessages("LFG\tweg") == 0, "budget: what waits is dropped when we leave the guild")
+	-- An alert with the same key takes the waiting message out (a listing ended while it waited).
+	while C.Send("x", "GUILD", nil, "bulk") do end
+	C.Send("LFG\talt", "GUILD", nil, "normal", "LFG")
+	C.Send("LFGEND", "GUILD", nil, "alert", "LFG")
+	Advance(10)
+	RunTickers()
+	check(#SentMessages("LFG\talt") == 0 and #SentMessages("LFGEND") >= 1, "budget: an alert with the same key takes the waiting message out")
+	-- Also the whispered answers below that key ("LFG:<name>", the answer to an LFGREQ).
+	while C.Send("x", "GUILD", nil, "bulk") do end
+	C.Send("LFG\tantwort", "WHISPER", "Freund-ClassicBetaPvE2", "normal", "LFG:Freund-ClassicBetaPvE2")
+	C.Send("LFGEND", "GUILD", nil, "alert", "LFG")
+	Advance(10)
+	RunTickers()
+	check(#SentMessages("LFG\tantwort") == 0, "budget: the alert also takes out waiting messages below its key")
+	C.SetBudget(1e12, 1e12)
+	FireEvent("GUILD_ROSTER_UPDATE")
+	RunTimers()
+
+	-- In combat bulk messages wait (and still 5 s after it); presence and announcements do not.
+	FireEvent("PLAYER_REGEN_DISABLED")
+	local inFight, fightCode = C.Send("x", "GUILD", nil, "bulk")
+	check(not inFight and fightCode == "wait" and C.Send("PING", "GUILD", nil, "alert") and C.Send("POS\t9", "GUILD", nil, "normal", "POS"),
+		"combat: bulk messages wait, alerts and positions go out")
+	FireEvent("PLAYER_REGEN_ENABLED")
+	local justAfter = C.Send("x", "GUILD", nil, "bulk")
+	Advance(6)
+	check(not justAfter and C.Send("x", "GUILD", nil, "bulk"), "combat: bulk messages go out again 5 seconds after the fight")
+	-- A long answer waits out a long fight instead of giving up after its 20 tries.
+	local answered
+	FireEvent("PLAYER_REGEN_DISABLED")
+	ResetCalls()
+	C.SendPaced({ "PROFR\t1\t2", "PROFEND\t1\t1\t0" }, "WHISPER", "Freund-ClassicBetaPvE2", function(ok) answered = ok end)
+	for _ = 1, 30 do -- 30 retry rounds in the fight, 45 s
+		local pending = TIMERS
+		TIMERS = {}
+		for _, t in ipairs(pending) do if not t.cancelled then t.fn() end end
+	end
+	local duringFight = #SentMessages("PROF")
+	FireEvent("PLAYER_REGEN_ENABLED")
+	Advance(6)
+	RunTimers()
+	check(duringFight == 0 and answered == true and #SentMessages("PROFEND") == 1, "combat: a long answer waits out the fight and goes out in full")
+	-- Tidying up the audit store waits for the end of the fight too.
+	CAN_VIEW_OFFICER = true
+	local gs = ns.AuditAuto.GetStore()
+	local key = "freund-classicbetapve2"
+	local old = ns.AuditRecords.Encode("H", { t = GetServerTime() - 11 * 86400, hk = "mail", sev = "o", a = "Alt im Kampf", b = "s" })
+	ns.AuditStore.Add(gs, key, "Freund-ClassicBetaPvE2", old, GetServerTime())
+	FireEvent("PLAYER_REGEN_DISABLED")
+	RunTickers()
+	local function Stored() local member = gs.members[key] return member ~= nil and member.recs[old] ~= nil end
+	local keptInFight = Stored()
+	FireEvent("PLAYER_REGEN_ENABLED")
+	Advance(6)
+	RunTickers()
+	check(keptInFight and not Stored(), "combat: the audit store is tidied up after the fight, not during it")
+	RunTimers()
+end
+
+-- Incoming: channels per command, whispers only from members, a limit per player and command ----
+do
+	local C = ns.Comm
+	local function Receive(command, channel, sender) FireEvent("CHAT_MSG_ADDON", "GFForever", command .. "\tx", channel, sender) end
+	local guildCalls, whisperCalls, groupCalls = 0, 0, 0
+	C.RegisterHandler("TESTGUILD", function() guildCalls = guildCalls + 1 end, "GUILD")
+	C.RegisterHandler("TESTWHISPER", function() whisperCalls = whisperCalls + 1 end, "WHISPER")
+	C.RegisterHandler("TESTGROUP", function() groupCalls = groupCalls + 1 end, "GROUP")
+	Receive("TESTGUILD", "WHISPER", "Freund-ClassicBetaPvE2")
+	Receive("TESTGUILD", "GUILD", "Freund-ClassicBetaPvE2")
+	check(guildCalls == 1, "incoming: a command only over its channels")
+	Receive("TESTWHISPER", "WHISPER", "Fremder-ClassicBetaPvE2")
+	Receive("TESTWHISPER", "WHISPER", "Freund-ClassicBetaPvE2")
+	check(whisperCalls == 1, "incoming: whispers only from guild members")
+	for _, channel in ipairs({ "PARTY", "RAID", "INSTANCE_CHAT", "GUILD" }) do
+		Receive("TESTGROUP", channel, "Fremder-ClassicBetaPvE2")
+	end
+	check(groupCalls == 3, "incoming: GROUP means party, raid and instance chat")
+	ResetCalls()
+	Receive("PING", "WHISPER", "Freund-ClassicBetaPvE2")
+	local whisperedPongs = #SentMessages("PONG")
+	Receive("PING", "GUILD", "Freund-ClassicBetaPvE2")
+	check(whisperedPongs == 0 and #SentMessages("PONG") == 1, "incoming: PING only over the guild channel")
+
+	C.RATE.window, C.RATE.limit = REAL_RATE.window, REAL_RATE.limit
+	Advance(REAL_RATE.window + 1) -- a fresh window: Freund sent TESTGUILD above
+	guildCalls = 0
+	for _ = 1, REAL_RATE.limit + 5 do
+		Receive("TESTGUILD", "GUILD", "Freund-ClassicBetaPvE2")
+	end
+	local burst = guildCalls
+	Receive("TESTGUILD", "GUILD", "Crossy-OtherRealm")
+	local others = guildCalls - burst
+	Advance(REAL_RATE.window + 1)
+	Receive("TESTGUILD", "GUILD", "Freund-ClassicBetaPvE2")
+	check(REAL_RATE.limit == 40 and REAL_RATE.window == 10 and burst == 40 and others == 1 and guildCalls == 42,
+		"incoming: at most 40 of one command from one player in 10 seconds, others not affected")
+	C.RATE.limit = math.huge
+end
 
 check(CHAT_TOTAL == 0, "nothing went to the chat")
 

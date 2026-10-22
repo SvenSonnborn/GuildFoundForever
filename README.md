@@ -107,7 +107,7 @@ Festgelegt am 26.09.2026: Erfasst werden Verlauf, Handel, Post und blockierte Ak
   - Zwischenstände (alle 10 Minuten) werden nie weitergegeben. Jeder Stand, auch ein Zwischenstand, aktualisiert aber den „letzten Stand“ des Mitglieds bei den Offizieren (Zeit, Level, XP, Gold, Spielzeit, ein-/ausgeloggt).
   - Das Addon startet den Versand 45 Sekunden nach dem Einloggen, nach `HELLO` und den `HI`-Antworten.
   - Wer der Gilde während der Sitzung beitritt, meldet sich 5 Sekunden nach der Mitgliederliste mit `HELLO`, nicht erst beim nächsten Einloggen. Bekommt ein Offizier oder Zwischenspeicher ein `HELLO` von einem Namen, der noch nicht in seiner Mitgliederliste steht, lädt er die Liste neu (höchstens alle 10 Sekunden). Wer sich mit `HELLO` oder `HI` meldet, behält seine Fähigkeiten 2 Minuten lang, auch wenn die Mitgliederliste ihn noch nicht als online zeigt (sie wird jede Minute neu geladen). Danach entscheidet die Liste.
-  - **Warteschlange:** Alle Audit-Nachrichten zusammen gehen höchstens einmal pro Sekunde raus. Nach jeder Nachricht mit Einzelheiten (Stufe 2) beim Abgleich wartet die Warteschlange 3 Sekunden, damit beim ersten großen Abgleich Platz für Gildenkarte, Dungeonsuche, Ankündigungen und `HI` bleibt. Garantiert ist das nicht: Diese Nachrichten und die Antworten auf „Daten anfordern“ (`AUDREQ`) laufen nicht durch die Warteschlange und teilen sich das Limit des Servers, und wie viel Forever durchlässt, ist nicht bekannt (siehe Testliste). Drosselt der Server eine Nachricht, versucht das Addon sie alle 3 Sekunden erneut, bis zu 10-mal. Was noch an jemanden wartet, der offline gegangen ist oder seine Rolle verloren hat, verwirft das Addon, sobald die eigene Mitgliederliste ihn nicht mehr als online zeigt. Ausnahme: Die Antwort eines Mitglieds an einen Halter, der gerade erst eingeloggt ist und in der Liste noch fehlt, geht bis zu 2 Minuten nach seiner Anfrage trotzdem raus.
+  - **Warteschlange:** Alle Audit-Nachrichten zusammen gehen höchstens einmal pro Sekunde raus. Nach jeder Nachricht mit Einzelheiten (Stufe 2) beim Abgleich wartet die Warteschlange 3 Sekunden, damit beim ersten großen Abgleich Platz für Gildenkarte, Dungeonsuche, Ankündigungen und `HI` bleibt. Darüber liegt seit 0.9.0 das gemeinsame Sendebudget aller Addon-Nachrichten (siehe [Technische Hinweise](#technische-hinweise-zu-wow-forever)); Audit-Nachrichten sind dort „Masse“ und warten, wenn es aufgebraucht ist, ohne dass das als Fehlversuch zählt. Wie viel Forever durchlässt, ist nicht bekannt (siehe Testliste). Drosselt der Server eine Nachricht, versucht das Addon sie alle 3 Sekunden erneut, bis zu 10-mal. Was noch an jemanden wartet, der offline gegangen ist oder seine Rolle verloren hat, verwirft das Addon, sobald die eigene Mitgliederliste ihn nicht mehr als online zeigt. Ausnahme: Die Antwort eines Mitglieds an einen Halter, der gerade erst eingeloggt ist und in der Liste noch fehlt, geht bis zu 2 Minuten nach seiner Anfrage trotzdem raus.
 - **Nachholen durch die Empfänger:** Ob ein Eintrag beim Empfänger gespeichert wurde, erfährt das Mitglied nicht; es merkt sich nur, bis wann es gesendet hat. Ein Empfänger, der gerade lädt (`/reload`), dessen Mitgliederliste noch fehlt oder der das Mitglied noch nicht in der Liste hat, verwirft die Nachricht. Deshalb holt jeder Offizier und Zwischenspeicher selbst nach:
   - Er merkt sich je Mitglied, bis wann dessen letzte vollständige Antwort reicht (Uhrzeit des Mitglieds).
   - Sobald er nach dem Einloggen oder nach `/reload` Daten speichern kann, und immer, wenn sich ein Mitglied mit `HELLO` oder `HI` meldet, fragt er jedes Mitglied, das online ist und ihn zu seinen drei Empfängern zählt (dieselbe Rangfolge wie beim Mitglied), nach dessen eigenen Einträgen seit diesem Zeitpunkt (`AUDQ`, beim ersten Kontakt die letzten 10 Tage, alle Stufen).
@@ -237,9 +237,21 @@ Wunsch vom 26.09.2026: Gruppen melden sich an, um Mitglieder zu suchen. Was gesu
 - **Log:** blockierte Aktionen werden pro Charakter gespeichert (maximal 200 Einträge).
 - **Oberfläche:**
   - **Meldungen statt Chat** (seit 0.8.0): Das Addon schreibt nichts mehr in den Chat. Alle Meldungen stehen im Meldungsfenster (Stil der Banner) mit den Filtern Blockiert, Gilde, Audit, Dungeonsuche und System, Uhrzeit, Detailbereich und Item-Tooltips; die letzten 300 bleiben pro Charakter erhalten. Das Minimap-Icon zählt die ungelesenen, wichtige Meldungen blenden daneben 4 Sekunden einen Hinweis ein. Roter Bildschirmtext, Raid-Warnungen, Banner und der Beitrittsdialog bleiben. Spezifikation: `docs/specs/2026-09-30-meldungsfenster.md`.
-  - Fenster über `/gff` mit den Tabs „Regeln“, „Berufe“ und „Dungeonsuche“ (beide nur, wenn die Gildenregel an ist), „Deathlog“ und „Audit“.
+  - Fenster über `/gff` mit den Tabs „Übersicht“, „Regeln“, „Berufe“ und „Dungeonsuche“ (beide nur, wenn die Gildenregel an ist), „Deathlog“ und „Audit“.
+  - **Übersicht (Gilden-Dashboard „Gildenpuls“, seit 0.9.0):**
+    - Links die **Chronik der Woche**: Höchstlevel, Tode mit Ursache, epische Beute, Rezepte und Beitritte der letzten 7 Tage, nach Tagen gruppiert, mit farbigem Quadrat je Art, Namen in Klassenfarbe und Uhrzeit. Quelle sind die Ankündigungen (unabhängig davon, was man sich selbst anzeigen lässt) und die Systemmeldung zum Gildenbeitritt. Gespeichert werden 14 Tage, höchstens 300 Einträge pro Gilde, kontoweit.
+    - Rechts **jetzt online** mit „davon mit Addon“, einem Balken der Klassen online und einer Legende; die **Level der Gilde** als 12 Säulen zu je 5 Level, die Höchstlevel-Säule in Akzentfarbe; **Wer war da?**, die Zahl verschiedener Spieler pro Tag über 14 Tage, vom Addon selbst gezählt, solange man online ist.
+    - Unten rechts **für Offiziere**: offene Audit-Hinweise (Klick öffnet die Zeitleiste), online ohne Addon, 30+ Tage nicht da und ob die Regeln in der Gildeninfo dem eigenen Entwurf entsprechen. Alle anderen sehen dort **diese Woche**: auf Höchstlevel, Tode, neu in der Gilde, aktiv in den letzten 7 Tagen.
+    - Bewusst anders als das Dashboard von iRC: keine Kennzahl-Kacheln, kein Aktivitäts-Score, keine waagrechten Verteilungsbalken. Spezifikation: `docs/specs/2026-10-22-dashboard.md`.
+    - Mit sechs Tabs sind die Tab-Buttons 120 statt 140 Pixel breit.
   - Im Tab „Regeln“ stehen Audit, Berufe und Dungeonsuche zusammen unter „Gildenfunktionen“.
   - Das Zahnrad in der Titelleiste neben dem X öffnet die Einstellungen: Gildenchat-Regeln, eigene Benachrichtigungen, Banner, Testmeldung und Banner-Vorschau. Nochmal klicken führt zum letzten Tab zurück.
+  - **Look: Klassisch oder Modern** (seit 0.9.0): Ein Schalter in der Titelleiste links neben dem Zahnrad wechselt sofort, ohne `/reload`, und gilt für das ganze Konto (auch `/gff style`).
+    - Klassisch ist der WoW-Look mit Blizzards Rahmen, roten Buttons und Friz Quadrata.
+    - Modern ist flach und dunkel: eckige Flächen mit 1 Pixel breitem Rahmen, Arial Narrow und Gold als einzige Akzentfarbe (Palette „Glut“). Tabs sind Text, der offene ist unterstrichen. Häkchen sind Kästchen mit einem goldenen Quadrat.
+    - Clients auf Koreanisch, Chinesisch oder Russisch behalten im modernen Look ihre Schrift, weil Arial Narrow dort Zeichen fehlen.
+    - Umgestellt werden Hauptfenster, Kopier-Dialog, Meldungsfenster und der Hinweis an der Minimap. Banner, Minimap-Icon, Kartenpins und Tooltips bleiben in beiden Looks gleich, Lage und Größe aller Elemente auch.
+    - Spezifikation: `docs/specs/2026-10-22-stile.md`.
   - **Minimap-Icon** (seit 0.8.0): Linksklick öffnet das Fenster, Rechtsklick die Meldungen; am Kartenrand verschiebbar, in den Einstellungen abschaltbar.
   - Dazu ein Eintrag in Blizzards Einstellungen und im Addon-Menü an der Minimap.
   - Texte auf Deutsch und Englisch.
@@ -267,6 +279,7 @@ Ohne Gilde sind alle Regeln und Ankündigungen inaktiv.
 | `/gff preview` | Banner-Vorschau nur bei dir |
 | `/gff banner reset` | Banner an die Standardposition zurücksetzen |
 | `/gff publish` | Regeln und Partnergilden als Text zum Einfügen in die Gildeninfo anzeigen (braucht das Recht, die Gildeninfo zu bearbeiten) |
+| `/gff style [klassisch\|modern]` | Look der Fenster umschalten, ohne Angabe zum jeweils anderen (auch `classic`) |
 | `/gff debug` | Debug-Ausgaben ein/aus |
 
 `/guildfoundforever` funktioniert ebenfalls. Statt `loot`, `level` und `tod` gehen auch `beute`, `maxlevel`/`stufe` und `death`.
@@ -342,6 +355,7 @@ docs/curseforge.md       Projektbeschreibung für CurseForge; nicht in der ZIP
 tests/                   run.ps1, stubs.lua (nachgebaute WoW-API), tests.lua; nicht in der ZIP
 Locales.lua              Texte enUS (Standard) und deDE
 Core.lua                 Namespace, Events, Callbacks, SavedVariables, Log, Slash-Befehle
+Theme.lua                Look Klassisch/Modern: Schriftobjekte, Farben, Skins für Fenster, Buttons, Tabs, Häkchen, Eingabefelder, Schalter
 Messages.lua             Meldungsspeicher: Arten, ungelesen, höchstens 300, Übernahme des alten Logs
 Data.lua                 Item- und Zauber-IDs: Essen/Wasser, Gesundheitssteine, Portale, Teleports
 Rules.lua                Aktive Regeln (Gildeninfo vor lokalen Einstellungen), Partnergilden-Liste
@@ -361,6 +375,7 @@ Modules/Audit.lua        Audit: Verlauf, Handel und Post festhalten, eigene Hinw
 Modules/AuditAuto.lua    Audit im Spiel: verbindet die Abgleich-Engine mit Comm, Gilde, Regeln und SavedVariables; Rollen, Speicher pro Gilde, Meldungen
 Modules/Professions.lua  Berufe: eigene Skills und Rezepte lesen, Verzeichnis der Gilde, Rezepte auf Anfrage
 Modules/Finder.lua       Dungeonsuche: Dungeons und Stufen aus dem Spiel, Gruppe und Rollen lesen, Anmeldungen, Beitrittsanfragen
+Modules/Dashboard.lua    Daten der Übersicht: Chronik der Woche, „Wer war da?“ pro Tag, Zahlen aus der Mitgliederliste
 MapPin.xml               Vorlage für die Pins der Gildenkarte (Verhalten in GuildMap.lua)
 Banner.lua               Banner für Ankündigungen: Stile Beute, Tod, Höchstlevel, Test; Warteschlange
 MessageWindow.lua        Meldungsfenster und Hinweis im Stil der Banner
@@ -368,7 +383,8 @@ MinimapButton.lua        Minimap-Icon: Klicks, Zähler, Leuchten, Ziehen am Kart
 UI.lua                   Fenster mit Tabs, Einstellungs-Eintrag, Addon-Menü an der Minimap
 ```
 
-- Interne Nachrichten zwischen den Modulen: `INIT`, `LOGIN`, `RULES_CHANGED`, `ROSTER_UPDATED`, `DEATHLOG_UPDATED`, `AUDIT_UPDATED`, `AUDIT_RECORDED` (ein neuer eigener Audit-Eintrag, außer Zwischenständen), `LOGGED` (ein Eintrag im Log der blockierten Aktionen), `PEERS_CHANGED` (die Fähigkeiten der Spieler online haben sich geändert), `PEER_SEEN` (ein `HELLO` oder `HI` kam an, auch mit unveränderten Fähigkeiten), `PROFESSIONS_UPDATED`, `FINDER_UPDATED`, `MESSAGES_UPDATED`, `SETTINGS_CHANGED` (siehe `ns.RegisterCallback` / `ns.Fire`).
+- Interne Nachrichten zwischen den Modulen: `INIT`, `LOGIN`, `RULES_CHANGED`, `ROSTER_UPDATED`, `DEATHLOG_UPDATED`, `AUDIT_UPDATED`, `AUDIT_RECORDED` (ein neuer eigener Audit-Eintrag, außer Zwischenständen), `LOGGED` (ein Eintrag im Log der blockierten Aktionen), `PEERS_CHANGED` (die Fähigkeiten der Spieler online haben sich geändert), `PEER_SEEN` (ein `HELLO` oder `HI` kam an, auch mit unveränderten Fähigkeiten), `PROFESSIONS_UPDATED`, `FINDER_UPDATED`, `MESSAGES_UPDATED`, `SETTINGS_CHANGED`, `STYLE_CHANGED` (der Look wurde umgeschaltet), `ANNOUNCED` (eine eigene oder empfangene Ankündigung, unabhängig von den persönlichen Einstellungen), `CHRONICLE_UPDATED` (siehe `ns.RegisterCallback` / `ns.Fire`).
+- Mitgliederliste: `ROSTER_UPDATED` kommt bei jedem Neuladen (mindestens jede Minute), auch ohne Änderung. `Guild.GetRosterRevision()` steigt nur, wenn sich Mitglieder, Ränge, Level, Klassen, online/offline oder die vollen Tage seit „zuletzt online“ geändert haben; teure Auswertungen (Audit-Zeitleiste, Dashboard) bauen nur dann neu. Jeder Eintrag von `Guild.GetRosterEntries()` hat `lastOnline` (Tage seit zuletzt online aus `GetGuildRosterLastOnline`, 0 während online, `nil` wenn unbekannt).
 - Addon-Nachrichten (Präfix `GFForever`, Felder mit Tab getrennt):
 
   | Nachricht | Kanal | Inhalt |
@@ -394,7 +410,7 @@ UI.lua                   Fenster mit Tabs, Einstellungs-Eintrag, Addon-Menü an 
   | `PROFREQ <id>` | Flüstern | Rezepte eines Berufs anfragen |
   | `PROFR <id> <rezept,…>` | Flüstern | Rezept-IDs (= Zauber-IDs), mehrere Nachrichten |
   | `PROFEND <id> <anzahl> <erfasst>` | Flüstern | Ende der Rezeptliste; `erfasst` = 0, wenn der Beruf noch nie geöffnet wurde |
-  | `PROFNO <id>` | Flüstern | Anfrage abgelehnt (Berufe aus oder kein Gildenmitglied) |
+  | `PROFNO <id>` | Flüstern | Anfrage abgelehnt (Berufe aus). Flüstern von Nicht-Mitgliedern bleibt seit 0.9.0 ganz unbeantwortet. |
   | `LFG <alter> <id,…> <T,H,S,?> <mitglieder>` | Gilde oder Flüstern | Anmeldung: Aktivitäts-IDs, Anzahl je Rolle, Mitglieder als `name,klasse,stufe,rolle,spec` mit `;` getrennt (der erste ist der Absender, Name leer). Schlachtzüge nur mit Anzahl. Bei langen Namen fallen erst die Specs weg, dann die Namen. |
   | `LFGEND` | Gilde | Anmeldung beendet |
   | `LFGREQ` | Gilde | beim Einloggen: laufende Anmeldungen per Flüstern schicken |
@@ -407,6 +423,12 @@ UI.lua                   Fenster mit Tabs, Einstellungs-Eintrag, Addon-Menü an 
 
 ## Technische Hinweise zu WoW Forever
 
+- **Sendebudget** (seit 0.9.0, nach dem Vorbild von ChatThrottleLib): Alle Addon-Nachrichten teilen sich ein Budget von 800 Zeichen pro Sekunde, bis zu 4000 angespart; jede Nachricht kostet ihre Länge plus 40.
+  - „Wichtig“ geht immer sofort raus, notfalls auf Pump: `HELLO`, `HI`, `PING`/`PONG`, Ankündigungen, Anfragen und Antworten der Dungeonsuche, Berufe-Anfragen, „Daten anfordern“.
+  - „Normal“ geht sofort, solange das Budget reicht und nichts wartet, sonst in einer Warteschlange (alle 0,2 Sekunden geleert). Eine neue Position der Gildenkarte und eine neue Anmeldung der Dungeonsuche ersetzen die noch wartende. Wer die Gilde verlässt, verwirft, was noch wartet.
+  - „Masse“ geht nur, solange das Budget reicht; sonst wartet der Absender selbst: der Audit (ohne Fehlversuch) und die langen Antworten (Rezepte, alte Audit-Antworten).
+  - **Eingehend** (seit 0.9.0): Jeder Befehl nennt bei der Anmeldung seine Kanäle (Gilde, Flüstern oder Gruppe für Party, Schlachtzug und Instanz); über andere Kanäle wird er ignoriert. Flüstern zählt nur von Gildenmitgliedern, sobald die Mitgliederliste geladen ist. Ein Spieler kann denselben Befehl höchstens 40-mal in 10 Sekunden schicken, der Rest wird still verworfen.
+  - **Im Kampf** und bis 5 Sekunden danach wartet alle „Masse“; „Wichtig“ und „Normal“ (z. B. die eigene Position) gehen weiter raus. Auch das Aufräumen des Audit-Speichers wartet bis nach dem Kampf.
 - Der Client basiert auf **Retail** (`WOW_PROJECT_ID` = 1), nicht auf Classic. Interface-Nummer 16001, Lua 5.1.
 - Alte Classic-Funktionen fehlen und müssen über die neuen Namespaces aufgerufen werden:
 
@@ -494,6 +516,24 @@ Neu in 0.9.0-beta (automatischer Audit; mit zwei bis drei Spielern, ein Offizier
 - [ ] Ein Mitglied mit Version 0.8.0 beantwortet „Daten anfordern“ weiterhin (`AUDREQ`/`AUD` kommen an).
 - [ ] Texte: „->“ und alle neuen Texte werden richtig dargestellt, auf Deutsch und Englisch.
 - [ ] Mit einer größeren Gilde: Ruckelt das Spiel? Verdrängt der Audit Gildenkarte oder Dungeonsuche? Wie lange dauert es, bis ein Eintrag bei allen Offizieren ist?
+
+Neu in 0.9.0-beta (Übersicht):
+
+- [ ] Tab „Übersicht“: alle sechs Tabs passen nebeneinander, in beiden Looks; nichts überlappt (Chronik, Klassenbalken, Säulen, Zahlen).
+- [ ] Chronik: Höchstlevel, Tod, epische Beute und Rezept eines anderen Mitglieds erscheinen, auch wenn man sie sich selbst nicht anzeigen lässt; ein Gildenbeitritt erscheint mit „tritt der Gilde bei“ (Systemmeldung auf Deutsch und Englisch); Item-Links sind farbig.
+- [ ] `GetGuildRosterLastOnline` liefert in Forever Jahre, Monate, Tage, Stunden für Offline-Mitglieder; „30+ Tage nicht da“ und „aktiv in den letzten 7 Tagen“ stimmen mit der Gildenliste überein.
+- [ ] „Wer war da?“ zählt über den Tag weiter, auch nach `/reload`; um Mitternacht beginnt ein neuer Tag.
+- [ ] Offiziere sehen ihren Kasten, ein Klick auf „Offene Audit-Hinweise“ öffnet die Zeitleiste; Mitglieder sehen „Diese Woche“.
+
+Neu in 0.9.0-beta (Look Klassisch/Modern):
+
+- [ ] Schalter in der Titelleiste: Klick wechselt sofort; beide Wörter und der Knopf zeigen den aktiven Look; nach `/reload` und auf einem anderen Charakter desselben Kontos bleibt er.
+- [ ] Modern: Von Blizzards Fensterrahmen, roten Buttons, Häkchen- und Eingabefeld-Grafik ist nichts mehr zu sehen, auch nicht nach Klicken, Deaktivieren oder Überfahren eines Buttons. Das X oben rechts ist ein schlichtes „×“ und schließt.
+- [ ] Modern: Arial Narrow ist gut lesbar, nichts wird abgeschnitten (Tabs, Regeln, Audit-Zeitleiste, Dungeonsuche, Berufe, Meldungsfenster).
+- [ ] Modern: angehakt/nicht angehakt und deaktivierte Häkchen (Regeln aus der Gildeninfo) sind klar zu unterscheiden; der Hauptbutton „In Gildeninfo veröffentlichen“ ist gold.
+- [ ] Zurück zu Klassisch: alles sieht aus wie vorher (Fensterrahmen, rote Buttons, Häkchen, Eingabefelder, Schrift).
+- [ ] Meldungsfenster und Hinweis an der Minimap wechseln mit, auch wenn das Meldungsfenster beim Umschalten offen ist.
+- [ ] Keine Lua-Fehler und kein „Taint“ (z. B. `/gff` im Kampf öffnen, Einstellungen von Blizzard öffnen).
 
 Neu in 0.8.0 (Meldungsfenster und Minimap-Icon):
 
@@ -635,7 +675,7 @@ Festgelegt am 26.09.2026:
 - Name: **Guild Found Forever** (Ordner und Dateien `GuildFoundForever`, Befehl `/gff`, Addon-Nachrichten `GFForever`). Der Arbeitsname „GuildPact“ sagte nicht, was das Addon macht; umbenannt vor der ersten Veröffentlichung, gespeicherte Testdaten unter dem alten Namen werden nicht übernommen.
 - Lizenz: **MIT**.
 - Quellcode öffentlich auf **GitHub**. Ein Tag löst das automatische Packen und Hochladen aus.
-- **Jetzt als Beta** (`0.7.0-beta`), **1.0.0 zum Launch** am 04.11.2026.
+- **Jetzt als Beta** (`0.7.0-beta`), ~~**1.0.0 zum Launch** am 04.11.2026~~. Geändert am 22.10.2026: Bis 1.0.0 kommen noch Funktionen dazu, bis dahin bleibt es bei Betas (als Nächstes `0.9.0-beta`).
 - Nur **CurseForge** (Projekt-ID 1712933) und GitHub-Releases. Wago wurde verworfen.
 
 Stand der Technik (26.09.2026):
@@ -708,6 +748,9 @@ Offen:
   - Zwischenstände alle 10 Minuten gehen nicht an die Offiziere, nur der jeweils letzte Stand.
   - Bei einem Charakter, der beim ersten Start des Addons schon in der Gilde war, ist der Beitrittszeitpunkt unbekannt.
   - Die Position des Rechts „Offiziersnotiz ansehen“ (Nr. 11) stammt aus der Classic-API und muss in Forever bestätigt werden (siehe Testliste).
+- Übersicht:
+  - Chronik und „Wer war da?“ enthalten nur, was das eigene Addon gesehen hat, während man online war. Zwei Mitglieder können also verschiedene Chroniken sehen; es wird nichts abgeglichen.
+  - Ankündigungen kommen nur von Mitgliedern mit Addon; Beitritte nur über die Systemmeldung, die man selbst bekommt.
 - Dungeonsuche:
   - Es erscheinen nur Anmeldungen von Mitgliedern mit Addon; Partnergilden sehen sie nicht.
   - Rollen von Gruppenmitgliedern ohne Addon kennt das Addon nur, wenn das Spiel sie zugewiesen hat oder die Spezialisierung kennt; sonst zeigt der Platz die Klasse.

@@ -3,6 +3,8 @@ local L = ns.L
 
 local MessageWindow = {}
 ns.MessageWindow = MessageWindow
+local Theme = ns.Theme
+local Fonts = Theme.Fonts
 
 local WIDTH, HEIGHT = 520, 490
 local ROWS, ROW_HEIGHT = 10, 26
@@ -23,15 +25,8 @@ local FILTERS = {
 }
 
 local WHITE = "Interface\\Buttons\\WHITE8X8"
-local BORDER = "Interface\\Tooltips\\UI-Tooltip-Border"
--- Banner style: dark, slightly transparent, thin gold frame
-local BACKGROUND = { 0.04, 0.04, 0.06, 0.94 }
-local GOLD = { 1, 0.82, 0 }
-local FRAME_BORDER = { 0.85, 0.68, 0.2, 1 }
-local PANEL = { 0, 0, 0, 0.35 }
-local PANEL_BORDER = { 0.35, 0.3, 0.2, 0.8 }
-local BUTTON_BACKGROUND = { 0.1, 0.09, 0.07, 0.9 }
-local BUTTON_BORDER = { 0.45, 0.38, 0.22, 0.9 }
+-- Frames and colours come from Theme.lua: classic is the banner style (dark, slightly
+-- transparent, thin gold frame), modern the flat one.
 
 local window, toast
 local highlight = {} -- entries that were unread when the window opened, or arrived while it was open
@@ -42,12 +37,6 @@ local highlight = {} -- entries that were unread when the window opened, or arri
 
 local function FileExists(path)
 	return GetFileIDFromPath == nil or GetFileIDFromPath(path) ~= nil
-end
-
-local function StyleBox(frame, background, border, edgeSize)
-	frame:SetBackdrop({ bgFile = WHITE, edgeFile = BORDER, edgeSize = edgeSize or 14, insets = { left = 3, right = 3, top = 3, bottom = 3 } })
-	frame:SetBackdropColor(background[1], background[2], background[3], background[4])
-	frame:SetBackdropBorderColor(border[1], border[2], border[3], border[4])
 end
 
 local function ColorCode(key)
@@ -97,8 +86,8 @@ end
 local function CreateFlatButton(parent, width)
 	local b = CreateFrame("Button", nil, parent, "BackdropTemplate")
 	b:SetSize(width, 22)
-	StyleBox(b, BUTTON_BACKGROUND, BUTTON_BORDER, 10)
-	b.label = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	Theme.SkinBox(b, "button")
+	b.label = b:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
 	b.label:SetPoint("CENTER", 0, 0)
 	local hover = b:CreateTexture(nil, "HIGHLIGHT")
 	hover:SetTexture(WHITE)
@@ -141,15 +130,14 @@ local function CreateRow(w, index)
 	row.icon = row:CreateTexture(nil, "ARTWORK")
 	row.icon:SetSize(18, 18)
 	row.icon:SetPoint("LEFT", 8, 0)
-	row.time = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	row.time = row:CreateFontString(nil, "OVERLAY", Fonts.DisableSmall)
 	row.time:SetPoint("RIGHT", -8, 0)
 	row.time:SetJustifyH("RIGHT")
 	row.dot = row:CreateTexture(nil, "OVERLAY")
 	row.dot:SetTexture(WHITE)
 	row.dot:SetSize(6, 6)
 	row.dot:SetPoint("RIGHT", row.time, "LEFT", -8, 0)
-	row.dot:SetVertexColor(GOLD[1], GOLD[2], GOLD[3], 1)
-	row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.text = row:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
 	row.text:SetPoint("LEFT", row.icon, "RIGHT", 8, 0)
 	row.text:SetPoint("RIGHT", row.dot, "LEFT", -8, 0)
 	row.text:SetJustifyH("LEFT")
@@ -205,24 +193,25 @@ local function Window()
 		SavePosition(self, "window")
 	end)
 	w:SetScript("OnHide", function() wipe(highlight) end)
-	StyleBox(w, BACKGROUND, FRAME_BORDER)
+	Theme.SkinBox(w, "window")
 	RestorePosition(w, "window", DEFAULT_WINDOW)
 	w:Hide()
 	tinsert(UISpecialFrames, w:GetName())
 	w.offset, w.detailOffset = 0, 0
 
-	w.title = w:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+	w.title = w:CreateFontString(nil, "OVERLAY", Fonts.NormalLarge)
 	w.title:SetPoint("TOPLEFT", 16, -12)
 	w.title:SetText(L.MSG_TITLE)
-	w.count = w:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	w.count = w:CreateFontString(nil, "OVERLAY", Fonts.DisableSmall)
 	w.count:SetPoint("LEFT", w.title, "RIGHT", 10, -1)
 	local close = CreateFrame("Button", nil, w, "UIPanelCloseButton")
 	close:SetPoint("TOPRIGHT", -2, -2)
 	close:SetScript("OnClick", function() MessageWindow.Toggle() end)
+	Theme.SkinCloseButton(close)
 	local line = w:CreateTexture(nil, "ARTWORK")
 	line:SetTexture(WHITE)
-	line:SetVertexColor(GOLD[1], GOLD[2], GOLD[3], 0.5)
 	line:SetHeight(1)
+	w.line = line
 	line:SetPoint("TOPLEFT", 12, -36)
 	line:SetPoint("TOPRIGHT", -12, -36)
 
@@ -245,12 +234,12 @@ local function Window()
 	listBox:SetPoint("TOPLEFT", 12, LIST_TOP + 4)
 	listBox:SetPoint("TOPRIGHT", -12, LIST_TOP + 4)
 	listBox:SetHeight(ROWS * ROW_HEIGHT + 8)
-	StyleBox(listBox, PANEL, PANEL_BORDER, 10)
+	Theme.SkinBox(listBox, "panel")
 	w.rows = {}
 	for i = 1, ROWS do
 		w.rows[i] = CreateRow(w, i)
 	end
-	w.empty = w:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+	w.empty = w:CreateFontString(nil, "OVERLAY", Fonts.Disable)
 	w.empty:SetPoint("TOP", listBox, "TOP", 0, -40)
 	w.empty:SetText(L.MSG_EMPTY)
 
@@ -258,9 +247,9 @@ local function Window()
 	detailBox:SetPoint("TOPLEFT", 12, DETAIL_TOP)
 	detailBox:SetPoint("TOPRIGHT", -12, DETAIL_TOP)
 	detailBox:SetHeight(DETAIL_HEIGHT)
-	StyleBox(detailBox, PANEL, PANEL_BORDER, 10)
+	Theme.SkinBox(detailBox, "panel")
 	w.detailBox = detailBox
-	w.detail = detailBox:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	w.detail = detailBox:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
 	w.detail:SetPoint("TOPLEFT", 10, -8)
 	w.detail:SetPoint("BOTTOMRIGHT", -10, 8)
 	w.detail:SetJustifyH("LEFT")
@@ -319,6 +308,8 @@ function MessageWindow.Refresh()
 		end
 	end
 	w.count:SetText(newTotal > 0 and L.MSG_NEW:format(newTotal) or "")
+	local accent = Theme.Color("accent")
+	w.line:SetVertexColor(accent[1], accent[2], accent[3], 0.5)
 	for _, def in ipairs(FILTERS) do
 		local b = w.filters[def.key]
 		local label, count
@@ -329,7 +320,7 @@ function MessageWindow.Refresh()
 			count = newCounts[def.key] or 0
 		end
 		b.label:SetText(count > 0 and (label .. " |cffffffff" .. count .. "|r") or label)
-		local border = (w.filter or "all") == def.key and FRAME_BORDER or BUTTON_BORDER
+		local border = Theme.Color((w.filter or "all") == def.key and "selectedBorder" or "buttonBorder")
 		b:SetBackdropBorderColor(border[1], border[2], border[3], border[4])
 	end
 
@@ -346,6 +337,7 @@ function MessageWindow.Refresh()
 			row.time:SetText(FormatTime(entry.t))
 			local new = highlight[entry] == true
 			row.dot:SetShown(new)
+			row.dot:SetVertexColor(accent[1], accent[2], accent[3], 1)
 			row.bg:SetVertexColor(1, 1, 1, entry == w.selected and 0.12 or (new and 0.07 or 0.02))
 			row:Show()
 		else
@@ -368,7 +360,7 @@ local function Toast()
 	t:SetSize(TOAST_WIDTH, TOAST_HEIGHT)
 	t:SetFrameStrata("HIGH")
 	t:SetClampedToScreen(true)
-	StyleBox(t, BACKGROUND, FRAME_BORDER)
+	Theme.SkinBox(t, "window")
 	t.accent = t:CreateTexture(nil, "ARTWORK")
 	t.accent:SetTexture(WHITE)
 	t.accent:SetPoint("TOPLEFT", 4, -4)
@@ -377,7 +369,7 @@ local function Toast()
 	t.icon = t:CreateTexture(nil, "ARTWORK")
 	t.icon:SetSize(24, 24)
 	t.icon:SetPoint("LEFT", 14, 0)
-	t.text = t:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	t.text = t:CreateFontString(nil, "OVERLAY", Fonts.Highlight)
 	t.text:SetPoint("LEFT", t.icon, "RIGHT", 10, 0)
 	t.text:SetPoint("RIGHT", -12, 0)
 	t.text:SetJustifyH("LEFT")
@@ -507,5 +499,9 @@ ns.RegisterCallback("MESSAGES_UPDATED", function(entry)
 			ShowToast(entry)
 		end
 	end
+	MessageWindow.Refresh()
+end)
+
+ns.RegisterCallback("STYLE_CHANGED", function()
 	MessageWindow.Refresh()
 end)

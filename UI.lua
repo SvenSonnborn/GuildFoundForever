@@ -3,6 +3,8 @@ local L = ns.L
 
 local UI = {}
 ns.UI = UI
+local Theme = ns.Theme
+local Fonts = Theme.Fonts
 
 local WIDTH, HEIGHT = 780, 540
 local LEFT, RIGHT = 16, 400 -- column offsets inside a tab
@@ -12,6 +14,7 @@ local DEATHLOG_ROW_HEIGHT = 18
 
 -- Pages of the window: these tabs, plus the settings page behind the gear button in the title bar.
 local TABS = {
+	{ key = "dashboard", label = "TAB_DASHBOARD" },
 	{ key = "rules", label = "TAB_RULES" },
 	-- only when the officers switched professions on
 	{ key = "professions", label = "TAB_PROFESSIONS", visible = function() return ns.Professions.IsEnabled() end },
@@ -20,9 +23,10 @@ local TABS = {
 	{ key = "deathlog", label = "TAB_DEATHLOG" },
 	{ key = "audit", label = "TAB_AUDIT" },
 }
-local TAB_SPACING = 146
+local TAB_WIDTH, TAB_SPACING = 120, 124 -- up to six tabs side by side
 local SETTINGS_ICONS = { "Interface\\Icons\\INV_Misc_Gear_01", "Interface\\Icons\\Trade_Engineering" }
 local SETTINGS_BUTTON_GAP = 8 -- space between the gear and the close button
+local STYLE_SWITCH_GAP = 10 -- space between the style switch and the gear
 
 local RULE_SECTIONS = {
 	{
@@ -88,14 +92,14 @@ local function AttachTooltip(widget, title, text)
 end
 
 local function CreateHeader(parent, x, y, text)
-	local header = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	local header = parent:CreateFontString(nil, "OVERLAY", Fonts.Normal)
 	header:SetPoint("TOPLEFT", x, y)
 	header:SetText(text)
 	return header
 end
 
 local function CreateNote(parent, x, y, width)
-	local note = parent:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	local note = parent:CreateFontString(nil, "OVERLAY", Fonts.DisableSmall)
 	note:SetPoint("TOPLEFT", x, y)
 	note:SetWidth(width)
 	note:SetJustifyH("LEFT")
@@ -106,7 +110,8 @@ local function CreateCheckbox(parent, x, y, labelText, tipText, onClick)
 	local checkbox = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
 	checkbox:SetSize(24, 24)
 	checkbox:SetPoint("TOPLEFT", x - 2, y)
-	local label = checkbox:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	Theme.SkinCheckbox(checkbox)
+	local label = checkbox:CreateFontString(nil, "OVERLAY", Fonts.Highlight)
 	label:SetPoint("LEFT", checkbox, "RIGHT", 4, 1)
 	label:SetText(labelText)
 	checkbox.label = label
@@ -154,12 +159,13 @@ end
 
 -- Label with a small number box behind it; onCommit receives the number or nil.
 local function CreateNumberBox(parent, x, y, labelText, tipText, onCommit)
-	local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	local label = parent:CreateFontString(nil, "OVERLAY", Fonts.Highlight)
 	label:SetPoint("TOPLEFT", x + 4, y)
 	label:SetText(labelText)
 	local box = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
 	box:SetSize(36, 20)
 	box:SetPoint("LEFT", label, "RIGHT", 12, 0)
+	Theme.SkinEditBox(box)
 	box:SetNumeric(true)
 	box:SetMaxLetters(3)
 	box:SetJustifyH("CENTER")
@@ -169,11 +175,17 @@ local function CreateNumberBox(parent, x, y, labelText, tipText, onCommit)
 	return box
 end
 
-local function CreateButton(parent, text, width, onClick)
+-- kind: nil, "primary" (the main action, filled in the modern style) or "tab".
+local function CreateButton(parent, text, width, onClick, kind)
 	local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
 	button:SetSize(width, 22)
 	button:SetText(text)
 	button:SetScript("OnClick", onClick)
+	if kind == "tab" then
+		Theme.SkinTab(button)
+	else
+		Theme.SkinButton(button, kind)
+	end
 	return button
 end
 
@@ -211,6 +223,7 @@ local function BuildRulesPanel(panel)
 	partners:SetSize(WIDTH - RIGHT - 30, 20)
 	partners:SetPoint("TOPLEFT", RIGHT + 8, -82)
 	partners:SetMaxLetters(200)
+	Theme.SkinEditBox(partners)
 	SetupEditBox(partners, L.SECTION_PARTNERS, L.PARTNERS_HINT, function(text)
 		ns.Rules.SetPartnerGuilds(ns.Rules.ParseNameList(text))
 	end)
@@ -235,7 +248,7 @@ end
 ---------------------------------------------------------------------------
 
 local function BuildSettingsPanel(panel)
-	local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+	local title = panel:CreateFontString(nil, "OVERLAY", Fonts.NormalLarge)
 	title:SetPoint("TOPLEFT", LEFT, -2)
 	title:SetText(L.SETTINGS_TITLE)
 	CreateHeader(panel, LEFT, -30, L.SECTION_CHAT)
@@ -272,7 +285,7 @@ end
 local function BuildDeathlogPanel(panel)
 	controls.deathHeader = CreateHeader(panel, LEFT, -4, "")
 	for i = 1, DEATHLOG_ROWS do
-		local row = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		local row = panel:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
 		row:SetPoint("TOPLEFT", LEFT + 4, -24 - (i - 1) * DEATHLOG_ROW_HEIGHT)
 		row:SetPoint("RIGHT", panel, "RIGHT", -16, 0)
 		row:SetJustifyH("LEFT")
@@ -304,6 +317,353 @@ function UI.RefreshDeathlog()
 		local last = math.min(deathOffset + DEATHLOG_ROWS, #deaths)
 		controls.deathFooter:SetText(L.DEATHLOG_FOOTER:format(deathOffset + 1, last, #deaths) .. " " .. L.DEATHLOG_NOTE)
 	end
+end
+
+---------------------------------------------------------------------------
+-- Tab: overview (the guild dashboard, docs/specs/2026-10-22-dashboard.md): the chronicle of the
+-- week on the left; on the right who is online, the levels, who was there per day and a box for
+-- officers (everybody else: the week in numbers).
+---------------------------------------------------------------------------
+
+local DASH_FEED_ROWS, DASH_FEED_ROW = 17, 18
+local DASH_FEED_WIDTH, DASH_GAP = 280, 12
+local DASH_RIGHT = LEFT + DASH_FEED_WIDTH + DASH_GAP
+local DASH_RIGHT_WIDTH = WIDTH - LEFT - DASH_RIGHT
+local DASH_SMALL_WIDTH = (DASH_RIGHT_WIDTH - DASH_GAP) / 2
+local DASH_LEVEL_HEIGHT, DASH_LEVEL_GAP = 70, 6
+local DASH_DAY_HEIGHT, DASH_DAY_GAP = 44, 3
+local DASH_CLASS_SEGMENTS = 10
+local DASH_REFRESH_SECONDS = 1
+local WHITE_TEXTURE = "Interface\\Buttons\\WHITE8X8"
+-- Squares of the chronicle by kind; level cap takes the accent colour of the look.
+local FEED_COLORS = { death = { 0.85, 0.33, 0.29 }, epic = { 0.64, 0.21, 0.93 }, recipe = { 0.35, 0.66, 0.9 }, join = { 0.42, 0.75, 0.44 } }
+local dash = {}
+
+local function Hex(color)
+	return ("|cff%02x%02x%02x"):format(math.floor(color[1] * 255), math.floor(color[2] * 255), math.floor(color[3] * 255))
+end
+
+local function DashBox(panel, x, y, width, height)
+	local box = CreateFrame("Frame", nil, panel, "BackdropTemplate")
+	box:SetPoint("TOPLEFT", x, y)
+	box:SetSize(width, height)
+	Theme.SkinBox(box, "panel")
+	return box
+end
+
+local function DashText(parent, font, x, y, width)
+	local text = parent:CreateFontString(nil, "OVERLAY", font)
+	text:SetPoint("TOPLEFT", x, y)
+	if width then
+		text:SetWidth(width)
+	end
+	text:SetJustifyH("LEFT")
+	text:SetWordWrap(false)
+	return text
+end
+
+local function DashBar(parent)
+	local bar = parent:CreateTexture(nil, "ARTWORK")
+	bar:SetTexture(WHITE_TEXTURE)
+	return bar
+end
+
+-- Label on the left, value on the right; a button when it leads somewhere.
+local function DashLine(parent, y, onClick)
+	local line = CreateFrame(onClick and "Button" or "Frame", nil, parent)
+	line:SetPoint("TOPLEFT", 12, y)
+	line:SetPoint("TOPRIGHT", -12, y)
+	line:SetHeight(16)
+	line.label = line:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
+	line.label:SetPoint("LEFT")
+	line.value = line:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
+	line.value:SetPoint("RIGHT")
+	if onClick then
+		line:SetScript("OnClick", onClick)
+		local hover = line:CreateTexture(nil, "HIGHLIGHT")
+		hover:SetAllPoints()
+		hover:SetTexture(WHITE_TEXTURE)
+		hover:SetVertexColor(1, 1, 1, 0.06)
+	end
+	return line
+end
+
+local function BuildDashboardPanel(panel)
+	local feed = DashBox(panel, LEFT, 0, DASH_FEED_WIDTH, 352)
+	DashText(feed, Fonts.Normal, 10, -8):SetText(L.DASH_CHRONICLE)
+	local days = DashText(feed, Fonts.DisableSmall, 0, -10)
+	days:ClearAllPoints()
+	days:SetPoint("TOPRIGHT", -10, -10)
+	days:SetText(L.DASH_CHRONICLE_DAYS)
+	dash.feedEmpty = DashText(feed, Fonts.DisableSmall, 10, -30, DASH_FEED_WIDTH - 20)
+	dash.feedEmpty:SetWordWrap(true)
+	dash.feed = {}
+	for i = 1, DASH_FEED_ROWS do
+		local mark = DashBar(feed)
+		mark:SetSize(7, 7)
+		mark:SetPoint("TOPLEFT", 10, -34 - (i - 1) * DASH_FEED_ROW)
+		dash.feed[i] = { mark = mark, text = DashText(feed, Fonts.HighlightSmall, 22, -30 - (i - 1) * DASH_FEED_ROW, DASH_FEED_WIDTH - 30) }
+	end
+
+	local now = DashBox(panel, DASH_RIGHT, 0, DASH_RIGHT_WIDTH, 82)
+	dash.nowBox = now
+	dash.online = DashText(now, Fonts.Huge, 12, -8)
+	dash.onlineLabel = now:CreateFontString(nil, "OVERLAY", Fonts.Highlight)
+	dash.onlineLabel:SetPoint("BOTTOMLEFT", dash.online, "BOTTOMRIGHT", 8, 3)
+	dash.onlineLabel:SetText(L.DASH_ONLINE)
+	dash.withAddon = DashText(now, Fonts.HighlightSmall, 0, 0)
+	dash.withAddon:ClearAllPoints()
+	dash.withAddon:SetPoint("TOPRIGHT", -12, -16)
+	dash.classWidth = DASH_RIGHT_WIDTH - 24
+	dash.classBar = {}
+	for i = 1, DASH_CLASS_SEGMENTS do
+		dash.classBar[i] = DashBar(now)
+	end
+	dash.classLegend = DashText(now, Fonts.HighlightSmall, 12, -60, dash.classWidth)
+
+	local levels = DashBox(panel, DASH_RIGHT, -92, DASH_RIGHT_WIDTH, 128)
+	DashText(levels, Fonts.Normal, 12, -8):SetText(L.DASH_LEVELS)
+	dash.levelsInfo = DashText(levels, Fonts.DisableSmall, 0, 0)
+	dash.levelsInfo:ClearAllPoints()
+	dash.levelsInfo:SetPoint("TOPRIGHT", -12, -10)
+	local steps = ns.Dashboard.LEVEL_STEPS
+	local columnWidth = math.floor((DASH_RIGHT_WIDTH - 24 - (steps - 1) * DASH_LEVEL_GAP) / steps)
+	dash.levelBars, dash.levelLabels = {}, {}
+	for i = 1, steps do
+		local x = 12 + (i - 1) * (columnWidth + DASH_LEVEL_GAP)
+		local bar = DashBar(levels)
+		bar:SetWidth(columnWidth)
+		bar:SetPoint("BOTTOMLEFT", levels, "TOPLEFT", x, -32 - DASH_LEVEL_HEIGHT)
+		dash.levelBars[i] = bar
+		local label = levels:CreateFontString(nil, "OVERLAY", Fonts.DisableSmall)
+		label:SetPoint("TOP", levels, "TOPLEFT", x + columnWidth / 2, -36 - DASH_LEVEL_HEIGHT)
+		dash.levelLabels[i] = label
+	end
+
+	local who = DashBox(panel, DASH_RIGHT, -230, DASH_SMALL_WIDTH, 122)
+	DashText(who, Fonts.Normal, 12, -8):SetText(L.DASH_WHO)
+	local whoInfo = DashText(who, Fonts.DisableSmall, 12, -26, DASH_SMALL_WIDTH - 24)
+	whoInfo:SetWordWrap(true)
+	whoInfo:SetText(L.DASH_WHO_INFO)
+	local dayCount = ns.Dashboard.ACTIVITY_DAYS
+	local dayWidth = math.floor((DASH_SMALL_WIDTH - 24 - (dayCount - 1) * DASH_DAY_GAP) / dayCount)
+	dash.dayBars = {}
+	for i = 1, dayCount do
+		local bar = DashBar(who)
+		bar:SetWidth(dayWidth)
+		bar:SetPoint("BOTTOMLEFT", who, "TOPLEFT", 12 + (i - 1) * (dayWidth + DASH_DAY_GAP), -100)
+		dash.dayBars[i] = bar
+	end
+	dash.whoFooter = DashText(who, Fonts.HighlightSmall, 12, -104, DASH_SMALL_WIDTH - 24)
+
+	local side = DashBox(panel, DASH_RIGHT + DASH_SMALL_WIDTH + DASH_GAP, -230, DASH_SMALL_WIDTH, 122)
+	dash.sideTitle = DashText(side, Fonts.Normal, 12, -8)
+	dash.officerLines, dash.weekLines = {}, {}
+	for i = 1, 4 do
+		dash.officerLines[i] = DashLine(side, -30 - (i - 1) * 20, i == 1 and function() UI.ShowAudit() end or nil)
+		dash.weekLines[i] = DashLine(side, -30 - (i - 1) * 20)
+	end
+end
+
+local function DayHeading(t, now)
+	local day = date("%Y%m%d", t)
+	if day == date("%Y%m%d", now) then
+		return L.DASH_TODAY
+	elseif day == date("%Y%m%d", now - 86400) then
+		return L.DASH_YESTERDAY
+	end
+	return date("%d.%m.", t)
+end
+
+local function FeedText(entry)
+	local name = ns.Announce.ClassColored(Ambiguate(entry.n, "guild"), entry.c)
+	local text
+	if entry.k == "cap" then
+		text = L.DASH_FEED_CAP:format(name, entry.l or 0)
+	elseif entry.k == "death" then
+		text = L.DASH_FEED_DEATH:format(name, entry.l or 0, entry.z or "?")
+	elseif entry.k == "epic" then
+		text = L.DASH_FEED_EPIC:format(name, entry.x or "?")
+	elseif entry.k == "recipe" then
+		text = L.DASH_FEED_RECIPE:format(name, entry.x or "?")
+	else
+		text = L.DASH_FEED_JOIN:format(name)
+	end
+	local extra = entry.k == "death" and entry.x and (" · " .. entry.x) or ""
+	return ("%s %s%s%s|r"):format(text, Hex(Theme.Color("muted")), date("%H:%M", entry.t), extra)
+end
+
+-- Day headings and entries, newest first, as many as fit.
+local function RefreshFeed(chronicle, now)
+	local row, lastDay = 0, nil
+	local accent = Theme.Color("accent")
+	for _, entry in ipairs(chronicle) do
+		local day = date("%Y%m%d", entry.t)
+		if day ~= lastDay then
+			if row >= DASH_FEED_ROWS - 1 then
+				break
+			end
+			row, lastDay = row + 1, day
+			local heading = dash.feed[row]
+			heading.mark:Hide()
+			heading.text:SetFontObject(Fonts.NormalSmall)
+			heading.text:SetPoint("TOPLEFT", 10, -30 - (row - 1) * DASH_FEED_ROW)
+			heading.text:SetText(DayHeading(entry.t, now))
+		end
+		if row >= DASH_FEED_ROWS then
+			break
+		end
+		row = row + 1
+		local line = dash.feed[row]
+		local color = FEED_COLORS[entry.k] or accent
+		line.mark:SetVertexColor(color[1], color[2], color[3], 1)
+		line.mark:Show()
+		line.text:SetFontObject(Fonts.HighlightSmall)
+		line.text:SetPoint("TOPLEFT", 22, -30 - (row - 1) * DASH_FEED_ROW)
+		line.text:SetText(FeedText(entry))
+	end
+	for i = row + 1, DASH_FEED_ROWS do
+		dash.feed[i].mark:Hide()
+		dash.feed[i].text:SetText("")
+	end
+	dash.feedEmpty:SetShown(row == 0)
+	dash.feedEmpty:SetText(IsInGuild() and L.DASH_CHRONICLE_EMPTY or L.DASH_NO_GUILD)
+end
+
+-- The online number, one bar of the online classes (most first) and its legend.
+local function RefreshOnline(s)
+	dash.online:SetText(s.online)
+	dash.withAddon:SetText(L.DASH_WITH_ADDON:format(math.min(s.withAddon, s.online)))
+	local classes = {}
+	for class, count in pairs(s.classes) do
+		classes[#classes + 1] = { class = class, count = count }
+	end
+	table.sort(classes, function(a, b)
+		if a.count ~= b.count then
+			return a.count > b.count
+		end
+		return a.class < b.class
+	end)
+	local x, legend = 0, {}
+	for i, segment in ipairs(dash.classBar) do
+		local entry = classes[i]
+		if entry and s.online > 0 then
+			local width = i == #classes and (dash.classWidth - x) or math.floor(dash.classWidth * entry.count / s.online + 0.5)
+			local c = RAID_CLASS_COLORS and RAID_CLASS_COLORS[entry.class]
+			segment:ClearAllPoints()
+			segment:SetPoint("TOPLEFT", dash.nowBox, "TOPLEFT", 12 + x, -44)
+			segment:SetSize(math.max(1, width), 10)
+			segment:SetVertexColor(c and c.r or 0.6, c and c.g or 0.6, c and c.b or 0.6, 1)
+			segment:Show()
+			x = x + width
+			local name = LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[entry.class] or entry.class
+			legend[#legend + 1] = ns.Announce.ClassColored(name .. " " .. entry.count, entry.class)
+		else
+			segment:Hide()
+		end
+	end
+	dash.classLegend:SetText(table.concat(legend, "  "))
+end
+
+-- Columns scaled to the largest; the last one (the level cap, or today) in the accent colour.
+local function RefreshColumns(bars, counts, height)
+	local largest = 1
+	for _, count in ipairs(counts) do
+		largest = math.max(largest, count or 0)
+	end
+	local bar, accent = Theme.Color("bar"), Theme.Color("accent")
+	for i, column in ipairs(bars) do
+		local count = counts[i]
+		column:SetHeight(math.max(1, math.floor((count or 0) / largest * height + 0.5)))
+		local c = i == #bars and accent or bar
+		column:SetVertexColor(c[1], c[2], c[3], (count or 0) > 0 and 1 or 0.35)
+	end
+end
+
+local function SetLine(line, label, value, color)
+	line.label:SetText(label)
+	value = tostring(value)
+	line.value:SetText(color and (Hex(color) .. value .. "|r") or value)
+end
+
+local function RulesState()
+	local published = ns.Guild.GetPublishedTags()
+	if not published or published == "" then
+		return L.DASH_RULES_NONE
+	end
+	return published == ns.Guild.GetDraftTags() and L.DASH_RULES_CURRENT or L.DASH_RULES_DRAFT
+end
+
+function UI.RefreshDashboard()
+	if not frame or not frame:IsShown() or not pages.dashboard:IsShown() then
+		return
+	end
+	local now = GetServerTime()
+	local chronicle = ns.Dashboard.Chronicle(now)
+	local s = ns.Dashboard.Summary()
+	RefreshFeed(chronicle, now)
+	RefreshOnline(s)
+
+	RefreshColumns(dash.levelBars, s.levels, DASH_LEVEL_HEIGHT)
+	for i, label in ipairs(dash.levelLabels) do
+		label:SetText(i == #dash.levelLabels and s.cap or ((i - 1) * s.step + 1))
+	end
+	dash.levelsInfo:SetText(L.DASH_LEVELS_INFO:format(s.members, s.maxLevel, s.cap))
+
+	local days, counts, sum, counted = ns.Dashboard.Activity(now), {}, 0, 0
+	for i, day in ipairs(days) do
+		counts[i] = day.count or 0
+		if day.count and i < #days then
+			sum, counted = sum + day.count, counted + 1
+		end
+	end
+	RefreshColumns(dash.dayBars, counts, DASH_DAY_HEIGHT)
+	dash.whoFooter:SetText(L.DASH_WHO_TODAY:format(counts[#counts], counted > 0 and math.floor(sum / counted + 0.5) or 0))
+
+	local officer = ns.Audit.CanView()
+	dash.sideTitle:SetText(officer and L.DASH_OFFICERS or L.DASH_WEEK)
+	for i = 1, #dash.officerLines do
+		dash.officerLines[i]:SetShown(officer)
+		dash.weekLines[i]:SetShown(not officer)
+	end
+	if officer then
+		local open = 0
+		for _, entry in ipairs(ns.AuditAuto.GetTimeline()) do
+			if not (entry.done and entry.done.s == 1) then
+				open = open + 1
+			end
+		end
+		SetLine(dash.officerLines[1], L.DASH_OPEN_NOTICES, open, open > 0 and Theme.Color("accent") or nil)
+		SetLine(dash.officerLines[2], L.DASH_WITHOUT_ADDON, math.max(0, s.online - s.withAddon))
+		SetLine(dash.officerLines[3], L.DASH_AWAY30, s.away30)
+		SetLine(dash.officerLines[4], L.DASH_RULES, RulesState())
+	else
+		local deaths, joins = 0, 0
+		for _, entry in ipairs(chronicle) do
+			if entry.k == "death" then
+				deaths = deaths + 1
+			elseif entry.k == "join" then
+				joins = joins + 1
+			end
+		end
+		SetLine(dash.weekLines[1], L.DASH_AT_MAX:format(s.cap), s.maxLevel)
+		SetLine(dash.weekLines[2], L.DASH_DEATHS, deaths)
+		SetLine(dash.weekLines[3], L.DASH_JOINS, joins)
+		SetLine(dash.weekLines[4], L.DASH_ACTIVE7, s.active7)
+	end
+end
+
+-- Chronicle entries, the peers and audit notices come in bursts: refresh at most once a second.
+local dashRefreshPending = false
+local function ScheduleDashboardRefresh()
+	if dashRefreshPending or not frame or not frame:IsShown() or not pages.dashboard:IsShown() then
+		return
+	end
+	dashRefreshPending = true
+	C_Timer.After(DASH_REFRESH_SECONDS, function()
+		dashRefreshPending = false
+		UI.RefreshDashboard()
+	end)
 end
 
 ---------------------------------------------------------------------------
@@ -358,7 +718,7 @@ local function CreateListRow(parent, x, y, width)
 	local highlight = row:CreateTexture(nil, "HIGHLIGHT")
 	highlight:SetAllPoints()
 	highlight:SetColorTexture(1, 1, 1, 0.08)
-	row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.text = row:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
 	row.text:SetPoint("LEFT", 4, 0)
 	row.text:SetPoint("RIGHT", -4, 0)
 	row.text:SetJustifyH("LEFT")
@@ -449,18 +809,18 @@ local function CreateHintRow(panel, index)
 	local row = CreateListRow(panel, LEFT, -(AUDIT_TOP + 28) - (index - 1) * AUDIT_ROW_HEIGHT, WIDTH - 2 * LEFT)
 	row.shade = row:CreateTexture(nil, "BACKGROUND")
 	row.shade:SetAllPoints()
-	row.day = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	row.day = row:CreateFontString(nil, "OVERLAY", Fonts.NormalSmall)
 	row.day:SetPoint("LEFT", 4, 0)
-	row.time = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	row.time = row:CreateFontString(nil, "OVERLAY", Fonts.DisableSmall)
 	row.time:SetPoint("LEFT", 4, 0)
 	row.time:SetWidth(40)
 	row.time:SetJustifyH("LEFT")
-	row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.name = row:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
 	row.name:SetPoint("LEFT", 48, 0)
 	row.name:SetWidth(130)
 	row.name:SetJustifyH("LEFT")
 	row.name:SetWordWrap(false)
-	row.tag = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.tag = row:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
 	row.tag:SetPoint("LEFT", 184, 0)
 	row.tag:SetWidth(72)
 	row.tag:SetJustifyH("LEFT")
@@ -471,6 +831,7 @@ local function CreateHintRow(panel, index)
 	row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
 	row.check:SetSize(20, 20)
 	row.check:SetPoint("RIGHT", -4, 0)
+	Theme.SkinCheckbox(row.check)
 	row.check:SetScript("OnClick", function(self)
 		local entry = row.entry
 		if entry then
@@ -554,12 +915,12 @@ local function BuildAuditPanel(panel)
 	end))
 	controls.auditRequest:SetPoint("TOPRIGHT", -16, -2 - AUDIT_TOP)
 	AttachTooltip(controls.auditRequest, L.BTN_AUDIT_REQUEST, L.BTN_AUDIT_REQUEST_TIP)
-	controls.auditSummary = ForMode("members", panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight"))
+	controls.auditSummary = ForMode("members", panel:CreateFontString(nil, "OVERLAY", Fonts.Highlight))
 	controls.auditSummary:SetPoint("TOPLEFT", AUDIT_DETAIL_X, -46 - AUDIT_TOP)
 	controls.auditJoin = ForMode("members", CreateNote(panel, AUDIT_DETAIL_X, -64 - AUDIT_TOP, AUDIT_DETAIL_WIDTH))
-	controls.auditJoin:SetFontObject("GameFontHighlightSmall")
+	controls.auditJoin:SetFontObject(Fonts.HighlightSmall)
 	controls.auditFlags = ForMode("members", CreateNote(panel, AUDIT_DETAIL_X, -82 - AUDIT_TOP, AUDIT_DETAIL_WIDTH))
-	controls.auditFlags:SetFontObject("GameFontNormalSmall")
+	controls.auditFlags:SetFontObject(Fonts.NormalSmall)
 	controls.auditFlags:SetSpacing(2)
 
 	for i, view in ipairs(AUDIT_VIEWS) do
@@ -1042,7 +1403,7 @@ function UI.RefreshProfessions()
 			row.icon:SetTexture(P.GetIcon(skillLineID) or PROF_ICON_FALLBACK)
 			row.icon:SetDesaturated(count == 0)
 			row.text:SetText(("%s |cff999999(%d)|r"):format(P.GetName(skillLineID), count))
-			row.text:SetFontObject(count > 0 and "GameFontHighlightSmall" or "GameFontDisableSmall")
+			row.text:SetFontObject(count > 0 and Fonts.HighlightSmall or Fonts.DisableSmall)
 			row.selected:SetShown(skillLineID == prof.selected)
 			row:Show()
 		else
@@ -1211,7 +1572,7 @@ local function CreateActivityRow(panel, index)
 	row.check:SetSize(14, 14)
 	row.check:SetPoint("LEFT", 2, 0)
 	row.check:SetTexture(CHECK_MARK)
-	row.levels = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.levels = row:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
 	row.levels:SetPoint("RIGHT", -4, 0)
 	row.levels:SetWidth(44)
 	row.levels:SetJustifyH("RIGHT")
@@ -1254,15 +1615,15 @@ local function CreateListingRow(panel, index)
 	highlight:SetAllPoints()
 	highlight:SetColorTexture(1, 1, 1, 0.06)
 
-	row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	row.name = row:CreateFontString(nil, "OVERLAY", Fonts.Highlight)
 	row.name:SetPoint("TOPLEFT", 6, -4)
 	row.name:SetWidth(FINDER_SLOT_X - 60)
 	row.name:SetJustifyH("LEFT")
 	row.name:SetWordWrap(false)
-	row.age = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	row.age = row:CreateFontString(nil, "OVERLAY", Fonts.DisableSmall)
 	row.age:SetPoint("TOPRIGHT", row, "TOPLEFT", FINDER_SLOT_X - 6, -5)
 	row.age:SetJustifyH("RIGHT")
-	row.dungeons = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	row.dungeons = row:CreateFontString(nil, "OVERLAY", Fonts.NormalSmall)
 	row.dungeons:SetPoint("BOTTOMLEFT", 6, 5)
 	row.dungeons:SetWidth(FINDER_SLOT_X - 12)
 	row.dungeons:SetJustifyH("LEFT")
@@ -1275,7 +1636,7 @@ local function CreateListingRow(panel, index)
 		slot:SetPoint("LEFT", FINDER_SLOT_X + (i - 1) * (FINDER_SLOT_SIZE + 1), 0)
 		row.slots[i] = slot
 	end
-	row.counts = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.counts = row:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
 	row.counts:SetPoint("LEFT", FINDER_SLOT_X, 0)
 	row.counts:SetWidth(FINDER_SLOTS * (FINDER_SLOT_SIZE + 1) + 10)
 	row.counts:SetJustifyH("LEFT")
@@ -1323,11 +1684,11 @@ local function BuildFinderPanel(panel)
 	end
 
 	CreateHeader(panel, FINDER_RIGHT_X, FINDER_OWN_Y, L.FINDER_OWN)
-	controls.finderRole = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	controls.finderRole = panel:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
 	controls.finderRole:SetPoint("TOPRIGHT", panel, "TOPLEFT", FINDER_RIGHT_X + FINDER_RIGHT_WIDTH, FINDER_OWN_Y - 2)
 	controls.finderRole:SetJustifyH("RIGHT")
 	controls.finderStatus = CreateNote(panel, FINDER_RIGHT_X + 4, FINDER_OWN_Y - 18, FINDER_RIGHT_WIDTH - 8)
-	controls.finderStatus:SetFontObject("GameFontHighlightSmall")
+	controls.finderStatus:SetFontObject(Fonts.HighlightSmall)
 	controls.finderPost = CreateButton(panel, L.FINDER_BTN_POST, 150, function()
 		local ids = SelectedActivities()
 		local ok, reason = ns.Finder.Post(ids)
@@ -1365,7 +1726,7 @@ local function RefreshActivityList(level, counts)
 			row:Hide()
 		elseif entry.header then
 			row.text:SetText(entry.header)
-			row.text:SetFontObject("GameFontNormal")
+			row.text:SetFontObject(Fonts.Normal)
 			row.levels:SetText("")
 			row.check:Hide()
 			row.selected:Hide()
@@ -1374,7 +1735,7 @@ local function RefreshActivityList(level, counts)
 			local activity = entry.activity
 			local count = counts[activity.id]
 			row.text:SetText(activity.name .. (count and (" |cff66bbff(" .. count .. ")|r") or ""))
-			row.text:SetFontObject(entry.fit == "fit" and "GameFontHighlightSmall" or "GameFontDisableSmall")
+			row.text:SetFontObject(entry.fit == "fit" and Fonts.HighlightSmall or Fonts.DisableSmall)
 			row.levels:SetText((LEVEL_COLORS[entry.fit] or "|cffcccccc") .. ns.Finder.FormatLevels(activity) .. "|r")
 			row.check:SetShown(selected[activity.id] and true or false)
 			row.selected:SetShown(selected[activity.id] and true or false)
@@ -1505,10 +1866,10 @@ local function CreateCopyDialog()
 	d:Hide()
 	tinsert(UISpecialFrames, d:GetName())
 
-	local title = d:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	title:SetPoint("TOP", 0, -5)
+	local title = d:CreateFontString(nil, "OVERLAY", Fonts.Highlight)
 	title:SetText(L.PUBLISH_DIALOG_TITLE)
-	d.text = d:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	Theme.SkinWindow(d, title)
+	d.text = d:CreateFontString(nil, "OVERLAY", Fonts.Highlight)
 	d.text:SetPoint("TOPLEFT", 18, -36)
 	d.text:SetPoint("RIGHT", -18, 0)
 	d.text:SetJustifyH("LEFT")
@@ -1521,6 +1882,7 @@ local function CreateCopyDialog()
 	box:SetPoint("BOTTOMRIGHT", -20, 76)
 	box:SetAutoFocus(false)
 	box:SetMaxLetters(0)
+	Theme.SkinEditBox(box)
 	box:SetScript("OnTextChanged", function(self, userInput)
 		if userInput then
 			self:SetText(d.copyText or "")
@@ -1623,11 +1985,7 @@ local function ShowPage(key)
 		page:SetShown(pageKey == key)
 	end
 	for tabKey, button in pairs(tabButtons) do
-		if tabKey == key then
-			button:LockHighlight()
-		else
-			button:UnlockHighlight()
-		end
+		Theme.SelectTab(button, tabKey == key)
 	end
 	controls.settingsButton:SetButtonState(key == "settings" and "PUSHED" or "NORMAL", key == "settings")
 	UI.Refresh()
@@ -1713,9 +2071,9 @@ local function CreateMainFrame()
 	f:Hide()
 	tinsert(UISpecialFrames, f:GetName())
 
-	local title = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	title:SetPoint("TOP", 0, -5)
+	local title = f:CreateFontString(nil, "OVERLAY", Fonts.Highlight)
 	title:SetText(("%s |cff999999v%s|r"):format(ns.title, ns.version))
+	Theme.SkinWindow(f, title)
 
 	local function CreatePage(key)
 		local page = CreateFrame("Frame", nil, f)
@@ -1726,10 +2084,11 @@ local function CreateMainFrame()
 		return page
 	end
 	for _, tab in ipairs(TABS) do
-		tabButtons[tab.key] = CreateButton(f, L[tab.label], 140, function() ShowPage(tab.key) end)
+		tabButtons[tab.key] = CreateButton(f, L[tab.label], TAB_WIDTH, function() ShowPage(tab.key) end, "tab")
 		CreatePage(tab.key)
 	end
 	LayoutTabs()
+	BuildDashboardPanel(pages.dashboard)
 	BuildRulesPanel(pages.rules)
 	BuildProfessionsPanel(pages.professions)
 	BuildFinderPanel(pages.finder)
@@ -1737,8 +2096,10 @@ local function CreateMainFrame()
 	BuildAuditPanel(pages.audit)
 	BuildSettingsPanel(CreatePage("settings"))
 	controls.settingsButton = CreateSettingsButton(f)
+	controls.styleSwitch = Theme.CreateSwitch(f, addonName .. "StyleSwitch")
+	controls.styleSwitch:SetPoint("RIGHT", controls.settingsButton, "LEFT", -STYLE_SWITCH_GAP, 0)
 
-	local status = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	local status = f:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
 	status:SetPoint("TOPLEFT", LEFT + 2, -62)
 	status:SetPoint("RIGHT", -16, 0)
 	status:SetJustifyH("LEFT")
@@ -1746,14 +2107,14 @@ local function CreateMainFrame()
 	controls.status = status
 
 	-- Bottom: hint on the left, buttons on the right
-	local hint = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	local hint = f:CreateFontString(nil, "OVERLAY", Fonts.DisableSmall)
 	hint:SetPoint("BOTTOMLEFT", LEFT + 4, 18)
 	hint:SetWidth(RIGHT - LEFT - 20)
 	hint:SetJustifyH("LEFT")
 	controls.hint = hint
 
 	local buttonWidth = 186
-	controls.publish = CreateButton(f, L.BTN_PUBLISH, buttonWidth, function() ns.Guild.PublishRules() end)
+	controls.publish = CreateButton(f, L.BTN_PUBLISH, buttonWidth, function() ns.Guild.PublishRules() end, "primary")
 	controls.publish:SetPoint("BOTTOMRIGHT", -16, 42)
 	AttachTooltip(controls.publish, L.BTN_PUBLISH, L.BTN_PUBLISH_TIP)
 	local log = CreateButton(f, L.BTN_LOG, buttonWidth, function() ns.MessageWindow.Show("blocked") end)
@@ -1808,7 +2169,7 @@ function UI.Refresh()
 		end
 		checkbox:SetChecked(value and true or false)
 		checkbox:SetEnabled(editable)
-		checkbox.label:SetFontObject(editable and "GameFontHighlight" or "GameFontDisable")
+		checkbox.label:SetFontObject(editable and Fonts.Highlight or Fonts.Disable)
 	end
 	for _, checkbox in ipairs(personalCheckboxes) do
 		checkbox:SetChecked(ns.db[checkbox.group][checkbox.key] and true or false)
@@ -1833,6 +2194,7 @@ function UI.Refresh()
 	end
 	controls.publish:SetEnabled(officer)
 
+	UI.RefreshDashboard()
 	UI.RefreshDeathlog()
 	UI.RefreshAudit()
 	UI.RefreshProfessions()
@@ -1858,6 +2220,10 @@ ns.RegisterCallback("RULES_CHANGED", UI.Refresh)
 ns.RegisterCallback("RULES_CHANGED", CheckCopyDialog)
 ns.RegisterCallback("ROSTER_UPDATED", UI.Refresh)
 ns.RegisterCallback("DEATHLOG_UPDATED", UI.RefreshDeathlog)
+for _, event in ipairs({ "CHRONICLE_UPDATED", "PEERS_CHANGED", "AUDIT_UPDATED" }) do
+	ns.RegisterCallback(event, ScheduleDashboardRefresh)
+end
+ns.RegisterCallback("STYLE_CHANGED", UI.RefreshDashboard)
 ns.RegisterCallback("AUDIT_UPDATED", ScheduleAuditRefresh)
 ns.RegisterCallback("PROFESSIONS_UPDATED", UI.RefreshProfessions)
 ns.RegisterCallback("FINDER_UPDATED", UI.RefreshFinder)

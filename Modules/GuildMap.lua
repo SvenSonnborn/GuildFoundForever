@@ -49,7 +49,7 @@ end
 
 local function Hide()
 	if lastSent then
-		ns.Comm.Send("POSHIDE", "GUILD")
+		ns.Comm.Send("POSHIDE", "GUILD", nil, "normal", "POS")
 		lastSent = nil
 	end
 end
@@ -73,7 +73,7 @@ local function SendPosition()
 	end
 	local message = ("POS\t%d\t%d\t%d\t%d\t%s"):format(mapID, math.floor(x * 10000), math.floor(y * 10000),
 		UnitLevel("player"), UnitClassBase("player") or "")
-	if ns.Comm.Send(message, "GUILD") then
+	if ns.Comm.Send(message, "GUILD", nil, "normal", "POS") then
 		lastSent = { mapID = mapID, x = x, y = y, time = now }
 	end
 end
@@ -135,8 +135,8 @@ local function ScheduleRefresh()
 	C_Timer.After(REFRESH_DELAY, Refresh)
 end
 
-ns.Comm.RegisterHandler("POS", function(sender, channel, payload)
-	if channel ~= "GUILD" or not payload then
+ns.Comm.RegisterHandler("POS", function(sender, _, payload)
+	if not payload then
 		return
 	end
 	local mapID, x, y, level, class = strsplit("\t", payload, 5)
@@ -153,14 +153,14 @@ ns.Comm.RegisterHandler("POS", function(sender, channel, payload)
 		time = GetTime(),
 	}
 	ScheduleRefresh()
-end)
+end, "GUILD")
 
 ns.Comm.RegisterHandler("POSHIDE", function(sender)
 	if positions[sender] then
 		positions[sender] = nil
 		ScheduleRefresh()
 	end
-end)
+end, "GUILD")
 
 -- A pin next to the player for 90 seconds, to check the looks without a second player.
 function GuildMap.ShowTestPin()

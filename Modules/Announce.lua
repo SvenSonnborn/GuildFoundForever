@@ -10,6 +10,7 @@ local DEDUPE_SECONDS = 60
 local DEATHLOG_MAX = 500
 local MAX_MESSAGE_LENGTH = 250
 local LOGIN_GRACE_SECONDS = 5
+local FUTURE_SECONDS = 300 -- clocks differ a little; later times of received announcements count as now
 local CHAT_TAG = "[" .. ns.title .. "] "
 
 -- chatRule: guild rule to also post it to guild chat; notify: personal setting to see it;
@@ -313,20 +314,27 @@ local function Publish(kind, data)
 		ns.Comm.PostGuildChat(GuildChatText(kind, data))
 	end
 	-- Our own guild addon messages are ignored on receipt, so show the announcement here.
+	ns.Fire("ANNOUNCED", playerName, kind, data)
 	Notify(playerName, kind, data)
 end
 
-ns.Comm.RegisterHandler("ANN", function(sender, channel, payload)
-	-- Only the guild channel: whispers could come from anyone.
-	if channel ~= "GUILD" or not payload or not ns.db then
+-- Only the guild channel: whispers could come from anyone.
+ns.Comm.RegisterHandler("ANN", function(sender, _, payload)
+	if not payload or not ns.db then
 		return
 	end
 	local kind, t, level, class, zone, extra = strsplit("\t", payload, 6)
 	if not KINDS[kind] then
 		return
 	end
+	-- A time that is no number, lies ahead or is negative (a broken or modified client) counts as
+	-- now: dates far out of range break date() in the deathlog and the overview.
+	t = tonumber(t)
+	if not t or t ~= t or t < 0 or t > GetServerTime() + FUTURE_SECONDS then
+		t = GetServerTime()
+	end
 	local data = {
-		t = tonumber(t) or GetServerTime(),
+		t = t,
 		level = tonumber(level) or 0,
 		class = (class and class ~= "") and class or nil,
 		zone = zone or "",
@@ -346,8 +354,10 @@ ns.Comm.RegisterHandler("ANN", function(sender, channel, payload)
 	if kind == "death" then
 		AddDeath(sender, data)
 	end
+	-- Whatever the personal settings show: the dashboard's chronicle records it.
+	ns.Fire("ANNOUNCED", sender, kind, data)
 	Notify(sender, kind, data)
-end)
+end, "GUILD")
 
 function Announce.SendTest()
 	if not IsInGuild() then

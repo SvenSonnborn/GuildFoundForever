@@ -16,6 +16,7 @@
 
 Locales.lua
 Core.lua
+Theme.lua
 Messages.lua
 Data.lua
 Rules.lua
@@ -36,6 +37,7 @@ Modules\Audit.lua
 Modules\AuditAuto.lua
 Modules\Professions.lua
 Modules\Finder.lua
+Modules\Dashboard.lua
 Banner.lua
 MessageWindow.lua
 MinimapButton.lua

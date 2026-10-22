@@ -17,6 +17,15 @@
 - **Messages:** after a login one important audit message ("5 new audit notices") opens the timeline; during the session new notices are reported together, at most every 10 minutes.
 - **Storage:** officers keep the data per character and guild for 10 days (the last state, the join state and the first state stay), with caps per member. Data of other guilds and former members is deleted. Losing the officer rank (both the officer view and the rank permissions) deletes the foreign data, and so does leaving the guild. Old account-wide audit data fetched more than 10 days ago is deleted.
 - `HELLO` and `HI` carry capabilities; new addon messages `AUDX`, `AUDS`, `AUDE`, `AUDM`, `AUDQ`. "Request data" still works with older versions.
+- **Overview tab (guild dashboard):** the first tab shows the chronicle of the week (max levels, deaths with their cause, epic loot, recipes and joins, grouped by day), who is online now with a bar of their classes and how many run the addon, the guild's levels as 12 columns, how many different players were there each day over 14 days, and either a box for officers (open audit notices, online without the addon, away for 30+ days, rules in the guild info) or the week in numbers. The chronicle and the daily count hold what your addon saw while you were online.
+- **One sending budget for all addon messages** (as ChatThrottleLib: 800 characters a second, 4000 saved up): presence, the guild check, announcements and dungeon finder requests always go out at once; map positions and listings wait when the budget is used up, a newer one replacing the waiting one; the audit and long answers wait without counting it as a failed try. What waits is dropped when you leave the guild. In combat and for 5 seconds after it the audit and long answers wait, and so does tidying up the audit store.
+- **Incoming messages are checked in one place:** every command names its channels (guild, whisper or group), whispers only count from guild members, and one player can send the same command at most 40 times in 10 seconds. `HELLO`, `HI`, `PING` and `PONG` are no longer taken over other channels; whispered profession requests from non-members get no answer at all.
+- The roster now keeps each member's days since last online and a revision that moves only on real changes; the audit timeline is rebuilt only then instead of every minute.
+- **Classic or modern look:** a switch in the title bar, left of the gear, changes the look of the addon's windows at once, for the whole account (also `/gff style`). Classic is the WoW look as before. Modern is flat and dark: square surfaces with thin frames, Arial Narrow and gold as the only accent; tabs are text with the open one underlined. Main window, copy dialog, message window and the hint at the minimap follow the switch; banners, the minimap icon, map pins and tooltips stay the same.
+
+### Fixes
+- An announcement with a time in the future (from a broken or modified client) counts as now; such a time could break the deathlog.
+- Long answers (recipes, "Request data") wait out a fight instead of giving up after 30 seconds.
 
 ## 0.8.0-beta
 

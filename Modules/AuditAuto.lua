@@ -128,11 +128,15 @@ local function Peers()
 	return list
 end
 
--- A throttled message is tried again by the engine; every other failure drops it.
+-- Audit messages are bulk in the shared budget: "wait" keeps them first in the engine's queue. A
+-- throttled message is tried again by the engine; every other failure drops it.
 local function Send(message, target)
-	local ok, code = ns.Comm.Send(message, "WHISPER", target)
+	local ok, code = ns.Comm.Send(message, "WHISPER", target, "bulk")
 	if ok then
 		return true
+	end
+	if code == "wait" then
+		return false, "wait"
 	end
 	if ns.Comm.IsThrottled(code) then
 		return false, "retry"
@@ -383,8 +387,9 @@ function AA.GetTimeline()
 	end
 	local seen = Seen().prev or 0
 	local gs = AA.GetStore()
+	local revision = ns.Guild.GetRosterRevision()
 	local cached = timeline
-	if cached and cached.gs == gs and cached.seen == seen then
+	if cached and cached.gs == gs and cached.seen == seen and cached.revision == revision then
 		return cached.list
 	end
 	local roster = RosterByKey()
@@ -422,7 +427,7 @@ function AA.GetTimeline()
 		end
 		return a.id < b.id
 	end)
-	timeline = { gs = gs, seen = seen, list = result }
+	timeline = { gs = gs, seen = seen, revision = revision, list = result }
 	return result
 end
 
@@ -558,8 +563,9 @@ local function Tick()
 		return
 	end
 	engine:Tick()
+	-- Tidying up a large store waits for the end of a fight; the next tick does it.
 	local gs = AA.GetStore()
-	if gs then
+	if gs and not ns.Comm.InCombat() then
 		St.Prune(gs, GetServerTime())
 		TimelineChanged()
 	end
@@ -605,9 +611,9 @@ ns.On("PLAYER_LOGOUT", NoteSeen)
 
 ns.RegisterCallback("AUDIT_UPDATED", TimelineChanged)
 
--- A roster that is not loaded says nothing about members or ranks.
+-- A roster that is not loaded says nothing about members or ranks. The timeline follows the
+-- roster's revision by itself (AA.GetTimeline).
 ns.RegisterCallback("ROSTER_UPDATED", function()
-	TimelineChanged()
 	if not ns.char or not ns.Guild.IsRosterReady() then
 		return
 	end
@@ -647,9 +653,9 @@ ns.RegisterCallback("AUDIT_RECORDED", function(raw)
 end)
 
 for _, command in ipairs({ "AUDX", "AUDS", "AUDE", "AUDM", "AUDQ" }) do
-	ns.Comm.RegisterHandler(command, function(sender, channel, payload)
-		if channel == "WHISPER" and ns.char then
+	ns.Comm.RegisterHandler(command, function(sender, _, payload)
+		if ns.char then
 			engine:Handle(sender, command, payload)
 		end
-	end)
+	end, "WHISPER")
 end

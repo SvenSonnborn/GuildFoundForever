@@ -198,17 +198,17 @@ ns.Comm.RegisterHandler("PROF", function(sender, _, payload)
 	end
 	local class, list = strsplit("\t", payload, 2)
 	StoreMember(sender, class, list)
-end)
+end, "GUILD WHISPER")
 
 -- A member who just logged in asks everybody online for their skills.
-ns.Comm.RegisterHandler("PROFSYNC", function(sender, channel)
-	if channel ~= "GUILD" or not Enabled() then
+ns.Comm.RegisterHandler("PROFSYNC", function(sender)
+	if not Enabled() then
 		return
 	end
 	C_Timer.After(math.random() * SYNC_REPLY_SPREAD, function()
 		SendSkills("WHISPER", sender)
 	end)
-end)
+end, "GUILD")
 
 -- Members of the current guild with the given profession: { key, fullName, class, skill, max, online, own }.
 function Professions.GetMembers(skillLineID)
@@ -274,12 +274,9 @@ local function RequestKey(key, skillLineID)
 	return key .. "|" .. skillLineID
 end
 
-ns.Comm.RegisterHandler("PROFREQ", function(sender, channel, payload)
-	if channel ~= "WHISPER" then
-		return
-	end
+ns.Comm.RegisterHandler("PROFREQ", function(sender, _, payload)
 	if not Enabled() or not ns.Guild.IsMemberName(sender) then
-		ns.Comm.Send("PROFNO\t" .. (payload or ""), "WHISPER", sender)
+		ns.Comm.Send("PROFNO\t" .. (payload or ""), "WHISPER", sender, "alert")
 		return
 	end
 	local skillLineID = tonumber(payload)
@@ -300,12 +297,9 @@ ns.Comm.RegisterHandler("PROFREQ", function(sender, channel, payload)
 	end
 	messages[#messages + 1] = ("PROFEND\t%d\t%d\t%d"):format(skillLineID or 0, #recipes, entry and entry.scanned or 0)
 	ns.Comm.SendPaced(messages, "WHISPER", sender)
-end)
+end, "WHISPER")
 
-local function ActiveRequest(sender, channel, skillLineID)
-	if channel ~= "WHISPER" then
-		return nil
-	end
+local function ActiveRequest(sender, skillLineID)
 	local key = ns.Guild.NormalizeName(sender)
 	local request = key and requests[RequestKey(key, skillLineID)]
 	if request and request.state == "running" then
@@ -319,10 +313,10 @@ local function CacheFor(key)
 	return ns.db.recipeCache[key]
 end
 
-ns.Comm.RegisterHandler("PROFR", function(sender, channel, payload)
+ns.Comm.RegisterHandler("PROFR", function(sender, _, payload)
 	local skillLineID, list = strsplit("\t", payload or "", 2)
 	skillLineID = tonumber(skillLineID)
-	local key, request = ActiveRequest(sender, channel, skillLineID)
+	local key, request = ActiveRequest(sender, skillLineID)
 	if not key then
 		return
 	end
@@ -331,34 +325,34 @@ ns.Comm.RegisterHandler("PROFR", function(sender, channel, payload)
 	end
 	request.count = #request.recipes
 	ns.Fire("PROFESSIONS_UPDATED")
-end)
+end, "WHISPER")
 
-ns.Comm.RegisterHandler("PROFEND", function(sender, channel, payload)
+ns.Comm.RegisterHandler("PROFEND", function(sender, _, payload)
 	local skillLineID, _, scanned = strsplit("\t", payload or "")
 	skillLineID = tonumber(skillLineID)
-	local key, request = ActiveRequest(sender, channel, skillLineID)
+	local key, request = ActiveRequest(sender, skillLineID)
 	if not key then
 		return
 	end
 	CacheFor(key)[skillLineID] = { ids = request.recipes, fetched = GetServerTime(), scanned = tonumber(scanned) or 0 }
 	request.state = "done"
 	ns.Fire("PROFESSIONS_UPDATED")
-end)
+end, "WHISPER")
 
-ns.Comm.RegisterHandler("PROFNO", function(sender, channel, payload)
-	local key, request = ActiveRequest(sender, channel, tonumber(payload))
+ns.Comm.RegisterHandler("PROFNO", function(sender, _, payload)
+	local key, request = ActiveRequest(sender, tonumber(payload))
 	if key then
 		request.state = "denied"
 		ns.Fire("PROFESSIONS_UPDATED")
 	end
-end)
+end, "WHISPER")
 
 function Professions.RequestRecipes(fullName, skillLineID)
 	local key = ns.Guild.NormalizeName(fullName)
 	if not key or not Enabled() or ns.Guild.IsSelf(fullName) then
 		return
 	end
-	local sent, code = ns.Comm.Send("PROFREQ\t" .. skillLineID, "WHISPER", fullName)
+	local sent, code = ns.Comm.Send("PROFREQ\t" .. skillLineID, "WHISPER", fullName, "alert")
 	if not sent then
 		ns.Warn("system", ns.Comm.FailureText(code))
 		return
