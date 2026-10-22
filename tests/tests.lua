@@ -1316,7 +1316,10 @@ do
 	NetRun(60)
 	local aboutAsker = false
 	for _, entry in ipairs(net.log) do
-		if entry.from == "offia" and entry.to == "offib" and entry.message:find("^AUDX\tOffiB\t") then aboutAsker = true end
+		if entry.from == "offia" and entry.to == "offib" and entry.message:find("^AUDX")
+			and (entry.message:find("^AUDX\tOffiB\t") or entry.message:find("\029OffiB\t", 1, true)) then
+			aboutAsker = true
+		end
 	end
 	check(Has(b, "mitglied", ahHint) and not aboutAsker, "the asker gets no AUDX about itself")
 
@@ -1374,11 +1377,32 @@ do
 	local oldRaw = R.Encode("H", { t = 50, hk = "mail", sev = "o", a = "Alt", b = "s" })
 	local newRaw = R.Encode("H", { t = 1500, hk = "mail", sev = "o", a = "Neu", b = "s" })
 	St.Add(c.store, "mitglied", "Mitglied", oldRaw, 100)
-	St.Add(c.store, "mitglied", "Mitglied", newRaw, 1500)
 	NetRun(500)
+	St.Add(c.store, "mitglied", "Mitglied", newRaw, net.now)
 	NetOnline(c, true)
 	NetRun(6 * S.INTERVAL_SECONDS)
 	check(Has(b, "mitglied", newRaw) and not Has(b, "mitglied", oldRaw), "a new neighbour after the first sync: only entries since the base")
+	-- R14: every completed tier 2 sync moves the base; a neighbour met later sends only what came
+	-- since the newer base.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	a.store, b.store = St.New(), St.New()
+	NetRun(1000)
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(60)
+	local firstBase = b.store.base
+	NetRun(2000)
+	local laterBase = b.store.base
+	check(firstBase and laterBase and laterBase > firstBase + 1000, "every completed sync moves the base forward")
+	c = NetPlayer("OffiC", true)
+	c.store = St.New()
+	local midRaw = R.Encode("H", { t = 60, hk = "mail", sev = "o", a = "Mitte", b = "s" })
+	local lateRaw = R.Encode("H", { t = 61, hk = "mail", sev = "o", a = "Spaet", b = "s" })
+	St.Add(c.store, "mitglied", "Mitglied", midRaw, (firstBase or 0) + 100)
+	St.Add(c.store, "mitglied", "Mitglied", lateRaw, net.now)
+	NetOnline(c, true)
+	NetRun(6 * S.INTERVAL_SECONDS)
+	check(Has(b, "mitglied", lateRaw) and not Has(b, "mitglied", midRaw), "a neighbour met later sends only entries since the newer base")
 	-- R12: one AUDX carries several members.
 	NetReset()
 	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)

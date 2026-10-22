@@ -314,8 +314,10 @@ local function Partners(self, holders)
 	return list
 end
 
--- A peer without a mark is asked from gs.base on: a round before our first completed tier 2 sync,
--- 0 before that. So only our very first partner sends us its whole store.
+-- A peer without a mark is asked from gs.base on: one round (300 s) before the end of our latest
+-- completed tier 2 sync with any peer, 0 before our first one. A holder without any completed sync
+-- gets a whole store from its first partner; a partner met later sends only what it stored since
+-- shortly before our latest sync.
 local function Ask(self, peer)
 	local gs = self.env.store()
 	local mark = gs.peers and gs.peers[peer.key] or {}
@@ -403,9 +405,7 @@ function HANDLERS.AUDE(self, sender, senderKey, payload)
 	else
 		mark.s2 = at
 		self.asked[senderKey] = nil
-		if not gs.base then
-			gs.base = at - Sync.INTERVAL_SECONDS
-		end
+		gs.base = at - Sync.INTERVAL_SECONDS
 	end
 	self.syncAt, self.syncName = env.now(), sender
 	env.onSyncDone(senderKey, tier)
