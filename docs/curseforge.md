@@ -37,10 +37,10 @@ Only members running the addon follow the rules. **Check guild** shows who does.
 - **Announcements** as banners: max level, deaths, epic and rare loot, recipes. Also in guild chat if you like.
 - **Deathlog** of every death in the guild.
 - **Guild map:** see your guildmates on the world map.
-- **Officer audit:** a member's level, gold, played time, trades and mail, on request.
+- **Officer audit:** level, gold, played time, trades, mail and notices of every member reach the officers by themselves, shown as a timeline.
 - **Professions** and a **dungeon finder** for your guild (officers switch them on).
 
-Everything stays inside your guild. Audit data is only sent when an officer asks, and you see who did.
+Everything stays inside your guild. Audit data goes to your officers automatically, also from the time before you joined. If your guild turns on "Members store audit data for officers", other members with the addon keep it too and pass it on to officers.
 
 ## Commands
 
@@ -92,10 +92,10 @@ Nur Mitglieder mit Addon halten sich an die Regeln. **Gilde prüfen** zeigt, wer
 - **Ankündigungen** als Banner: Höchstlevel, Tode, epische und seltene Beute, Rezepte. Auf Wunsch auch im Gildenchat.
 - **Deathlog** mit jedem Tod in der Gilde.
 - **Gildenkarte:** deine Gildenmitglieder auf der Weltkarte.
-- **Audit für Offiziere:** Level, Gold, Spielzeit, Handel und Post eines Mitglieds, auf Anfrage.
+- **Audit für Offiziere:** Level, Gold, Spielzeit, Handel, Post und Hinweise jedes Mitglieds kommen von selbst bei den Offizieren an, als Zeitleiste.
 - **Berufe** und eine **Dungeonsuche** für eure Gilde (Offiziere schalten sie ein).
 
-Alles bleibt in eurer Gilde. Audit-Daten gehen nur raus, wenn ein Offizier anfragt, und du siehst, wer es war.
+Alles bleibt in eurer Gilde. Audit-Daten gehen automatisch an eure Offiziere, auch aus der Zeit vor dem Beitritt. Schaltet eure Gilde „Mitglieder speichern Audit-Daten für Offiziere zwischen“ ein, speichern auch andere Mitglieder mit Addon sie und geben sie an Offiziere weiter.
 
 ### Befehle
 
