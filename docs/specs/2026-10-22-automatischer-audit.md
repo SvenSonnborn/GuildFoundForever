@@ -1,6 +1,6 @@
 # Automatischer Audit
 
-Stand: 22.10.2026 · für Version 1.0.0 (Launch 04.11.2026) · Zweig `feature/auto-audit`
+Stand: 22.10.2026 · für Version 0.9.0-beta · Zweig `feature/auto-audit`
 
 ## Warum
 
@@ -226,7 +226,7 @@ Jede Nachricht, die fremde Daten weitergibt, enthält das Mitglied, von dem die 
   - Tabelle der Gildenregeln und das Beispiel-Tag anpassen
   - Tabelle der Addon-Nachrichten ergänzen
   - Bekannte Grenzen: Lücke ohne gleichzeitige Online-Zeit
-  - Testliste „Neu in 1.0.0“
+  - Testliste „Neu in 0.9.0-beta“
 - **CHANGELOG.md:** englisch, unter der neuen Version.
 - **docs/curseforge.md:** Der Abschnitt „was geteilt wird“ muss sagen, dass Audit-Daten jetzt automatisch an die Offiziere gehen und mit `V` auch an Mitglieder. Englisch und Deutsch. Achtung: Die Datei hat Änderungen, die noch nicht committet sind und nicht aus diesem Vorhaben stammen. Diese nicht überschreiben, sondern abstimmen.
 

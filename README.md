@@ -2,7 +2,7 @@
 
 Gilden-Found-Regeln für **World of Warcraft: Forever**: kein Auktionshaus, Post und Handel nur innerhalb der Gilde und ihrer Partnergilden, Sperre für Gruppen mit Externen ab einem festgelegten Level. Dazu Ankündigungen in der Gilde, ein Deathlog, eine Gildenkarte, ein Audit für Offiziere, ein Berufe-Verzeichnis und eine Dungeonsuche innerhalb der Gilde.
 
-> Stand: 22.10.2026 · Version 1.0.0 (in Arbeit)
+> Stand: 22.10.2026 · Version 0.9.0-beta (in Arbeit)
 > Im Spiel geprüft:
 > - 0.1.0 teilweise (siehe [Phase 0](#phase-0--beta-test))
 > - die Banner aus 0.3.0, per Vorschau
@@ -86,7 +86,7 @@ Das Konzept ist von [GuildFound](https://www.curseforge.com/wow/addons/guildfoun
 
 ### Audit
 
-Festgelegt am 26.09.2026: Erfasst werden Verlauf, Handel, Post und blockierte Aktionen. Neu gefasst am 22.10.2026 (Version 1.0.0, Spezifikation: `docs/specs/2026-10-22-automatischer-audit.md`): Die Daten kommen automatisch bei den Offizieren an, niemand muss mehr einzeln abfragen.
+Festgelegt am 26.09.2026: Erfasst werden Verlauf, Handel, Post und blockierte Aktionen. Neu gefasst am 22.10.2026 (Version 0.9.0-beta, Spezifikation: `docs/specs/2026-10-22-automatischer-audit.md`): Die Daten kommen automatisch bei den Offizieren an, niemand muss mehr einzeln abfragen.
 
 - **Automatischer Versand, immer an:** Es gibt keinen Schalter und keine Gildenregel dafür. Die Regel `U` ist weggefallen.
 - **Was das Addon beim Mitglied festhält** (lokal, pro Charakter, **ab der Charaktererstellung**, nicht erst ab dem Beitritt):
@@ -472,7 +472,7 @@ Neu in 0.2.0 (in der Beta bis Level 20/30 testbar):
   - nach einmaligem Anvisieren ist auch Post erlaubt
 - [ ] Portale: erst ab Level 40, in der Beta nicht testbar
 
-Neu in 1.0.0 (automatischer Audit; mit zwei bis drei Spielern, ein Offizier dabei):
+Neu in 0.9.0-beta (automatischer Audit; mit zwei bis drei Spielern, ein Offizier dabei):
 
 - [ ] Das Beispiel aus der Spezifikation nachspielen: Spieler 1 versucht, das Auktionshaus zu öffnen, und loggt aus. Ein Offizier, der später einloggt, sieht den gelben Hinweis „Auktionshaus geöffnet“ in der Zeitleiste. Dann mit zwei Offizieren, die nie gleichzeitig online sind: Der zweite sieht den Hinweis nur, solange die Gilde `V` an hat oder das Mitglied wieder online kommt.
 - [ ] Gildenregel `V` in der Gildeninfo ein- und ausschalten: Das Mitglied speichert die Daten nur mit `V=1` in der Gildeninfo, der Tab „Audit“ zeigt ihm trotzdem nur seine eigenen Daten. Ein nur lokal gesetztes Häkchen macht es nicht zum Zwischenspeicher.
@@ -616,7 +616,7 @@ Das größte Paket. Ziel: Offiziere sehen, ob sich Mitglieder an die Regeln halt
 - [x] Festgelegt am 26.09.2026: Verlauf (Level, XP, Gold, Spielzeit), Handel und Post, blockierte Aktionen; Tode und Beute nicht
 - [x] Übertragung auf Anfrage per Flüster-Addon-Nachricht, gedrosselt (`Comm.SendPaced`), inkrementell
 - [x] Offiziersansicht mit Mitgliederliste, Zusammenfassung, Hinweisen und vier Ansichten
-- [x] Berechtigung: Ränge mit dem Recht „Offiziersnotiz ansehen“; Mitglieder sehen ihre eigenen Daten (Gildenregel `U` seit 1.0.0 entfernt)
+- [x] Berechtigung: Ränge mit dem Recht „Offiziersnotiz ansehen“; Mitglieder sehen ihre eigenen Daten (Gildenregel `U` seit 0.9.0-beta entfernt)
 - [x] Festgelegt am 22.10.2026: automatischer Audit, Abgleich zwischen Offizieren, Zwischenspeicher per Gildenregel `V`, Zeitleiste, Aufzeichnung ab Charaktererstellung (siehe [Audit](#audit))
 - [ ] Später, optional: Gold-Sprünge ohne erkennbare Quelle markieren (braucht Erfahrungswerte aus dem echten Spiel)
 - [ ] Die Grenze bleibt: Ein Addon kann Manipulation nie ganz verhindern (siehe Bekannte Grenzen)

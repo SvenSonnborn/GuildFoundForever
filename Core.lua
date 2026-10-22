@@ -48,7 +48,7 @@ ns.defaults = {
 	partnerGuilds = {},
 	partnerSeen = {}, -- normalized player name -> { g = partner guild (lower case), t = last seen }
 	deathlog = {},
-	auditCache = {}, -- officers before 1.0: fetched audit data per member; AuditAuto.Migrate moves it into auditStore
+	auditCache = {}, -- officers before 0.9: fetched audit data per member; AuditAuto.Migrate moves it into auditStore
 	professionDirectory = {}, -- guild name -> member -> { n, c, t, p = { skillLineID -> { s, m } } }
 	recipeCache = {}, -- member -> skillLineID -> { ids, fetched, scanned }
 	groupLeaveDelay = 10,

@@ -239,7 +239,7 @@ end
 
 local MIGRATE_LISTS = { { "snapshots", "S" }, { "trades", "T" }, { "mail", "M" }, { "log", "L" } }
 
--- What officers fetched before 1.0 more than 10 days ago goes from the account-wide cache: the
+-- What officers fetched before 0.9 more than 10 days ago goes from the account-wide cache: the
 -- store would prune it anyway, and characters that never log in again would keep it for good.
 function AA.PruneOldCache(now)
 	local cache = ns.db and ns.db.auditCache
@@ -258,7 +258,7 @@ ns.RegisterCallback("INIT", function()
 	AA.PruneOldCache(GetServerTime())
 end)
 
--- Moves what officers fetched before 1.0 (ns.db.auditCache, account-wide) into this character's
+-- Moves what officers fetched before 0.9 (ns.db.auditCache, account-wide) into this character's
 -- store: the entries of members of this guild, with their fetch time as arrival time. The rest
 -- stays for the guilds of other characters. True if there was a store to move into.
 function AA.Migrate()

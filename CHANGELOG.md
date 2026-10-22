@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0
+## 0.9.0-beta
 
 ### New
 - **Automatic audit:** members send their audit data (level, XP, gold and played time, trades, mail, blocked actions and notices) to the officers by themselves. Nobody has to request it one member at a time, and data from times when no officer was online is caught up later. There is no switch for it.
