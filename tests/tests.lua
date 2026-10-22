@@ -1018,7 +1018,8 @@ do
 			capable = function(key) local o = net.players[key] return o ~= nil and o.online end,
 			isMember = function() return true end, -- everybody in the test net is in the guild
 			amHolder = function() return isHolder(p) end,
-			store = function() if isHolder(p) then p.store = p.store or St.New() return p.store end end,
+			-- A store for everyone, so data that reaches a non-holder would show.
+			store = function() p.store = p.store or St.New() return p.store end,
 			ownSince = function(since)
 				local list = {}
 				for _, raw in ipairs(p.own) do if R.Time(raw) >= since then list[#list + 1] = raw end end
@@ -1117,7 +1118,8 @@ do
 	local direct = 0
 	for i = before + 1, #net.log do if net.log[i].from == "mitglied" and net.log[i].message:find("^AUDX") then direct = direct + 1 end end
 	check(direct == 3, "a new record goes to three officers directly")
-	NetRun(12 * S.INTERVAL_SECONDS)
+	-- Along the ring (R12) all 30 have it after 18 rounds.
+	NetRun(20 * S.INTERVAL_SECONDS)
 	local holding = 0
 	for _, o in ipairs(officers) do if Has(o, "mitglied", ahHint) then holding = holding + 1 end end
 	check(holding == 30, "after some rounds every officer has it")
@@ -1144,7 +1146,30 @@ do
 	NetOnline(m, true) NetOnline(other, true) NetOnline(a, true)
 	other.engine:Handle("Mitglied", "AUDX", "Mitglied\t" .. ahHint)
 	a.engine:Handle("Anderer", "AUDX", "Mitglied\t" .. ahHint)
-	check(other.store == nil and not Has(a, "mitglied", ahHint), "a normal member keeps nothing; a non-holder cannot forward")
+	check(not Has(other, "mitglied", ahHint) and not Has(a, "mitglied", ahHint), "a normal member keeps nothing; a non-holder cannot forward")
+	-- Nothing goes out to a non-holder: no AUDS answer, no AUDM answer about the member or others.
+	local leakRaw = R.Encode("T", { t = 9, n = "X", k = "e", gm = 0, rm = 1, gi = "", ri = "" })
+	m.own[#m.own + 1] = leakRaw
+	a.store = a.store or St.New()
+	St.Add(a.store, "mitglied", "Mitglied", leakRaw, net.now)
+	NetRun(10)
+	local function SentTo(from, to)
+		local n = 0
+		for _, entry in ipairs(net.log) do if entry.from == from and entry.to == to then n = n + 1 end end
+		return n
+	end
+	net.log = {}
+	a.engine:Handle("Anderer", "AUDS", "0\t0")
+	NetRun(10)
+	check(SentTo("offia", "anderer") == 0, "a non-holder's AUDS gets no answer")
+	net.log = {}
+	a.engine:Handle("Anderer", "AUDM", "Mitglied\t0")
+	NetRun(10)
+	check(SentTo("offia", "anderer") == 0, "a non-holder's AUDM about another member gets no answer")
+	net.log = {}
+	m.engine:Handle("Anderer", "AUDM", "Mitglied\t0")
+	NetRun(10)
+	check(SentTo("mitglied", "anderer") == 0, "a non-holder's AUDM about the member itself gets no answer")
 
 	-- Same second as the end of a sync: still delivered (Prüfschwerpunkt 1).
 	NetReset()
@@ -1291,6 +1316,87 @@ do
 		if entry.from == "offia" and entry.to == "offib" and entry.message:find("^AUDX\tOffiB\t") then aboutAsker = true end
 	end
 	check(Has(b, "mitglied", ahHint) and not aboutAsker, "the asker gets no AUDX about itself")
+
+	-- Flow control: no new AUDS while the asked peer owes its AUDE 2, and at most for three intervals.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	b.engine.Handle = function() end -- B never answers
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(4 * S.INTERVAL_SECONDS + 60)
+	local asks = {}
+	for _, entry in ipairs(net.log) do if entry.from == "offia" and entry.message:find("^AUDS") then asks[#asks + 1] = entry.at end end
+	check(#asks == 2 and asks[2] - asks[1] == 3 * S.INTERVAL_SECONDS, "no new AUDS while the answer is owed, again after three intervals")
+	-- A second AUDS while the tier 2 answer to that peer still waits: tier 1 again, tier 2 once.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	a.store, b.store = St.New(), St.New()
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(60)
+	St.Add(a.store, "mitglied", "Mitglied", R.Encode("T", { t = 30, n = "X", k = "e", gm = 0, rm = 1, gi = "", ri = "" }), 60)
+	net.log = {}
+	a.engine:Handle("OffiB", "AUDS", "0\t0")
+	a.engine:Handle("OffiB", "AUDS", "0\t0")
+	NetRun(30)
+	local ends = { 0, 0 }
+	for _, entry in ipairs(net.log) do
+		local tier = entry.from == "offia" and tonumber(entry.message:match("^AUDE\t(%d)\t"))
+		if tier then ends[tier] = ends[tier] + 1 end
+	end
+	check(ends[1] == 2 and ends[2] == 1, "a repeated AUDS gets tier 1 again but only one tier 2 answer")
+
+	-- R12: among 20 holders one new entry travels at most 3 + 3 * H times.
+	NetReset()
+	m = NetPlayer("Mitglied", false)
+	local ring = {}
+	for i = 1, 20 do ring[i] = NetPlayer("Ring" .. i, true) NetOnline(ring[i], true) end
+	NetOnline(m, true)
+	NetRun(60)
+	local fresh = R.Encode("H", { t = 77, hk = "mail", sev = "o", a = "Z", b = "s" })
+	NetRecord(m, fresh)
+	NetRun(15 * S.INTERVAL_SECONDS) -- all have it after 9 rounds, the count stops growing after 12
+	local copies, everyone = 0, true
+	for _, entry in ipairs(net.log) do if entry.message:find(fresh, 1, true) then copies = copies + 1 end end
+	for _, o in ipairs(ring) do if not Has(o, "mitglied", fresh) then everyone = false end end
+	check(everyone and copies <= 3 + 3 * 20, "20 holders: all get the entry, sent at most 3 + 3 * H times (" .. copies .. ")")
+	-- R12: a new ring neighbour after the first completed sync sends only what came since gs.base.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	a.store, b.store = St.New(), St.New()
+	NetRun(1000)
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(60)
+	check(b.store.base ~= nil and b.store.base > 0, "the first completed sync sets the base")
+	local c = NetPlayer("OffiC", true)
+	c.store = St.New()
+	local oldRaw = R.Encode("H", { t = 50, hk = "mail", sev = "o", a = "Alt", b = "s" })
+	local newRaw = R.Encode("H", { t = 1500, hk = "mail", sev = "o", a = "Neu", b = "s" })
+	St.Add(c.store, "mitglied", "Mitglied", oldRaw, 100)
+	St.Add(c.store, "mitglied", "Mitglied", newRaw, 1500)
+	NetRun(500)
+	NetOnline(c, true)
+	NetRun(6 * S.INTERVAL_SECONDS)
+	check(Has(b, "mitglied", newRaw) and not Has(b, "mitglied", oldRaw), "a new neighbour after the first sync: only entries since the base")
+	-- R12: one AUDX carries several members.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	a.store, b.store = St.New(), St.New()
+	local small = {}
+	for i = 1, 3 do
+		small[i] = R.Encode("H", { t = i, hk = "mail", sev = "o", a = "Q", b = "s" })
+		St.Add(a.store, "x" .. i, "X" .. i, small[i], 0)
+	end
+	NetRun(10)
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(60)
+	local grouped, all = false, true
+	for _, entry in ipairs(net.log) do
+		if entry.from == "offia" and entry.message:find("^AUDX") and entry.message:find("\029", 1, true) then grouped = true end
+	end
+	for i = 1, 3 do if not Has(b, "x" .. i, small[i]) then all = false end end
+	check(grouped and all, "one AUDX carries several members, all are stored")
+	local own, forged = R.Encode("H", { t = 3, hk = "mail", sev = "o", a = "P", b = "s" }), R.Encode("H", { t = 4, hk = "mail", sev = "o", a = "P", b = "s" })
+	b.engine:Handle("Mitglied", "AUDX", "Mitglied\t" .. own .. "\029Anderer\t" .. forged)
+	check(Has(b, "mitglied", own) and not Has(b, "anderer", forged), "a member's AUDX counts only for its own group")
 end
 
 -- Audit: recording --------------------------------------------------------------

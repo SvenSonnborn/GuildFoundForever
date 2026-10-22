@@ -1,13 +1,16 @@
 local _, ns = ...
 
 -- The audit protocol between players. Members push their own new entries to at most RECIPIENTS
--- online holders (officers, or members when the guild rule V is on); holders sync with one other
--- holder per round; every message goes through one paced queue. The engine talks to the game only
--- through the env table given to Sync.New, so the tests can run several players in one Lua state.
--- No WoW API calls, no module state.
+-- online holders (officers, or members when the guild rule V is on). The online holders, sorted by
+-- key, form a ring; each one syncs in turn with its successor, its predecessor and the holder
+-- half-way round, one per round, so an entry reaches every holder with at most three transfers
+-- each. Every message goes through one paced queue. The engine talks to the game only through the
+-- env table given to Sync.New, so the tests can run several players in one Lua state. No WoW API
+-- calls, no module state.
 --
 -- Messages (all whispered):
---   AUDX <member>\t<raw>\030<raw>...   entries about one member
+--   AUDX <member>\t<raw>\030<raw>...   entries about members; several groups of
+--        [\029<member>\t<raw>...]       "<member>\t<raws>" joined by character 29
 --   AUDS <since1>\t<since2>            "send me what you stored since these times" (tier 1, tier 2)
 --   AUDE <tier>\t<now>                 end of tier 1 or 2 of an AUDS answer, or of an AUDM answer (3)
 --   AUDM <member>\t<since>             ask for the details (tier 2) of one member
@@ -24,7 +27,8 @@ local _, ns = ...
 --   capable(key)                 online with capability A
 --   isMember(key)                in the guild roster
 --   amHolder()                   whether we are an officer or relay ourselves
---   store()                      the guild's store, nil without a role or guild name
+--   store()                      the guild's store, nil without a role or guild name; the engine
+--                                keeps gs.peers[key] = { s1, s2 } and gs.base in it
 --   ownSince(since)              own encoded entries from since on (Audit.OwnRaws)
 --   sent()                       push watermark per recipient, [key] = time
 --   onStored(key, raw, at)       a foreign entry was newly stored
@@ -45,6 +49,8 @@ Sync.RETRIES = 10
 Sync.RETRY_SECONDS = 3 * Sync.PACE_SECONDS
 
 local SEPARATOR = "\030"
+local GROUP = "\029"
+local HEAD = "AUDX\t"
 
 -- Queue priorities, the lowest goes first; within one priority first in, first out.
 local ASK, OWN, MEMBER_ANSWER, TIER1_ANSWER, TIER2_ANSWER = 0, 1, 2, 3, 4
@@ -94,19 +100,28 @@ local function Cut(text, n)
 	return text:sub(1, n)
 end
 
--- AUDX messages about one member: its entries joined by character 30, each message within
--- MESSAGE_LIMIT. No entries, no message.
-local function Pack(memberName, raws)
-	local head = "AUDX\t" .. memberName .. "\t"
-	local room = Sync.MESSAGE_LIMIT - #head
-	local messages, current = {}, nil
-	for _, raw in ipairs(raws) do
-		raw = Cut(raw, room)
-		if current and #current + #SEPARATOR + #raw > Sync.MESSAGE_LIMIT then
-			messages[#messages + 1] = current
-			current = nil
+-- AUDX messages for a list of { name, raws }: per member a group "<name>\t<raw>\030<raw>...",
+-- groups joined by character 29, each message within MESSAGE_LIMIT. No entries, no message.
+local function Pack(entries)
+	local messages, current, open = {}, nil, nil
+	for _, entry in ipairs(entries) do
+		local room = Sync.MESSAGE_LIMIT - #HEAD - #entry.name - 1
+		for _, raw in ipairs(entry.raws) do
+			raw = Cut(raw, room)
+			local piece = nil
+			if current then
+				piece = open == entry and (SEPARATOR .. raw) or (GROUP .. entry.name .. "\t" .. raw)
+			end
+			if piece and #current + #piece <= Sync.MESSAGE_LIMIT then
+				current = current .. piece
+			else
+				if current then
+					messages[#messages + 1] = current
+				end
+				current = HEAD .. entry.name .. "\t" .. raw
+			end
+			open = entry
 		end
-		current = current and (current .. SEPARATOR .. raw) or (head .. raw)
 	end
 	if current then
 		messages[#messages + 1] = current
@@ -215,10 +230,10 @@ local function Waiting(self, prio, key)
 	return false
 end
 
--- Queues the entries about one member for a target ({ key, name }). With watermark, the target's
--- push watermark moves there once the last of these messages went out.
-local function QueueRaws(self, prio, target, memberName, raws, watermark)
-	local messages = Pack(memberName, raws)
+-- Queues entries ({ { name, raws }, ... }) for a target ({ key, name }). With watermark, the
+-- target's push watermark moves there once the last of these messages went out.
+local function QueueRaws(self, prio, target, entries, watermark)
+	local messages = Pack(entries)
 	local done = watermark and function()
 		self.env.sent()[target.key] = watermark
 	end or nil
@@ -237,7 +252,7 @@ local function PushOwn(self, recipient, extra)
 	local now = env.now()
 	local since = env.sent()[recipient.key] or (now - Sync.FIRST_CONTACT_SECONDS)
 	self.pushed[recipient.key] = true
-	QueueRaws(self, OWN, recipient, env.selfName, Ordered(env.ownSince(since), extra), now)
+	QueueRaws(self, OWN, recipient, { { name = env.selfName, raws = Ordered(env.ownSince(since), extra) } }, now)
 end
 
 -- Recipients without a full push this session get one; the others get just the extra entries.
@@ -256,7 +271,7 @@ local function Distribute(self, extra)
 		if not self.pushed[recipient.key] then
 			PushOwn(self, recipient, extra)
 		elseif extra and #extra > 0 then
-			QueueRaws(self, OWN, recipient, self.env.selfName, Ordered(extra), self.env.now())
+			QueueRaws(self, OWN, recipient, { { name = self.env.selfName, raws = Ordered(extra) } }, self.env.now())
 		end
 	end
 end
@@ -269,45 +284,82 @@ local function IsHolder(self)
 	return self.env.amHolder() and self.env.store() ~= nil
 end
 
+-- Sync partners in the ring of the online holders and ourselves, sorted by key: successor,
+-- predecessor and the holder half-way round; at most three, never ourselves.
+local function Partners(self, holders)
+	local env = self.env
+	local ring = { { key = env.self, name = env.selfName } }
+	for _, holder in ipairs(holders or {}) do
+		if holder.key ~= env.self then
+			ring[#ring + 1] = holder
+		end
+	end
+	table.sort(ring, function(a, b)
+		return a.key < b.key
+	end)
+	local n, at = #ring, 1
+	for i, holder in ipairs(ring) do
+		if holder.key == env.self then
+			at = i
+		end
+	end
+	local list, seen = {}, { [env.self] = true }
+	for _, step in ipairs({ 1, -1, math.floor(n / 2) }) do
+		local peer = ring[(at - 1 + step) % n + 1]
+		if not seen[peer.key] then
+			seen[peer.key] = true
+			list[#list + 1] = peer
+		end
+	end
+	return list
+end
+
+-- A peer without a mark is asked from gs.base on: a round before our first completed tier 2 sync,
+-- 0 before that. So only our very first partner sends us its whole store.
 local function Ask(self, peer)
 	local gs = self.env.store()
 	local mark = gs.peers and gs.peers[peer.key] or {}
-	Queue(self, ASK, peer.name, "AUDS\t" .. (mark.s1 or 0) .. "\t" .. (mark.s2 or 0))
+	local base = gs.base or 0
+	Queue(self, ASK, peer.name, "AUDS\t" .. (mark.s1 or base) .. "\t" .. (mark.s2 or base))
 	self.asked[peer.key] = self.env.now()
 	self.lastAsked = peer.key
 end
 
--- One tier of an AUDS answer: AUDX per member (none about the asker), then AUDE with the time the
+-- One tier of an AUDS answer: AUDX with every member but the asker, then AUDE with the time the
 -- answer was taken from the store, so entries stored in that same second come again next time.
 local function Answer(self, gs, target, since, tier, prio, now)
+	local entries = {}
 	for _, entry in ipairs(St.Since(gs, since, tier)) do
 		if entry.key ~= target.key then
-			QueueRaws(self, prio, target, entry.name or entry.key, entry.raws)
+			entries[#entries + 1] = { name = entry.name or entry.key, raws = entry.raws }
 		end
 	end
+	QueueRaws(self, prio, target, entries)
 	Queue(self, prio, target.name, "AUDE\t" .. tier .. "\t" .. now)
 end
 
 local HANDLERS = {}
 
+-- Every group is checked on its own: from the member itself or from a holder.
 function HANDLERS.AUDX(self, sender, senderKey, payload)
 	local env = self.env
-	local name, list = strsplit("\t", payload, 2)
-	if not name or name == "" or not list or not env.amHolder() then
+	if not env.amHolder() then
 		return
 	end
 	local gs = env.store()
-	local key = env.key(name)
-	if not gs or key == env.self or not env.isMember(key) then
-		return
-	end
-	if senderKey ~= key and not env.isHolder(senderKey) then
+	if not gs then
 		return
 	end
 	local now = env.now()
-	for raw in list:gmatch("[^\030]+") do
-		if St.Add(gs, key, name, raw, now) then
-			env.onStored(key, raw, now)
+	for group in payload:gmatch("[^\029]+") do
+		local name, list = strsplit("\t", group, 2)
+		local key = name and name ~= "" and list and env.key(name) or nil
+		if key and key ~= env.self and env.isMember(key) and (senderKey == key or env.isHolder(senderKey)) then
+			for raw in list:gmatch("[^\030]+") do
+				if St.Add(gs, key, name, raw, now) then
+					env.onStored(key, raw, now)
+				end
+			end
 		end
 	end
 end
@@ -351,6 +403,9 @@ function HANDLERS.AUDE(self, sender, senderKey, payload)
 	else
 		mark.s2 = at
 		self.asked[senderKey] = nil
+		if not gs.base then
+			gs.base = at - Sync.INTERVAL_SECONDS
+		end
 	end
 	self.syncAt, self.syncName = env.now(), sender
 	env.onSyncDone(senderKey, tier)
@@ -376,15 +431,17 @@ function HANDLERS.AUDM(self, sender, senderKey, payload)
 				raws[#raws + 1] = raw
 			end
 		end
-		QueueRaws(self, MEMBER_ANSWER, target, env.selfName, raws)
+		QueueRaws(self, MEMBER_ANSWER, target, { { name = env.selfName, raws = raws } })
 	else
 		local gs = env.amHolder() and env.store()
 		if not gs then
 			return
 		end
+		local entries = {}
 		for _, entry in ipairs(St.Since(gs, since, 2, key)) do
-			QueueRaws(self, MEMBER_ANSWER, target, entry.name or entry.key, entry.raws)
+			entries[#entries + 1] = { name = entry.name or entry.key, raws = entry.raws }
 		end
+		QueueRaws(self, MEMBER_ANSWER, target, entries)
 	end
 	Queue(self, MEMBER_ANSWER, sender, "AUDE\t3\t" .. env.now())
 end
@@ -401,12 +458,11 @@ function Sync.New(env)
 	for prio = 0, LAST_PRIORITY do
 		self.queues[prio] = {}
 	end
-	self.offset = Sync.Score(env.self, "tick")
 	return self
 end
 
--- Clears the queue, sends the own data to the recipients and, as a holder, syncs with the peer
--- ranked highest for us.
+-- Clears the queue, sends the own data to the recipients and, as a holder, syncs with our
+-- successor in the ring.
 function Engine:Start()
 	for prio = 0, LAST_PRIORITY do
 		self.queues[prio] = {}
@@ -417,9 +473,10 @@ function Engine:Start()
 	self.bundle = nil
 	Distribute(self, extra)
 	if IsHolder(self) then
-		local best = Ranked(self.env.holders(), self.env.self)[1]
-		if best then
-			Ask(self, best)
+		local successor = Partners(self, self.env.holders())[1]
+		if successor then
+			Ask(self, successor)
+			self.round = 1
 		end
 	end
 end
@@ -449,29 +506,27 @@ function Engine:Record(raw)
 	end
 end
 
--- One sync with the next peer in key order, each holder starting at its own place. Skipped while
--- the last asked peer is online and has not finished (AUDE 2), at most for three intervals.
+-- One sync with the next of our ring partners in turn. Skipped while the last asked peer is online
+-- and has not finished (AUDE 2), at most for three intervals.
 function Engine:Tick()
 	local env = self.env
 	if not IsHolder(self) then
 		return
 	end
-	local peers, now = {}, env.now()
+	local holders, now = env.holders() or {}, env.now()
 	local asked = self.lastAsked and self.asked[self.lastAsked]
-	local pending = false
-	for _, peer in ipairs(env.holders() or {}) do
-		peers[#peers + 1] = peer
-		if peer.key == self.lastAsked and asked and now - asked < 3 * Sync.INTERVAL_SECONDS then
-			pending = true
+	if asked and now - asked < 3 * Sync.INTERVAL_SECONDS then
+		for _, holder in ipairs(holders) do
+			if holder.key == self.lastAsked then
+				return
+			end
 		end
 	end
-	if pending or #peers == 0 then
+	local partners = Partners(self, holders)
+	if #partners == 0 then
 		return
 	end
-	table.sort(peers, function(a, b)
-		return a.key < b.key
-	end)
-	local peer = peers[(self.offset + self.round) % #peers + 1]
+	local peer = partners[self.round % #partners + 1]
 	self.round = self.round + 1
 	Ask(self, peer)
 end
