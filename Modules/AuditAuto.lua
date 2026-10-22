@@ -11,8 +11,9 @@ local Audit = ns.Audit
 --
 -- ns.char.auditStore[<guild name>]: the guild's audit data (AuditStore.lua), per character and per
 --   guild, only while the character is an officer or a relay (guild rule V) there.
--- ns.char.auditSeen = { prev, this, reported }: the last two login times (real logins, not
---   /reload); notices that arrived after prev are new.
+-- ns.char.auditSeen = { prev, this, last, reported }: this is the current real login (not
+--   /reload), last when we were last seen online (every minute and at logout), prev the end of
+--   the session before this one; notices that arrived after prev are new.
 local AA = {}
 ns.AuditAuto = AA
 
@@ -20,6 +21,7 @@ local START_SECONDS = 45          -- after LOGIN: HELLO went out at 15 s, the HI
 local PEERS_SECONDS = 5           -- changes of the recipients are collected this long
 local LOGIN_REPORT_SECONDS = 120  -- the login report when no sync completed by then
 local SESSION_REPORT_SECONDS = 600
+local SEEN_SECONDS = 60           -- how often the time we were last online is noted
 local ROLE_LOST_SECONDS = 60      -- without readable rank permissions: no role this long before data goes
 local GUILD_GONE_SECONDS = 10     -- "no guild" must still hold this much later before the data goes
 local ROSTER_REQUEST_SECONDS = 10 -- a HELLO from a name not in the roster asks for it at most this often
@@ -33,12 +35,17 @@ local migrated = false      -- the old account-wide cache was looked at this ses
 local roleLostAt            -- GetTime() of the first ready roster without a role (permissions unreadable)
 local rosterAskedAt         -- GetTime() of the last roster request for an unknown HELLO
 local sessionHints = 0      -- notices stored since the last report
+local timeline              -- { gs, seen, list }: the last result of AA.GetTimeline, nil after a change
 
--- ns.char.auditSeen: prev and this are the last two real logins (not /reload); reported is the
--- login (its this) whose login report was made.
+-- ns.char.auditSeen (see above); reported is the login (its this) whose login report was made.
 local function Seen()
 	ns.char.auditSeen = ns.char.auditSeen or { prev = 0, this = 0 }
 	return ns.char.auditSeen
+end
+
+-- Stored entries, done marks, own notices, the roster or the login times changed.
+local function TimelineChanged()
+	timeline = nil
 end
 
 -- The login report of the current login is still to come (a /reload does not bring another).
@@ -349,12 +356,19 @@ end
 
 -- The notices of the store and our own, newest first:
 -- { key, name, class, online, hint, id, at (arrival), done, new, pre (before joining) }.
+-- Built once and kept until something changes (the window refreshes it often); callers must
+-- not change it.
 function AA.GetTimeline()
 	local result = {}
 	if not ns.char then
 		return result
 	end
 	local seen = Seen().prev or 0
+	local gs = AA.GetStore()
+	local cached = timeline
+	if cached and cached.gs == gs and cached.seen == seen then
+		return cached.list
+	end
 	local roster = RosterByKey()
 	local function Add(key, name, hint, id, at, done, join)
 		local entry = roster[key]
@@ -364,7 +378,6 @@ function AA.GetTimeline()
 			pre = join ~= nil and (join.t or 0) > 0 and hint.t < join.t,
 		}
 	end
-	local gs = AA.GetStore()
 	if gs then
 		local joins = {}
 		for _, e in ipairs(St.Timeline(gs)) do
@@ -376,7 +389,7 @@ function AA.GetTimeline()
 	end
 	-- Our own notices arrive when we record them; done marks for them live in the store.
 	local selfKey, own = ns.Guild.GetPlayerKey(), ns.char.audit
-	local ownDone = gs and gs.members[selfKey] and St.GetMember(gs, selfKey).done or {}
+	local ownDone = gs and St.Marks(gs, selfKey) or {}
 	local selfName = SelfName()
 	for _, hint in ipairs(own.hints or {}) do
 		local id = R.HintId(hint)
@@ -391,6 +404,7 @@ function AA.GetTimeline()
 		end
 		return a.id < b.id
 	end)
+	timeline = { gs = gs, seen = seen, list = result }
 	return result
 end
 
@@ -492,6 +506,7 @@ function AA.Start()
 	local gs = AA.GetStore()
 	if gs then
 		St.Prune(gs, GetServerTime())
+		TimelineChanged()
 	end
 	engine:Start()
 	if first then
@@ -524,10 +539,18 @@ local function Tick()
 	local gs = AA.GetStore()
 	if gs then
 		St.Prune(gs, GetServerTime())
+		TimelineChanged()
+	end
+end
+
+local function NoteSeen()
+	if ns.char then
+		Seen().last = GetServerTime()
 	end
 end
 
 ns.RegisterCallback("LOGIN", function()
+	TimelineChanged() -- own notices older than 10 days went at login
 	if loggedIn then
 		return
 	end
@@ -535,6 +558,7 @@ ns.RegisterCallback("LOGIN", function()
 	C_Timer.After(START_SECONDS, AA.Start)
 	C_Timer.NewTicker(S.INTERVAL_SECONDS, Tick)
 	C_Timer.NewTicker(SESSION_REPORT_SECONDS, ReportSession)
+	C_Timer.NewTicker(SEEN_SECONDS, NoteSeen)
 	if not IsInGuild() then
 		DropStoresIfGuildless()
 	end
@@ -546,16 +570,22 @@ ns.On("PLAYER_GUILD_UPDATE", function()
 	end
 end)
 
--- PLAYER_LOGIN comes after a /reload as well; only a real login moves the login times.
+-- PLAYER_LOGIN comes after a /reload as well; only a real login moves the login times. New is
+-- what arrived after the end of the previous session, not after its login.
 ns.On("PLAYER_ENTERING_WORLD", function(_, isInitialLogin)
 	if isInitialLogin and ns.char then
-		local seen = Seen()
-		seen.prev, seen.this = seen.this or 0, GetServerTime()
+		local seen, now = Seen(), GetServerTime()
+		seen.prev, seen.this, seen.last = seen.last or seen.this or 0, now, now
 	end
 end)
 
+ns.On("PLAYER_LOGOUT", NoteSeen)
+
+ns.RegisterCallback("AUDIT_UPDATED", TimelineChanged)
+
 -- A roster that is not loaded says nothing about members or ranks.
 ns.RegisterCallback("ROSTER_UPDATED", function()
+	TimelineChanged()
 	if not ns.char or not ns.Guild.IsRosterReady() then
 		return
 	end
@@ -588,6 +618,7 @@ end)
 
 -- Every own record goes out (Audit.lua fires it, interval snapshots only as the last state).
 ns.RegisterCallback("AUDIT_RECORDED", function(raw)
+	TimelineChanged()
 	if raw and ns.char then
 		engine:Record(raw)
 	end

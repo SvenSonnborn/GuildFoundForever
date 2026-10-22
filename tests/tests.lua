@@ -1009,6 +1009,18 @@ do
 	local passedOn, passedOnlyKey = St.Since(is, 0, 2), St.Since(is, 0, 2, "i-r")
 	check(#St.GetMember(is, "i-r").snapshots == 2 and #passedOn == 1 and #passedOn[1].raws == 1 and passedOn[1].raws[1] == outRaw
 		and #passedOnlyKey[1].raws == 1, "interval snapshots stay in the store but are never passed on")
+	-- R27: the timeline decodes only the notices and the done marks, not the details.
+	local ts = St.New()
+	for i = 1, 20 do
+		St.Add(ts, "t-r", "T-R", R.Encode("T", { t = i, n = "X", k = "e", gm = 0, rm = i, gi = "", ri = "" }), 1)
+	end
+	St.Add(ts, "t-r", "T-R", R.Encode("H", { t = 30, hk = "mail", sev = "o", a = "X", b = "s" }), 1)
+	St.SetDone(ts, "t-r", "30:mail:X", 1, "O", 40)
+	local decodes, decode = 0, R.Decode
+	R.Decode = function(...) decodes = decodes + 1 return decode(...) end
+	local cheap = St.Timeline(ts)
+	R.Decode = decode
+	check(#cheap == 1 and cheap[1].done and cheap[1].done.s == 1 and cheap[1].done.by == "O" and decodes == 2, "the timeline decodes only notices and done marks (" .. decodes .. ")")
 end
 
 -- Audit: sync between players ---------------------------------------------------------
@@ -1884,8 +1896,23 @@ do
 	check(#lines == 5 and lines[1].day:find("Heute", 1, true) and lines[1].day:find("1 neu", 1, true) and lines[4].day == "Gestern", "timeline: days, newest first, new count today")
 	check(#ns.UI.BuildAuditTimeline(entries, nil, true, now) == 4, "done notices hidden")
 	check(#ns.UI.BuildAuditTimeline(entries, "trade", false, now) == 2, "filter by kind")
+	-- M6: today's heading counts every new notice (by arrival, not done) whatever its date, as the
+	-- login report does; without notices from today a heading for today carries the count.
+	local mixed = { e(now - 10, "mail", now - 5), e(now - 86400, "blocked", now - 86400), e(now - 2 * 86400, "trade", now - 5), e(now - 3 * 86400, "mail", now - 5, 1) }
+	local mixedLines = ns.UI.BuildAuditTimeline(mixed, nil, false, now)
+	check(mixedLines[1].day:find("Heute", 1, true) and mixedLines[1].day:find("2 neu", 1, true), "today's heading counts every new notice, also older ones that arrived now")
+	local onlyOld = ns.UI.BuildAuditTimeline({ e(now - 3 * 86400, "mail", now - 5) }, nil, false, now)
+	check(#onlyOld == 3 and onlyOld[1].day:find("Heute", 1, true) and onlyOld[1].day:find("1 neu", 1, true) and onlyOld[2].day == date("%d.%m.", now - 3 * 86400),
+		"no notice from today: a heading for today carries the count")
 	ns.UI.ShowAudit()
 	check(FindWidgetByText("Button", "Hinweise") and FindWidgetByText("Button", "Beitritt") and FindWidgetByText("FontString", "Erledigte ausblenden"), "officers see the timeline with its filters")
+	-- R27: refreshes caused by data are collected for about a second.
+	RunTimers()
+	local timersBefore = #TIMERS
+	ns.Fire("AUDIT_UPDATED")
+	ns.Fire("AUDIT_UPDATED")
+	check(#TIMERS == timersBefore + 1 and TIMERS[#TIMERS].d >= 1, "refreshes of the audit tab are collected for a second")
+	RunTimers()
 	ns.UI.ShowAudit("Freund-ClassicBetaPvE2")
 	check(FindWidgetByText("Button", "Daten anfordern"):IsShown(), "a name opens the member view")
 	ns.UI.Toggle()
@@ -2117,6 +2144,36 @@ do
 	GUILD_INFO_TEXT = "Willkommen"
 	FireEvent("GUILD_ROSTER_UPDATE")
 	ns.Rules.Set("auditRelay", false)
+	-- R27: without a change the timeline comes from the cache; a stored notice renews it.
+	local cachedLine = AA.GetTimeline()
+	check(AA.GetTimeline() == cachedLine, "no change: the timeline comes from the cache")
+	local laterHint = R.Encode("H", { t = GetServerTime() - 30, hk = "mail", sev = "o", a = "Cache", b = "s" })
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. laterHint, "WHISPER", "Freund-ClassicBetaPvE2")
+	local renewed, withLater = AA.GetTimeline(), false
+	for _, e in ipairs(renewed) do if e.hint.a == "Cache" then withLater = true end end
+	check(renewed ~= cachedLine and withLater, "a stored notice renews the cached timeline")
+	-- The cache also follows the login times, the roster and our own notices.
+	local cachedAgain = AA.GetTimeline()
+	local savedPrev = ns.char.auditSeen.prev
+	ns.char.auditSeen.prev = savedPrev - 1
+	check(AA.GetTimeline() ~= cachedAgain, "other login times: the timeline is built again")
+	ns.char.auditSeen.prev = savedPrev
+	cachedAgain = AA.GetTimeline()
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(AA.GetTimeline() ~= cachedAgain, "a roster update (names, online state): the timeline is built again")
+	cachedAgain = AA.GetTimeline()
+	ns.Log("ah", "Eigener Hinweis im Cache")
+	local ownInLine = false
+	for _, e in ipairs(AA.GetTimeline()) do if e.key == ns.Guild.GetPlayerKey() and e.hint.b == "Eigener Hinweis im Cache" then ownInLine = true end end
+	check(ownInLine, "a new own notice is in the timeline at once")
+	RunTimers()
+	local tooOld = R.Encode("H", { t = GetServerTime() - 864000 - 100, hk = "mail", sev = "o", a = "Zu alt", b = "s" })
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. tooOld, "WHISPER", "Freund-ClassicBetaPvE2")
+	local function HasOld() for _, e in ipairs(AA.GetTimeline()) do if e.hint.a == "Zu alt" then return true end end return false end
+	local oldShown = HasOld()
+	AA.Start()
+	check(oldShown and not HasOld(), "a notice pruned after 10 days leaves the cached timeline")
+	RunTimers()
 	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tCrossy-OtherRealm\t" .. fHint, "WHISPER", "Crossy-OtherRealm")
 	local crossy
 	for _, e in ipairs(AA.GetTimeline()) do if e.key == "crossy-otherrealm" then crossy = e end end
@@ -2179,11 +2236,25 @@ do
 	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDE\t1\t" .. GetServerTime(), "WHISPER", "Freund-ClassicBetaPvE2")
 	RunTimers()
 	check(not Said("neue Audit-Hinweise"), "after a reload the first sync brings no second login report")
+	-- M7: the addon notes when we were last online (every minute and at logout); after the next
+	-- real login only what arrived after the end of this session is new.
+	local inSession = R.Encode("H", { t = GetServerTime(), hk = "mail", sev = "o", a = "Sitzung", b = "s" })
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. inSession, "WHISPER", "Freund-ClassicBetaPvE2")
+	Advance(60)
+	FireEvent("PLAYER_LOGOUT")
+	local lastSeen = seen.last
+	check(lastSeen == GetServerTime(), "logout notes when we were last online")
+	Advance(3600)
 	FireEvent("PLAYER_ENTERING_WORLD", true, false)
 	RunTimers()
-	check(seen.prev == thisBefore and seen.this == GetServerTime(), "a real login moves the login times")
+	check(seen.prev == lastSeen and seen.this == GetServerTime(), "a real login: new is what arrived after the end of the previous session")
+	local sessionEntry
+	for _, e in ipairs(AA.GetTimeline()) do if e.hint.a == "Sitzung" then sessionEntry = e end end
+	check(sessionEntry and not sessionEntry.new, "a notice that arrived during the previous session is not new after the next login")
 	AA.Start()
 	RunTimers()
+	Advance(1)
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. R.Encode("H", { t = GetServerTime(), hk = "mail", sev = "o", a = "Danach", b = "s" }), "WHISPER", "Freund-ClassicBetaPvE2")
 	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDE\t1\t" .. GetServerTime(), "WHISPER", "Freund-ClassicBetaPvE2")
 	RunTimers()
 	check(Said("neue Audit-Hinweise"), "after a real login the first sync brings the login report")

@@ -236,18 +236,46 @@ function St.GetMember(gs, key)
 	return data
 end
 
--- Every hint of every member, newest first, with its valid done mark (or nil).
+-- The valid done mark per hint id of one member's raws; hints (a list) gets its decoded notices
+-- with their arrival time. Nothing else is decoded.
+local function MarksAndHints(member, hints)
+	local done = {}
+	for raw, at in pairs(member.recs) do
+		local kind = raw:sub(1, 2)
+		if kind == "E\t" then
+			local rt, rec = R.Decode(raw)
+			if rt and rec.id then
+				local mark = { s = rec.s, by = rec.by, t = rec.t }
+				if Better(mark, done[rec.id]) then
+					done[rec.id] = mark
+				end
+			end
+		elseif hints and kind == "H\t" then
+			local rt, hint = R.Decode(raw)
+			if rt then
+				hints[#hints + 1] = { hint = hint, at = at }
+			end
+		end
+	end
+	return done
+end
+
+-- The valid done marks of one member, by hint id.
+function St.Marks(gs, key)
+	local member = gs.members[key]
+	return member and MarksAndHints(member) or {}
+end
+
+-- Every hint of every member, newest first, with its valid done mark (or nil). Only the notices and
+-- the done marks are decoded, not the details (thousands of entries in a large guild).
 function St.Timeline(gs)
 	local result = {}
-	for key in pairs(gs.members) do
-		local done = St.GetMember(gs, key).done
-		local member = gs.members[key]
-		for raw, at in pairs(member.recs) do
-			local rt, hint = R.Decode(raw)
-			if rt == "H" then
-				local id = R.HintId(hint)
-				result[#result + 1] = { key = key, name = member.name, hint = hint, id = id, at = at, done = done[id] }
-			end
+	for key, member in pairs(gs.members) do
+		local hints = {}
+		local done = MarksAndHints(member, hints)
+		for _, entry in ipairs(hints) do
+			local id = R.HintId(entry.hint)
+			result[#result + 1] = { key = key, name = member.name, hint = entry.hint, id = id, at = entry.at, done = done[id] }
 		end
 	end
 	table.sort(result, function(a, b)

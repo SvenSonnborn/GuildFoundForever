@@ -374,33 +374,38 @@ local function ForMode(mode, widget)
 end
 
 -- Pure: the lines of the timeline for the given notices (newest first, as AuditAuto.GetTimeline
--- gives them): { day = "Today ..." } headings and { entry = e } lines.
+-- gives them): { day = "Today ..." } headings and { entry = e } lines. Today's heading counts every
+-- new notice that is not done, whatever its date: new goes by arrival, as in the login report.
+-- Without notices from today a heading for today carries the count alone.
 function UI.BuildAuditTimeline(entries, filter, hideDone, now)
-	local lines, dayKey, heading, newCount = {}, nil, nil, 0
+	local lines, dayKey, today, newCount = {}, nil, nil, 0
 	local todayKey = date("%Y%m%d", now)
 	local yesterdayKey = date("%Y%m%d", now - 86400)
-	local function FinishHeading()
-		if heading and dayKey == todayKey and newCount > 0 then
-			heading.day = heading.day .. " " .. L.AUDIT_NEW_SINCE:format(newCount)
-		end
-	end
 	for _, e in ipairs(entries) do
 		local done = e.done and e.done.s == 1
 		if (not filter or ns.Audit.HintFilter(e.hint.hk) == filter) and not (hideDone and done) then
 			local key = date("%Y%m%d", e.hint.t)
 			if key ~= dayKey then
-				FinishHeading()
-				dayKey, newCount = key, 0
-				heading = { day = key == todayKey and L.AUDIT_TODAY or key == yesterdayKey and L.AUDIT_YESTERDAY or date("%d.%m.", e.hint.t) }
+				dayKey = key
+				local heading = { day = key == todayKey and L.AUDIT_TODAY or key == yesterdayKey and L.AUDIT_YESTERDAY or date("%d.%m.", e.hint.t) }
+				if key == todayKey then
+					today = heading
+				end
 				lines[#lines + 1] = heading
 			end
-			if e.new then
+			if e.new and not done then
 				newCount = newCount + 1
 			end
 			lines[#lines + 1] = { entry = e }
 		end
 	end
-	FinishHeading()
+	if newCount > 0 then
+		if not today then
+			today = { day = L.AUDIT_TODAY }
+			table.insert(lines, 1, today)
+		end
+		today.day = today.day .. " " .. L.AUDIT_NEW_SINCE:format(newCount)
+	end
 	return lines
 end
 
@@ -866,14 +871,16 @@ function UI.RefreshAudit()
 	end
 end
 
--- AUDIT_UPDATED fires once per stored entry: refresh once per short delay, and only while the page is shown.
+-- AUDIT_UPDATED fires once per stored entry (hundreds during a sync): refresh at most once per
+-- second, and only while the page is shown. Scrolling and paging use the cached timeline.
+local AUDIT_REFRESH_SECONDS = 1
 local auditRefreshPending = false
 local function ScheduleAuditRefresh()
 	if auditRefreshPending or not frame or not frame:IsShown() or not pages.audit:IsShown() then
 		return
 	end
 	auditRefreshPending = true
-	C_Timer.After(0.2, function()
+	C_Timer.After(AUDIT_REFRESH_SECONDS, function()
 		auditRefreshPending = false
 		UI.RefreshAudit()
 	end)
