@@ -384,7 +384,7 @@ UI.lua                   Fenster mit Tabs, Einstellungs-Eintrag, Addon-Menü an 
   | `AUD <eintrag>␞<eintrag>…` | Flüstern | Audit-Einträge, getrennt durch Zeichen 30: `S` Verlauf, `T` Handel, `M` Post, `L` blockiert |
   | `AUDEND <anzahl> <zeit>` | Flüstern | Ende der Antwort |
   | `AUDNO` | Flüstern | Anfrage abgelehnt |
-  | `AUDX <mitglied>␉<eintrag>␞<eintrag>…` | Flüstern | automatischer Audit: Einträge über ein Mitglied; mehrere Mitglieder in einer Nachricht, getrennt durch Zeichen 29. Über den Empfänger selbst zählen nur Erledigt-Marken (`E`), und die nur von Offizieren und Zwischenspeichern. Arten: `S` Stand, `C` letzter Stand, `T` Handel, `M` Post, `L` blockiert, `H` Hinweis, `J` Beitrittsstand, `F` erster Stand, `E` Erledigt-Marke |
+  | `AUDX <mitglied>␉<eintrag>␞<eintrag>…` | Flüstern | automatischer Audit: Einträge über ein Mitglied; mehrere Mitglieder in einer Nachricht, getrennt durch Zeichen 29. Über den Empfänger selbst gehen nur Erledigt-Marken (`E`) mit. Erledigt-Marken nimmt der Empfänger nur von Offizieren und Zwischenspeichern an. Arten: `S` Stand, `C` letzter Stand, `T` Handel, `M` Post, `L` blockiert, `H` Hinweis, `J` Beitrittsstand, `F` erster Stand, `E` Erledigt-Marke |
   | `AUDS <seit1>␉<seit2>` | Flüstern | „schick mir, was du seit diesen Zeiten gespeichert hast“ (Stufe 1, Stufe 2) |
   | `AUDE <stufe>␉<zeit>` | Flüstern | Ende einer Antwort: Stufe 1 oder 2 einer `AUDS`-Antwort, 3 einer `AUDM`-Antwort, 4 einer `AUDQ`-Antwort (`<zeit>` ist dann die Uhrzeit des Mitglieds, bis zu der der Halter nun alles hat) |
   | `AUDM <mitglied>␉<seit>` | Flüstern | Einzelheiten (Stufe 2) eines Mitglieds anfordern |
