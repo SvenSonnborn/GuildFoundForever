@@ -259,7 +259,7 @@ end
 -- Rules in the guild info
 --
 -- Officers publish the rules as tags in the guild info, e.g.
---   [GuildFoundForever A=1 M=1 C=1 H=1 G=0 Q=1 O=1 I=0 S=0 P=0 L=50 X=1 D=0 E=1 R=0 B=1 U=1 T=0 F=0]
+--   [GuildFoundForever A=1 M=1 C=1 H=1 G=0 Q=1 O=1 I=0 S=0 P=0 L=50 X=1 D=0 E=1 R=0 B=1 T=0 F=0 V=0]
 --   [GuildFoundForever-Partner: Name One, Name Two]
 -- Every member's addon reads them, so the whole guild plays by the same rules.
 ---------------------------------------------------------------------------
@@ -282,12 +282,12 @@ local TAG_FIELDS = {
 	{ code = "E", key = "chatEpic", bool = true },
 	{ code = "R", key = "chatRare", bool = true },
 	{ code = "B", key = "chatRecipe", bool = true },
-	-- audit: members answer officers' requests
-	{ code = "U", key = "audit", bool = true },
 	-- professions tab
 	{ code = "T", key = "professions", bool = true },
 	-- dungeon finder tab
 	{ code = "F", key = "dungeonFinder", bool = true },
+	-- audit: members store audit data and pass it on to officers
+	{ code = "V", key = "auditRelay", bool = true },
 }
 local RULES_TAG_PATTERN = "%[" .. addonName .. " [^%]]*%]"
 local PARTNER_TAG_PATTERN = "%[" .. addonName .. "%-Partner:?[^%]]*%]"
@@ -458,6 +458,15 @@ end
 -- The tags currently in the guild info, or nil.
 function Guild.GetPublishedTags()
 	return appliedTags
+end
+
+-- Whether the guild info was read: tags were found, or the text is there. The text arrives after
+-- the roster, so until then the guild rules are not known.
+function Guild.IsInfoRead()
+	if not IsInGuild() then
+		return false
+	end
+	return appliedTags ~= nil or GetInfoText() ~= ""
 end
 
 -- Reads the guild info again; officers paste the tags there themselves.

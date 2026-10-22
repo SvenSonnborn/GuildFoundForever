@@ -40,7 +40,8 @@ local function Trim(store)
 end
 
 -- opts: details (further lines), link (item link for the tooltip), important (hint next to the
--- button), silent (counts as read). Returns the entry.
+-- button), silent (counts as read), action (what a click on the hint opens: "audit" the audit tab;
+-- otherwise the message window). Returns the entry.
 function Messages.Add(category, text, opts)
 	opts = opts or {}
 	if not byKey[category] then
@@ -56,6 +57,9 @@ function Messages.Add(category, text, opts)
 	end
 	if opts.important then
 		entry.i = true
+	end
+	if opts.action then
+		entry.a = opts.action
 	end
 	local store = Store()
 	if not store then

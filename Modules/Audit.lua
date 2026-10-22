@@ -1,5 +1,6 @@
 local _, ns = ...
 local L = ns.L
+local R = ns.AuditRecords
 
 local Audit = {}
 ns.Audit = Audit
@@ -7,6 +8,9 @@ ns.Audit = Audit
 local MAX_SNAPSHOTS = 500
 local MAX_TRADES = 300
 local MAX_MAIL = 300
+local MAX_HINTS = 500
+local KEEP_SECONDS = 864000 -- own records older than 10 days go at login
+local GUILD_RECHECK_SECONDS = 10 -- "no guild" must still hold this much later before the guild is forgotten
 local SNAPSHOT_INTERVAL_SECONDS = 600
 local PLAYED_TIMEOUT_SECONDS = 10
 local REQUEST_TIMEOUT_SECONDS = 180
@@ -24,6 +28,7 @@ local silencedChatFrames = {}
 local trade                       -- trade in progress: partner, kind and the latest contents
 local pendingMail                 -- mail being sent, recorded on MAIL_SEND_SUCCESS
 local requests = {}               -- normalized member name -> { name, records, state }
+local joinUnknown = false         -- first run with the addon: a guild the character is already in was joined at an unknown time
 
 ---------------------------------------------------------------------------
 -- Local records (per character)
@@ -32,7 +37,16 @@ local requests = {}               -- normalized member name -> { name, records, 
 -- trade:    t, n (partner), k (g guild / p partner / e external), gm/rm (copper given/received),
 --           gi/ri (items given/received as "itemID:count,...")
 -- mail:     t, d (s sent / r received), n (other player), k, m (copper), c (COD), i (items)
--- The log of blocked actions (ns.char.log) is part of the audit as well.
+-- hint:     t, hk (kind), sev (r red / o orange / y yellow / g grey), a, b, c, d (details as text)
+-- join:     t (0: unknown, the character was already in the guild at the addon's first run), l, p,
+--           g (guild name)
+-- first:    t, l, p of the first snapshot with the addon
+-- guild:    the guild the character was last seen in, or nil
+-- sent:     recipient -> time up to which the own records went out (AuditSync's push watermark;
+--           it moves on sending, the holders' catch-up covers what got lost); cleared on a join
+-- The log of blocked actions (ns.char.log) is part of the audit as well. Every new own record
+-- except interval snapshots fires AUDIT_RECORDED with its encoded line; every snapshot also goes
+-- out as C, the last state.
 ---------------------------------------------------------------------------
 
 local function Records()
@@ -55,6 +69,16 @@ local function Trim(list, max, keep)
 	end
 end
 
+local function Recorded(rt, rec)
+	ns.Fire("AUDIT_RECORDED", R.Encode(rt, rec))
+end
+
+local function AddRecord(rt, list, record, max)
+	list[#list + 1] = record
+	Trim(list, max)
+	Recorded(rt, record)
+end
+
 local function CurrentPlayed()
 	if playedBase then
 		return playedBase + math.floor(GetTime() - playedBaseTime)
@@ -62,9 +86,65 @@ local function CurrentPlayed()
 	return nil
 end
 
+---------------------------------------------------------------------------
+-- Own notices: the member's addon finds them as they happen and sends them like other records
+---------------------------------------------------------------------------
+
+local function IsAllowedExternalItem(itemID)
+	if ns.Data.conjuredFood[itemID] or ns.Data.conjuredWater[itemID] or ns.Data.healthstones[itemID] then
+		return true
+	end
+	local classID = C_Item and C_Item.GetItemInfoInstant and select(6, C_Item.GetItemInfoInstant(itemID))
+	return classID == QUEST_ITEM
+end
+
+local function ReceivedForbiddenItems(items)
+	for itemID in (items or ""):gmatch("(%d+):%d+") do
+		if not IsAllowedExternalItem(tonumber(itemID)) then
+			return true
+		end
+	end
+	return false
+end
+
+-- A login after the previous snapshot: hk, sev, a, b, c of the notice, or nil.
+-- "played": seconds played without the addon. "changed": level before, level after and
+-- "<copper before>:<copper after>" when level or gold differ from the logout.
+function Audit.CheckLogin(previous, current)
+	if not previous or not current or current.r ~= "in" then
+		return nil
+	end
+	local tolerance = previous.r == "out" and LOGOUT_TOLERANCE_SECONDS or CRASH_TOLERANCE_SECONDS
+	if previous.p and current.p and current.p - previous.p > tolerance then
+		return "played", "r", current.p - previous.p
+	elseif previous.r == "out" and (current.l ~= previous.l or current.m ~= previous.m) then
+		return "changed", "o", previous.l, current.l, (previous.m or 0) .. ":" .. (current.m or 0)
+	end
+	return nil
+end
+
+-- The details are kept as text, exactly as they come out of R.Decode on the officer's side.
+function Audit.AddHint(hk, sev, a, b, c, d)
+	local hint = { t = GetServerTime(), hk = hk, sev = sev, a = R.Plain(a), b = R.Plain(b), c = R.Plain(c), d = R.Plain(d) }
+	AddRecord("H", Records().hints, hint, MAX_HINTS)
+	return hint
+end
+
+local function SetFirst(snapshot)
+	local data = Records()
+	data.first = { t = snapshot.t, l = snapshot.l, p = snapshot.p }
+	Recorded("F", data.first)
+end
+
+---------------------------------------------------------------------------
+-- Snapshots
+---------------------------------------------------------------------------
+
 local function TakeSnapshot(reason)
-	local snapshots = Records().snapshots
-	snapshots[#snapshots + 1] = {
+	local data = Records()
+	local snapshots = data.snapshots
+	local previous = snapshots[#snapshots]
+	local snapshot = {
 		t = GetServerTime(),
 		l = UnitLevel("player"),
 		x = UnitXP("player"),
@@ -72,7 +152,27 @@ local function TakeSnapshot(reason)
 		p = CurrentPlayed(),
 		r = reason,
 	}
-	Trim(snapshots, MAX_SNAPSHOTS, function(snapshot) return snapshot.r == "lvl" end)
+	snapshots[#snapshots + 1] = snapshot
+	Trim(snapshots, MAX_SNAPSHOTS, function(s) return s.r == "lvl" end)
+	-- Interval snapshots stay with the member; they only go out as the last state.
+	if reason ~= "int" then
+		Recorded("S", snapshot)
+	end
+	Recorded("C", snapshot)
+	if reason ~= "in" then
+		return
+	end
+	-- The first login with the addon; records from 0.8 got their first state on load.
+	if not data.first then
+		SetFirst(snapshots[1])
+		if (snapshot.p or 0) > LOGOUT_TOLERANCE_SECONDS then
+			Audit.AddHint("install", "r", snapshot.l, snapshot.p)
+		end
+	end
+	local hk, sev, a, b, c = Audit.CheckLogin(previous, snapshot)
+	if hk then
+		Audit.AddHint(hk, sev, a, b, c)
+	end
 end
 
 local function TakeIntervalSnapshot()
@@ -82,11 +182,6 @@ local function TakeIntervalSnapshot()
 		return
 	end
 	TakeSnapshot("int")
-end
-
-local function AddRecord(list, record, max)
-	list[#list + 1] = record
-	Trim(list, max)
 end
 
 local function KindOfName(name)
@@ -162,7 +257,75 @@ ns.On("PLAYER_LOGOUT", function()
 end)
 
 ns.RegisterCallback("LOGIN", function()
+	Audit.PruneOwn(GetServerTime())
 	C_Timer.NewTicker(SNAPSHOT_INTERVAL_SECONDS, TakeIntervalSnapshot)
+end)
+
+---------------------------------------------------------------------------
+-- Joining a guild
+---------------------------------------------------------------------------
+
+ns.RegisterCallback("INIT", function()
+	local data = Records()
+	if data.first then
+		return
+	end
+	-- First run with the addon (or the first after 0.8): a guild the character is already in at
+	-- the first roster update was joined at an unknown time.
+	joinUnknown = true
+	-- Records from 0.8 have no first state: the oldest snapshot is it, taken now before PruneOwn
+	-- can drop it at login.
+	if #data.snapshots > 0 then
+		SetFirst(data.snapshots[1])
+	end
+end)
+
+-- The client may report "no guild" for a moment at login; the guild is forgotten only if that
+-- still holds a little later. Without a guild, a guild seen later is a real join.
+local function ForgetGuildIfGone()
+	C_Timer.After(GUILD_RECHECK_SECONDS, function()
+		if ns.char and not IsInGuild() then
+			Records().guild = nil
+			joinUnknown = false
+		end
+	end)
+end
+
+ns.RegisterCallback("LOGIN", function()
+	if not IsInGuild() then
+		ForgetGuildIfGone()
+	end
+end)
+
+ns.On("PLAYER_GUILD_UPDATE", function()
+	if not IsInGuild() then
+		ForgetGuildIfGone()
+	end
+end)
+
+ns.RegisterCallback("ROSTER_UPDATED", function()
+	if not ns.char then
+		return
+	end
+	local name = ns.Guild.GetName()
+	local data = Records()
+	if not name or ns.IsSecret(name) or name == data.guild then
+		return
+	end
+	data.guild = name
+	if joinUnknown and not data.join then
+		data.join = { t = 0, l = 0, g = name }
+		Recorded("J", data.join)
+	else
+		-- A real join: the officers there have none of our data (they dropped it if we were in this
+		-- guild before), so the push watermarks start over.
+		data.sent = {}
+		local played = CurrentPlayed()
+		data.join = { t = GetServerTime(), l = UnitLevel("player"), p = played, g = name }
+		Recorded("J", data.join)
+		Audit.AddHint("join", "g", data.join.l, played, name)
+	end
+	joinUnknown = false
 end)
 
 ---------------------------------------------------------------------------
@@ -221,7 +384,11 @@ ns.On("UI_INFO_MESSAGE", function(_, first, second)
 	end
 	if trade.gi ~= "" or trade.ri ~= "" or trade.gm > 0 or trade.rm > 0 then
 		trade.t = GetServerTime()
-		AddRecord(Records().trades, trade, MAX_TRADES)
+		AddRecord("T", Records().trades, trade, MAX_TRADES)
+		local gold, forbidden = trade.gm > 0 or trade.rm > 0, ReceivedForbiddenItems(trade.ri)
+		if trade.k == "e" and (gold or forbidden) then
+			Audit.AddHint("trade", gold and "r" or "o", trade.n, trade.gm, trade.rm, forbidden and "1" or "0")
+		end
 	end
 	trade = nil
 end)
@@ -229,6 +396,13 @@ end)
 ---------------------------------------------------------------------------
 -- Mail (Mail.lua reports sends and takes it allowed)
 ---------------------------------------------------------------------------
+
+local function RecordMail(mail)
+	AddRecord("M", Records().mail, mail, MAX_MAIL)
+	if mail.k == "e" then
+		Audit.AddHint("mail", "o", mail.n, mail.d)
+	end
+end
 
 ns.RegisterCallback("MAIL_SENDING", function(recipient)
 	local items = {}
@@ -251,7 +425,7 @@ end)
 ns.On("MAIL_SEND_SUCCESS", function()
 	if pendingMail then
 		pendingMail.t = GetServerTime()
-		AddRecord(Records().mail, pendingMail, MAX_MAIL)
+		RecordMail(pendingMail)
 		pendingMail = nil
 	end
 end)
@@ -287,7 +461,7 @@ ns.RegisterCallback("INBOX_TAKE", function(functionName, index, attachIndex)
 	if takenMoney == 0 and #items == 0 then
 		return
 	end
-	AddRecord(Records().mail, {
+	RecordMail({
 		t = GetServerTime(),
 		d = "r",
 		n = sender,
@@ -295,8 +469,84 @@ ns.RegisterCallback("INBOX_TAKE", function(functionName, index, attachIndex)
 		m = takenMoney,
 		c = cod or 0,
 		i = table.concat(items, ","),
-	}, MAX_MAIL)
+	})
 end)
+
+---------------------------------------------------------------------------
+-- Blocked actions (ns.Log); only those the member caused are notices
+---------------------------------------------------------------------------
+
+local BLOCKED_HINT_KINDS = { ah = true, mail = true, trade = true, group = true, portal = true } -- not invite, summon
+
+ns.RegisterCallback("LOGGED", function(entry)
+	Recorded("L", entry)
+	if BLOCKED_HINT_KINDS[entry.k] then
+		Audit.AddHint("blocked", "y", entry.k, entry.m)
+	end
+end)
+
+---------------------------------------------------------------------------
+-- Own records for the officers, kept 10 days
+---------------------------------------------------------------------------
+
+-- Encoded own records with t >= since, without interval snapshots; always the newest snapshot
+-- as C and the join and first state.
+function Audit.OwnRaws(since)
+	since = since or 0
+	local data, raws = Records(), {}
+	local function Add(rt, rec)
+		raws[#raws + 1] = R.Encode(rt, rec)
+	end
+	local last = data.snapshots[#data.snapshots]
+	if last then
+		Add("C", last)
+	end
+	if data.join then
+		Add("J", data.join)
+	end
+	if data.first then
+		Add("F", data.first)
+	end
+	for _, s in ipairs(data.snapshots) do
+		if s.t >= since and s.r ~= "int" then
+			Add("S", s)
+		end
+	end
+	for _, list in ipairs({ { "H", data.hints }, { "T", data.trades }, { "M", data.mail }, { "L", ns.char.log } }) do
+		for _, rec in ipairs(list[2]) do
+			if rec.t >= since then
+				Add(list[1], rec)
+			end
+		end
+	end
+	return raws
+end
+
+-- Drops entries with t < cutoff in place; keepNewest spares the last one.
+local function DropOlder(list, cutoff, keepNewest)
+	local count, kept = #list, 0
+	for i = 1, count do
+		local entry = list[i]
+		if (entry.t or 0) >= cutoff or (keepNewest and i == count) then
+			kept = kept + 1
+			list[kept] = entry
+		end
+	end
+	for i = count, kept + 1, -1 do
+		list[i] = nil
+	end
+end
+
+-- Own records older than 10 days go; the newest snapshot and the join and first state stay.
+function Audit.PruneOwn(now)
+	local cutoff = now - KEEP_SECONDS
+	local data = Records()
+	DropOlder(data.snapshots, cutoff, true)
+	DropOlder(data.trades, cutoff)
+	DropOlder(data.mail, cutoff)
+	DropOlder(data.hints, cutoff)
+	DropOlder(ns.char.log, cutoff)
+end
 
 ---------------------------------------------------------------------------
 -- Sharing with officers (on request)
@@ -304,39 +554,36 @@ end)
 -- Officer -> member (whisper): "AUDREQ <since>"
 -- Member -> officer:           "AUD <record>\030<record>..." (paced), then "AUDEND <count> <time>",
 --                              or "AUDNO" if the officer may not see the data.
--- Records: "S t l x m p r", "T t n k gm rm gi ri", "M t d n k m c i", "L t kind text" (tab separated)
+-- Records as in AuditRecords.lua; "Request data" answers carry only the kinds versions up to 0.8
+-- know: "S t l x m p r", "T t n k gm rm gi ri", "M t d n k m c i", "L t kind text" (tab
+-- separated). Notices and the last, join and first state (H, C, J, F) come with the automatic
+-- audit (AuditSync.lua).
 ---------------------------------------------------------------------------
-
--- Log texts contain item links; send them as plain "[Name]".
-local function PlainText(text)
-	text = tostring(text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|H.-|h(.-)|h", "%1")
-	return (text:gsub("[\t\030]", " "):sub(1, 180))
-end
 
 local function EncodeRecords(since)
 	local records = {}
-	local function Add(...)
-		records[#records + 1] = table.concat({ ... }, "\t")
+	local function Add(rt, rec)
+		records[#records + 1] = R.Encode(rt, rec)
 	end
 	local data = Records()
 	for _, s in ipairs(data.snapshots) do
 		if s.t >= since then
-			Add("S", s.t, s.l, s.x, s.m, s.p or "", s.r)
+			Add("S", s)
 		end
 	end
 	for _, tr in ipairs(data.trades) do
 		if tr.t >= since then
-			Add("T", tr.t, tr.n, tr.k, tr.gm, tr.rm, tr.gi, tr.ri)
+			Add("T", tr)
 		end
 	end
 	for _, mail in ipairs(data.mail) do
 		if mail.t >= since then
-			Add("M", mail.t, mail.d, mail.n, mail.k, mail.m, mail.c, mail.i)
+			Add("M", mail)
 		end
 	end
 	for _, entry in ipairs(ns.char.log) do
 		if entry.t >= since then
-			Add("L", entry.t, entry.k, PlainText(entry.m))
+			Add("L", entry)
 		end
 	end
 	return records
@@ -359,23 +606,47 @@ local function Pack(records)
 	return messages
 end
 
--- Whether the sender's guild rank may view officer notes.
-local function MayRequest(sender)
-	if not ns.IsActive() or not ns.Rules.Get("audit") then
-		return false
-	end
-	local rankIndex = ns.Guild.GetRankIndex(sender)
-	if not rankIndex then
-		return false
-	end
+-- The "view officer note" permission of a rank: true or false, nil while it cannot be read.
+local function RankCanViewOfficerNote(rankIndex)
 	if C_GuildInfo and C_GuildInfo.GuildControlGetRankFlags then
 		local ok, flags = pcall(C_GuildInfo.GuildControlGetRankFlags, rankIndex + 1)
 		if ok and type(flags) == "table" and flags[VIEW_OFFICER_NOTE_FLAG] ~= nil then
 			return flags[VIEW_OFFICER_NOTE_FLAG] and true or false
 		end
 	end
+	return nil
+end
+
+-- Whether the named guild member's rank may view officer notes (false for names outside the guild).
+function Audit.IsOfficer(name)
+	local rankIndex = ns.Guild.GetRankIndex(name)
+	if not rankIndex then
+		return false
+	end
+	local canView = RankCanViewOfficerNote(rankIndex)
+	if canView ~= nil then
+		return canView
+	end
 	-- Permissions not readable: only the guild master and the rank below.
 	return rankIndex <= 1
+end
+
+-- Whether the rank of the named member and its permissions are loaded. Until then a "no" from
+-- C_GuildInfo.CanViewOfficerNote may only mean "not known yet". Without the API there is nothing
+-- to wait for.
+function Audit.RankRightsKnown(name)
+	local rankIndex = ns.Guild.GetRankIndex(name)
+	if not rankIndex then
+		return false
+	end
+	if not (C_GuildInfo and C_GuildInfo.GuildControlGetRankFlags) then
+		return true
+	end
+	return RankCanViewOfficerNote(rankIndex) ~= nil
+end
+
+local function MayRequest(sender)
+	return ns.IsActive() and Audit.IsOfficer(sender)
 end
 
 ns.Comm.RegisterHandler("AUDREQ", function(sender, channel, payload)
@@ -394,7 +665,7 @@ ns.Comm.RegisterHandler("AUDREQ", function(sender, channel, payload)
 end)
 
 ---------------------------------------------------------------------------
--- Officers: requests and the cache of fetched data
+-- Officers: requests ("Request data"); the answers go into the guild's store (AuditAuto.lua)
 ---------------------------------------------------------------------------
 
 function Audit.CanView()
@@ -403,64 +674,6 @@ function Audit.CanView()
 	end
 	local ok, canView = pcall(C_GuildInfo.CanViewOfficerNote)
 	return ok and canView and true or false
-end
-
-local function GetCache(key, name)
-	local cache = ns.db.auditCache[key]
-	if not cache then
-		cache = { name = name, snapshots = {}, trades = {}, mail = {}, log = {}, latest = 0 }
-		ns.db.auditCache[key] = cache
-	end
-	return cache
-end
-
--- Records already in the cache, by their raw text (requests overlap by one second).
-local function BuildSeen(cache)
-	local seen = {}
-	for _, list in ipairs({ cache.snapshots, cache.trades, cache.mail, cache.log }) do
-		for _, entry in ipairs(list) do
-			if entry.raw then
-				seen[entry.raw] = true
-			end
-		end
-	end
-	return seen
-end
-
-local function StoreRecord(cache, record, seen)
-	local fields = { strsplit("\t", record) }
-	local t = tonumber(fields[2])
-	if not t or seen[record] then
-		return false
-	end
-	local kind, list, entry = fields[1], nil, nil
-	if kind == "S" then
-		list, entry = cache.snapshots, { l = tonumber(fields[3]) or 0, x = tonumber(fields[4]) or 0, m = tonumber(fields[5]) or 0, p = tonumber(fields[6]), r = fields[7] }
-	elseif kind == "T" then
-		list, entry = cache.trades, { n = fields[3] or "?", k = fields[4], gm = tonumber(fields[5]) or 0, rm = tonumber(fields[6]) or 0, gi = fields[7] or "", ri = fields[8] or "" }
-	elseif kind == "M" then
-		list, entry = cache.mail, { d = fields[3], n = fields[4] or "?", k = fields[5], m = tonumber(fields[6]) or 0, c = tonumber(fields[7]) or 0, i = fields[8] or "" }
-	elseif kind == "L" then
-		list, entry = cache.log, { k = fields[3], m = fields[4] or "" }
-	else
-		return false
-	end
-	-- The sequence number keeps the member's order among records of the same second.
-	cache.seq = (cache.seq or 0) + 1
-	entry.t, entry.raw, entry.seq = t, record, cache.seq
-	list[#list + 1] = entry
-	seen[record] = true
-	cache.latest = math.max(cache.latest or 0, t)
-	return true
-end
-
-local function SortByTime(list)
-	table.sort(list, function(a, b)
-		if a.t ~= b.t then
-			return a.t < b.t
-		end
-		return (a.seq or 0) < (b.seq or 0)
-	end)
 end
 
 local function FinishRequest(key, state)
@@ -477,8 +690,7 @@ function Audit.Request(name)
 	if not key or not Audit.CanView() or ns.Guild.IsSelf(name) then
 		return
 	end
-	local cache = ns.db.auditCache[key]
-	local since = cache and cache.latest or 0
+	local since = ns.AuditAuto.LatestTime(key)
 	local sent, code = ns.Comm.Send("AUDREQ\t" .. since, "WHISPER", name)
 	if not sent then
 		ns.Warn("audit", ns.Comm.FailureText(code))
@@ -515,15 +727,14 @@ local function ActiveRequest(sender, channel)
 	return nil
 end
 
+-- Records already stored (requests overlap by one second) do not count again.
 ns.Comm.RegisterHandler("AUD", function(sender, channel, payload)
 	local key, request = ActiveRequest(sender, channel)
 	if not key or not payload then
 		return
 	end
-	local cache = GetCache(key, sender)
-	request.seen = request.seen or BuildSeen(cache)
 	for record in payload:gmatch("[^\030]+") do
-		if StoreRecord(cache, record, request.seen) then
+		if ns.AuditAuto.StoreFetched(key, sender, record) then
 			request.records = request.records + 1
 		end
 	end
@@ -535,15 +746,6 @@ ns.Comm.RegisterHandler("AUDEND", function(sender, channel)
 	if not key then
 		return
 	end
-	local cache = GetCache(key, sender)
-	cache.fetched = GetServerTime()
-	for _, list in ipairs({ cache.snapshots, cache.trades, cache.mail, cache.log }) do
-		SortByTime(list)
-	end
-	Trim(cache.snapshots, MAX_SNAPSHOTS, function(snapshot) return snapshot.r == "lvl" end)
-	Trim(cache.trades, MAX_TRADES)
-	Trim(cache.mail, MAX_MAIL)
-	Trim(cache.log, 200)
 	ns.Print("audit", L.AUDIT_RECEIVED, Ambiguate(sender, "guild"), request.records)
 	FinishRequest(key, "done")
 end)
@@ -556,35 +758,19 @@ ns.Comm.RegisterHandler("AUDNO", function(sender, channel)
 	end
 end)
 
--- The data shown for a member: our own records for ourselves, otherwise the fetched cache (or nil).
+-- The data shown for a member: our own records for ourselves, otherwise what the guild's store
+-- holds (or nil).
 function Audit.GetData(key)
 	if key and ns.Guild.IsSelf(key) then
 		local records = Records()
 		return { own = true, snapshots = records.snapshots, trades = records.trades, mail = records.mail, log = ns.char.log, fetched = GetServerTime() }
 	end
-	return ns.db.auditCache[key]
+	return ns.AuditAuto.GetMemberData(key)
 end
 
 ---------------------------------------------------------------------------
 -- Analysis: things officers should look at
 ---------------------------------------------------------------------------
-
-local function IsAllowedExternalItem(itemID)
-	if ns.Data.conjuredFood[itemID] or ns.Data.conjuredWater[itemID] or ns.Data.healthstones[itemID] then
-		return true
-	end
-	local classID = C_Item and C_Item.GetItemInfoInstant and select(6, C_Item.GetItemInfoInstant(itemID))
-	return classID == QUEST_ITEM
-end
-
-local function ReceivedForbiddenItems(items)
-	for itemID in (items or ""):gmatch("(%d+):%d+") do
-		if not IsAllowedExternalItem(tonumber(itemID)) then
-			return true
-		end
-	end
-	return false
-end
 
 function Audit.FormatDuration(seconds)
 	seconds = math.max(0, math.floor(seconds or 0))
@@ -605,14 +791,11 @@ function Audit.GetFlags(data)
 	end
 	local snapshots = data.snapshots
 	for i = 2, #snapshots do
-		local previous, current = snapshots[i - 1], snapshots[i]
-		if current.r == "in" then
-			local tolerance = previous.r == "out" and LOGOUT_TOLERANCE_SECONDS or CRASH_TOLERANCE_SECONDS
-			if previous.p and current.p and current.p - previous.p > tolerance then
-				Flag(current.t, L.AUDIT_FLAG_PLAYED:format(Audit.FormatDuration(current.p - previous.p)))
-			elseif previous.r == "out" and (current.l ~= previous.l or current.m ~= previous.m) then
-				Flag(current.t, L.AUDIT_FLAG_CHANGED)
-			end
+		local hk, _, seconds = Audit.CheckLogin(snapshots[i - 1], snapshots[i])
+		if hk == "played" then
+			Flag(snapshots[i].t, L.AUDIT_FLAG_PLAYED:format(Audit.FormatDuration(seconds)))
+		elseif hk == "changed" then
+			Flag(snapshots[i].t, L.AUDIT_FLAG_CHANGED)
 		end
 	end
 	for _, tr in ipairs(data.trades) do
@@ -710,6 +893,70 @@ end
 
 function Audit.FormatLog(entry)
 	return ("%s  %s"):format(When(entry.t), entry.m or "")
+end
+
+---------------------------------------------------------------------------
+-- Notices: text, tag, colour and filter
+---------------------------------------------------------------------------
+
+local HINT_TAGS = {
+	played = "HINT_TAG_NOADDON", install = "HINT_TAG_INSTALL", changed = "HINT_TAG_CHANGED", trade = "HINT_TAG_TRADE",
+	mail = "HINT_TAG_MAIL", blocked = "HINT_TAG_BLOCKED", join = "HINT_TAG_JOIN",
+}
+local HINT_FILTERS = { played = "noaddon", install = "noaddon", changed = "offline", trade = "trade", mail = "mail", blocked = "blocked", join = "join" }
+local HINT_COLORS = { r = "ff5555", o = "ff9a3c", y = "ffe066", g = "999999" }
+
+local function HintDuration(text)
+	return Audit.FormatDuration(tonumber(text))
+end
+
+local function HintMoney(text)
+	return Audit.FormatMoney(tonumber(text) or 0)
+end
+
+local function HintTradeMoney(text)
+	local copper = tonumber(text) or 0
+	return copper > 0 and Audit.FormatMoney(copper) or L.AUDIT_NOTHING
+end
+
+-- The short text of a notice; the details are text, as R.Decode gives them.
+function Audit.FormatHint(hint)
+	local hk, a, b, c = hint.hk, hint.a or "", hint.b or "", hint.c or ""
+	if hk == "played" then
+		return L.AUDIT_FLAG_PLAYED:format(HintDuration(a))
+	elseif hk == "install" then
+		return L.HINT_INSTALL:format(tonumber(a) or 0, HintDuration(b))
+	elseif hk == "changed" then
+		local before, after = strsplit(":", c)
+		return L.HINT_CHANGED:format(tonumber(a) or 0, tonumber(b) or 0, HintMoney(before), HintMoney(after))
+	elseif hk == "trade" then
+		local text = L.HINT_TRADE:format(Ambiguate(a, "guild"), HintTradeMoney(b), HintTradeMoney(c))
+		return hint.d == "1" and (text .. L.HINT_TRADE_ITEMS) or text
+	elseif hk == "mail" then
+		return (b == "s" and L.AUDIT_FLAG_MAIL_SENT or L.AUDIT_FLAG_MAIL_RECEIVED):format(Ambiguate(a, "guild"))
+	elseif hk == "blocked" then
+		return b -- the log text in the member's language
+	elseif hk == "join" then
+		return L.HINT_JOIN:format(c, tonumber(a) or 0, b ~= "" and HintDuration(b) or L.HINT_JOIN_UNKNOWN_PLAYED)
+	end
+	return a
+end
+
+function Audit.HintTag(hint)
+	if hint.hk == "trade" and hint.sev == "r" then
+		return L.HINT_TAG_TRADE_GOLD
+	end
+	local key = HINT_TAGS[hint.hk]
+	return key and L[key] or tostring(hint.hk)
+end
+
+function Audit.HintColor(hint)
+	return HINT_COLORS[hint.sev] or HINT_COLORS.g
+end
+
+-- "noaddon", "trade", "mail", "offline", "blocked", "join", or nil for an unknown kind.
+function Audit.HintFilter(hk)
+	return HINT_FILTERS[hk]
 end
 
 ns.On("GET_ITEM_INFO_RECEIVED", function()

@@ -15,7 +15,7 @@ local function itemChanged(side, slot)
 	FireEvent(side == "player" and "TRADE_PLAYER_ITEM_CHANGED" or "TRADE_TARGET_ITEM_CHANGED", slot)
 	RunTimers()
 end
-local DEFAULT_TAG = "[GuildFoundForever A=1 M=1 C=1 H=1 G=0 Q=1 O=1 I=0 S=0 P=0 L=50 X=1 D=0 E=1 R=0 B=1 U=1 T=0 F=0]"
+local DEFAULT_TAG = "[GuildFoundForever A=1 M=1 C=1 H=1 G=0 Q=1 O=1 I=0 S=0 P=0 L=50 X=1 D=0 E=1 R=0 B=1 T=0 F=0 V=0]"
 local function coloredLink(color, id, name) return ("|c%s|Hitem:%d::::::::20:::::::|h[%s]|h|r"):format(color, id, name) end
 local function deathsOf(name) local n = 0 for _, e in ipairs(ns.db.deathlog) do if e.n == name then n = n + 1 end end return n end
 
@@ -217,6 +217,17 @@ ResetCalls()
 FireEvent("AUCTION_HOUSE_SHOW")
 check(CallCount("CloseAuctionHouse") == 0, "inactive without guild")
 IN_GUILD = true
+do
+	local logged = {}
+	ns.RegisterCallback("LOGGED", function(entry) logged[#logged + 1] = entry end)
+	Advance(11) -- the visit above was logged just now; the 10 s duplicate guard would skip this one
+	IN_GUILD = false
+	ResetCalls()
+	FireEvent("AUCTION_HOUSE_SHOW")
+	check(CallCount("HideUIPanel") == 0 and ns.char.log[#ns.char.log].k == "ah" and lastLog() == "Auktionshaus geöffnet (ohne Gilde)", "without a guild the auction house stays open, the visit is recorded")
+	check(logged[#logged] and logged[#logged].k == "ah", "LOGGED fired for the new entry")
+	IN_GUILD = true
+end
 
 -- Mail ---------------------------------------------------------------------
 ResetCalls()
@@ -389,6 +400,7 @@ GROUP = {}
 ResetCalls()
 FireEvent("PARTY_INVITE_REQUEST", "Fremder")
 check(CallCount("DeclineGroup") == 1, "stranger's invite declined at 50")
+check(ns.char.log[#ns.char.log].k == "invite", "declined invite logged as invite")
 ResetCalls()
 FireEvent("PARTY_INVITE_REQUEST", "Freund")
 check(CallCount("DeclineGroup") == 0, "guild invite accepted")
@@ -413,6 +425,7 @@ SUMMONER = "Fremder"
 ResetCalls()
 FireEvent("CONFIRM_SUMMON")
 check(CallCount("CancelSummon") == 1, "summon by stranger cancelled")
+check(ns.char.log[#ns.char.log].k == "summon", "declined summon logged as summon")
 StaticPopup_Show("CONFIRM_SUMMON")
 local hidden = 0
 for _, c in ipairs(CALLS) do if c.name == "StaticPopup_Hide" and c.args[1] == "CONFIRM_SUMMON" then hidden = hidden + 1 end end
@@ -443,6 +456,7 @@ ZONE = "Stormwind City"
 FireEvent("ZONE_CHANGED_NEW_AREA")
 RunTimers()
 check(lastLog():find("Portal von Fremder nach Stormwind", 1, true) ~= nil, "arriving at the destination is logged")
+check(ns.char.log[#ns.char.log].k == "portal", "portal logged as portal")
 
 local logCount = #ns.char.log
 ZONE = "Elwynn Forest"
@@ -796,6 +810,12 @@ drain()
 local provider = WorldMapFrame.provider
 check(provider ~= nil, "data provider added to the world map")
 check(G.ParseRulesTag("[GuildFoundForever K=0]").guildMap == nil, "old guild map code K is ignored: the map is always on")
+local oldRules = G.ParseRulesTag("[GuildFoundForever A=1 U=0]")
+check(oldRules and oldRules.audit == nil and oldRules.blockAuctionHouse == true, "code U of older tags is ignored")
+local relayRules = G.ParseRulesTag("[GuildFoundForever V=1]")
+check(relayRules and relayRules.auditRelay == true, "code V switches the relay on")
+check(ns.db.rules.audit == nil and ns.db.rules.auditRelay == false, "the old setting is gone, the relay is off by default")
+check(FindWidgetByText("FontString", "Mitglieder speichern Audit-Daten für Offiziere zwischen") ~= nil, "relay rule in the rules tab")
 
 -- Sending
 PLAYER_MAP, PLAYER_POS = 1429, { 0.5, 0.5 }
@@ -881,6 +901,944 @@ SlashCmdList.GUILDFOUNDFOREVER("test map")
 check(Said("keine Kartenposition"), "test pin without a map position explains why")
 PLAYER_MAP = nil
 RunTickers()
+
+-- Audit: records -------------------------------------------------------------------
+local R = ns.AuditRecords
+do
+	local hintRaw = R.Encode("H", { t = 500, hk = "trade", sev = "r", a = "Fremder", b = "2500", c = "0", d = "0" })
+	check(hintRaw == "H\t500\ttrade\tr\tFremder\t2500\t0\t0", "hint encoded")
+	local rt, hint = R.Decode(hintRaw)
+	check(rt == "H" and hint.t == 500 and hint.hk == "trade" and hint.a == "Fremder" and R.HintId(hint) == "500:trade:Fremder", "hint decoded, its id")
+	local oldStyle = "S\t100\t10\t0\t1000\t\tout"
+	local srt, s = R.Decode(oldStyle)
+	check(srt == "S" and s.p == nil and s.m == 1000 and R.Encode("S", s) == oldStyle, "snapshots keep the old format, empty played time stays empty")
+	check(R.Tier("H") == 1 and R.Tier("C") == 1 and R.Tier("E") == 1 and R.Tier("T") == 2 and R.Tier("L") == 2, "tiers")
+	local logRaw = R.Encode("L", { t = 1, k = "ah", m = "a\tb\030c " .. ("x"):rep(300) })
+	check(not logRaw:find("\030", 1, true) and select(2, logRaw:gsub("\t", "")) == 3 and #logRaw <= 190, "free text cleaned and cut")
+	-- Character 29 joins member groups in AUDX: free text must not carry a forged group.
+	local groupRaw = R.Encode("L", { t = 1, k = "ah", m = "a\029Fremder\tH\t1\tmail" })
+	check(not groupRaw:find("\029", 1, true) and select(2, groupRaw:gsub("\t", "")) == 3, "free text: character 29 replaced")
+	check(R.Decode("Q\t1\tx") == nil and R.Decode("S\tabc") == nil and R.Time("E\t77\t1\tMagus\t5:blocked:ah") == 77, "unknown kinds and broken times rejected")
+end
+
+-- Audit: store ---------------------------------------------------------------------
+local St = ns.AuditStore
+do
+	local gs = St.New()
+	local h1 = R.Encode("H", { t = 1000, hk = "blocked", sev = "y", a = "ah", b = "AH" })
+	check(St.Add(gs, "x-r", "X-R", h1, 5000) and not St.Add(gs, "x-r", "X-R", h1, 6000) and gs.members["x-r"].recs[h1] == 5000, "stored once, the first arrival time counts")
+	St.Add(gs, "x-r", "X-R", R.Encode("C", { t = 2000, l = 10, x = 0, m = 5, p = 100, r = "int" }), 5000)
+	St.Add(gs, "x-r", "X-R", R.Encode("C", { t = 1500, l = 9, x = 0, m = 5, p = 90, r = "int" }), 5001)
+	check(R.Time(gs.members["x-r"].c) == 2000, "an older last state does not replace a newer one")
+	St.Add(gs, "x-r", "X-R", R.Encode("F", { t = 10, l = 1, p = 0 }), 5000)
+	St.Add(gs, "x-r", "X-R", R.Encode("F", { t = 20, l = 2, p = 5 }), 5000)
+	check(R.Time(gs.members["x-r"].f) == 10, "the first state stays the first")
+	St.Add(gs, "x-r", "X-R", R.Encode("T", { t = 1100, n = "Y", k = "e", gm = 0, rm = 1, gi = "", ri = "" }), 7000)
+	local tier1, tier2 = St.Since(gs, 5000, 1), St.Since(gs, 6000, 2)
+	check(#tier1 == 1 and #tier1[1].raws == 3 and #tier2 == 1 and tier2[1].raws[1]:find("^T\t") ~= nil, "since: by tier and arrival time, inclusive")
+	local id = R.HintId(select(2, R.Decode(h1)))
+	St.SetDone(gs, "x-r", id, 1, "Offi", 3000)
+	St.SetDone(gs, "x-r", id, 0, "Andere", 3500)
+	local timeline = St.Timeline(gs)
+	check(#timeline == 1 and timeline[1].at == 5000 and timeline[1].done.s == 0 and timeline[1].done.by == "Andere", "timeline: the later mark wins")
+	local data = St.GetMember(gs, "x-r")
+	check(data.name == "X-R" and #data.hints == 1 and #data.trades == 1 and data.last.l == 10 and data.first.l == 1 and data.latest == 1100, "member data decoded")
+	St.Prune(gs, 1000 + 864001)
+	check(#St.Timeline(gs) == 0 and gs.members["x-r"].c and gs.members["x-r"].f and #St.GetMember(gs, "x-r").trades == 1, "pruning: the notice and its marks go, states stay, the newer trade stays")
+	local leftover = false
+	for raw in pairs(gs.members["x-r"].recs) do
+		if raw:find("^E\t") then
+			leftover = true
+		end
+	end
+	check(not leftover, "pruning: done marks of a pruned notice leave recs")
+	gs.direct = { ["x-r"] = 5 }
+	St.RemoveMembers(gs, function(key) return key ~= "x-r" end)
+	check(gs.members["x-r"] == nil and gs.direct["x-r"] == nil, "former members removed, with their direct watermark")
+	-- The id time decides, not the mark's own time (cutoff here is 1001).
+	local ps = St.New()
+	local oldMark = R.Encode("E", { t = 5000, s = 1, by = "A", id = "500:blocked:ah" })
+	local newMark = R.Encode("E", { t = 100, s = 1, by = "A", id = "2000:blocked:ah" })
+	St.Add(ps, "p-r", "P-R", oldMark, 5000)
+	St.Add(ps, "p-r", "P-R", newMark, 5000)
+	St.Prune(ps, 1000 + 864001)
+	check(ps.members["p-r"] and ps.members["p-r"].recs[oldMark] == nil and ps.members["p-r"].recs[newMark] == 5000, "pruning marks: by the time in the id")
+	-- Equal-time last states converge: the larger raw wins whatever the arrival order.
+	local c1 = R.Encode("C", { t = 2000, l = 10, x = 0, m = 5, p = 100, r = "int" })
+	local c2 = R.Encode("C", { t = 2000, l = 11, x = 0, m = 5, p = 100, r = "int" })
+	local s1, s2 = St.New(), St.New()
+	St.Add(s1, "k", "K", c1, 1)
+	St.Add(s1, "k", "K", c2, 2)
+	St.Add(s2, "k", "K", c2, 1)
+	St.Add(s2, "k", "K", c1, 2)
+	local want = c1 > c2 and c1 or c2
+	check(s1.members.k.c == want and s2.members.k.c == want and s1.members.k.recs[c1 == want and c2 or c1] == nil, "equal-time last states converge on the larger raw")
+	-- Tie of two marks: done wins. A replaced J leaves recs too.
+	St.Add(gs, "y-r", "Y-R", h1, 1)
+	St.SetDone(gs, "y-r", id, 0, "A", 50)
+	St.SetDone(gs, "y-r", id, 1, "B", 50)
+	check(St.Timeline(gs)[1].done.s == 1, "tie: done wins")
+	local j1, j2 = R.Encode("J", { t = 5, l = 1, p = 0, g = "" }), R.Encode("J", { t = 6, l = 2, p = 0, g = "" })
+	St.Add(gs, "y-r", "Y-R", j1, 1)
+	St.Add(gs, "y-r", "Y-R", j2, 1)
+	check(gs.members["y-r"].j == j2 and gs.members["y-r"].recs[j1] == nil, "a replaced join state leaves recs")
+	-- R15: per member and kind at most St.CAPS entries, the newest stay (all within the 10 days here).
+	local cs = St.New()
+	for i = 1, 301 do
+		St.Add(cs, "c-r", "C-R", R.Encode("T", { t = 5000 + i, n = "X", k = "e", gm = 0, rm = i, gi = "", ri = "" }), 1)
+	end
+	St.Add(cs, "c-r", "C-R", R.Encode("C", { t = 4000, l = 10, x = 0, m = 5, p = 100, r = "out" }), 1)
+	St.Prune(cs, 6000)
+	local capped = St.GetMember(cs, "c-r")
+	check(#capped.trades == 300 and capped.trades[1].t == 5002 and capped.trades[300].t == 5301 and capped.last, "pruning: a member keeps the newest 300 trades")
+	local hs = St.New()
+	for i = 1, 501 do
+		St.Add(hs, "h-r", "H-R", R.Encode("H", { t = 5000 + i, hk = "mail", sev = "o", a = "X", b = "s" }), 1)
+	end
+	St.SetDone(hs, "h-r", R.HintId({ t = 5001, hk = "mail", a = "X" }), 1, "Offi", 5600)
+	St.SetDone(hs, "h-r", R.HintId({ t = 5501, hk = "mail", a = "X" }), 1, "Offi", 5600)
+	St.Prune(hs, 6000)
+	local hintLine, marksLeft = St.Timeline(hs), 0
+	for raw in pairs(hs.members["h-r"].recs) do if raw:find("^E\t") then marksLeft = marksLeft + 1 end end
+	check(#hintLine == 500 and hintLine[500].hint.t == 5002 and hintLine[1].done and marksLeft == 1, "pruning: at most 500 notices, the marks of dropped ones go with them")
+	-- R18: interval snapshots (from "Request data" answers or the old cache) stay but never go out.
+	local is = St.New()
+	local intRaw = R.Encode("S", { t = 100, l = 5, x = 0, m = 1, p = 10, r = "int" })
+	local outRaw = R.Encode("S", { t = 101, l = 5, x = 0, m = 1, p = 11, r = "out" })
+	St.Add(is, "i-r", "I-R", intRaw, 1)
+	St.Add(is, "i-r", "I-R", outRaw, 1)
+	local passedOn, passedOnlyKey = St.Since(is, 0, 2), St.Since(is, 0, 2, "i-r")
+	check(#St.GetMember(is, "i-r").snapshots == 2 and #passedOn == 1 and #passedOn[1].raws == 1 and passedOn[1].raws[1] == outRaw
+		and #passedOnlyKey[1].raws == 1, "interval snapshots stay in the store but are never passed on")
+	-- R27: the timeline decodes only the notices and the done marks, not the details.
+	local ts = St.New()
+	for i = 1, 20 do
+		St.Add(ts, "t-r", "T-R", R.Encode("T", { t = i, n = "X", k = "e", gm = 0, rm = i, gi = "", ri = "" }), 1)
+	end
+	St.Add(ts, "t-r", "T-R", R.Encode("H", { t = 30, hk = "mail", sev = "o", a = "X", b = "s" }), 1)
+	St.SetDone(ts, "t-r", "30:mail:X", 1, "O", 40)
+	local decodes, decode = 0, R.Decode
+	R.Decode = function(...) decodes = decodes + 1 return decode(...) end
+	local cheap = St.Timeline(ts)
+	R.Decode = decode
+	check(#cheap == 1 and cheap[1].done and cheap[1].done.s == 1 and cheap[1].done.by == "O" and decodes == 2, "the timeline decodes only notices and done marks (" .. decodes .. ")")
+end
+
+-- Audit: sync between players ---------------------------------------------------------
+local S = ns.AuditSync
+do
+	-- retry[targetKey] = n: the next n sends to that target report throttling ("retry"); every send
+	-- to such a target is noted in attempts. lose[targetKey]: messages to that target are sent but
+	-- never handled (lost on the way or dropped by the receiver). unseen[key]: online, but the others'
+	-- rosters do not show it yet (it just logged in), so nobody counts it as online or capable.
+	local net = { now = 0, seq = 0, timers = {}, players = {}, log = {}, relay = false, retry = {}, attempts = {}, lose = {}, unseen = {} }
+	local function NetAfter(at, fn) net.seq = net.seq + 1 net.timers[#net.timers + 1] = { at = at, seq = net.seq, fn = fn } end
+	-- p.session counts the logins: every login (and /reload) runs a fresh engine, as in the game; the
+	-- saved data (p.store, p.sent, p.own) stays. p.ready = false: no store (yet, or during a /reload).
+	local function NetPlayer(name, holder)
+		local p = { name = name, key = name:lower(), online = false, holder = holder, own = {}, sent = {}, session = 1 }
+		local function isHolder(other) return other.holder or net.relay end
+		function p.NewEngine()
+			local session = p.session
+			p.engine = S.New({
+				self = p.key, selfName = name, key = function(n) return n:lower() end,
+				now = function() return net.now end,
+				after = function(delay, fn) NetAfter(net.now + delay, fn) end,
+				send = function(message, target)
+					local to = net.players[target:lower()]
+					-- net.offlineOk: a whisper to an offline player reports success (not known for Forever)
+					if not p.online or session ~= p.session or not to or not (to.online or net.offlineOk) then return false, 12 end
+					local retry = net.retry[to.key]
+					if retry then
+						net.attempts[#net.attempts + 1] = { from = p.key, to = to.key, at = net.now, retry = retry > 0 }
+						if retry > 0 then net.retry[to.key] = retry - 1 return false, "retry" end
+					end
+					net.log[#net.log + 1] = { from = p.key, to = to.key, message = message, at = net.now }
+					if net.lose[to.key] then return true end
+					local command, payload = strsplit("\t", message, 2)
+					NetAfter(net.now, function() if to.online then to.engine:Handle(name, command, payload) end end)
+					return true
+				end,
+				holders = function()
+					local list = {}
+					for key, other in pairs(net.players) do
+						if other ~= p and other.online and not net.unseen[key] and isHolder(other) then list[#list + 1] = { key = key, name = other.name, officer = other.holder and true or false } end
+					end
+					return list
+				end,
+				peers = function()
+					local list = {}
+					for key, other in pairs(net.players) do
+						if other ~= p and other.online and not net.unseen[key] then list[#list + 1] = { key = key, name = other.name } end
+					end
+					return list
+				end,
+				isHolder = function(key) local o = net.players[key] return o ~= nil and isHolder(o) end,
+				capable = function(key) local o = net.players[key] return o ~= nil and o.online and not net.unseen[key] end,
+				isMember = function() return true end, -- everybody in the test net is in the guild
+				amHolder = function() return isHolder(p) end,
+				amOfficer = function() return p.holder and true or false end,
+				-- A store for everyone who is ready, so data that reaches a non-holder would show.
+				store = function()
+					if p.ready == false then return nil end
+					p.store = p.store or St.New()
+					return p.store
+				end,
+				ownSince = function(since)
+					local list = {}
+					for _, raw in ipairs(p.own) do if R.Time(raw) >= since then list[#list + 1] = raw end end
+					return list
+				end,
+				sent = function() return p.sent end,
+				onStored = function() end,
+				onSyncDone = function() end,
+			})
+		end
+		p.NewEngine()
+		net.players[p.key] = p
+		return p
+	end
+	-- Runs every due timer in time order; holders tick every INTERVAL_SECONDS.
+	local function NetRun(seconds)
+		local stop = net.now + seconds
+		while true do
+			table.sort(net.timers, function(a, b) if a.at ~= b.at then return a.at < b.at end return a.seq < b.seq end)
+			local nextTick = (math.floor(net.now / S.INTERVAL_SECONDS) + 1) * S.INTERVAL_SECONDS
+			local t = net.timers[1]
+			if nextTick <= stop and (not t or nextTick < t.at) then
+				net.now = nextTick
+				for _, p in pairs(net.players) do if p.online then p.engine:Tick() end end
+			elseif t and t.at <= stop then
+				table.remove(net.timers, 1)
+				net.now = math.max(net.now, t.at)
+				t.fn()
+			else
+				break
+			end
+		end
+		net.now = stop
+	end
+	-- p's HELLO reaches everyone online, and their HI comes back.
+	local function NetHello(p)
+		for _, other in pairs(net.players) do
+			if other.online and other ~= p then
+				other.engine:MemberSeen(p.key, p.name)
+				p.engine:MemberSeen(other.key, other.name)
+			end
+		end
+	end
+	local function NetOnline(p, online)
+		if online and p.loggedIn then
+			p.session = p.session + 1
+			p.NewEngine()
+		end
+		p.online = online
+		p.loggedIn = p.loggedIn or online
+		for _, other in pairs(net.players) do if other.online and other ~= p then other.engine:PeersChanged() end end
+		if online then
+			NetHello(p)
+			p.engine:Start()
+		end
+	end
+	-- The end of a /reload: a fresh engine, ready again, HELLO and Start.
+	local function NetReload(p)
+		p.session = p.session + 1
+		p.NewEngine()
+		p.ready = true
+		NetHello(p)
+		p.engine:Start()
+	end
+	local function NetRecord(p, raw) p.own[#p.own + 1] = raw p.engine:Record(raw) end
+	local function Has(p, memberKey, raw) local m = p.store and p.store.members[memberKey] return m ~= nil and m.recs[raw] ~= nil end
+	local function NetReset(relay)
+		net.now, net.timers, net.players, net.log, net.relay = 0, {}, {}, {}, relay or false
+		net.retry, net.attempts, net.offlineOk, net.lose, net.unseen = {}, {}, false, {}, {}
+	end
+	-- Messages from one player to another from the log entry `from` on.
+	local function Between(fromKey, toKey, first, pattern)
+		local list = {}
+		for i = first or 1, #net.log do
+			local entry = net.log[i]
+			if entry.from == fromKey and entry.to == toKey and (not pattern or entry.message:find(pattern)) then list[#list + 1] = entry end
+		end
+		return list
+	end
+	local H = 3600
+	local ahHint = R.Encode("H", { t = 11.5 * H, hk = "blocked", sev = "y", a = "ah", b = "AH" })
+
+	-- The example from the spec: member 10-12, officer A 11-13, officer B logs in later.
+	NetReset()
+	local m, a, b = NetPlayer("Mitglied", false), NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	NetRun(10 * H) NetOnline(m, true)
+	NetRun(1 * H) NetOnline(a, true)
+	NetRun(0.5 * H) NetRecord(m, ahHint)
+	NetRun(0.5 * H) NetOnline(m, false)
+	NetRun(0.5 * H) NetOnline(b, true)
+	NetRun(10 * 60)
+	check(Has(a, "mitglied", ahHint) and Has(b, "mitglied", ahHint), "B logs in at 12:30 while A is online: B gets the notice from A")
+	NetReset()
+	m, a, b = NetPlayer("Mitglied", false), NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	NetRun(10 * H) NetOnline(m, true)
+	NetRun(1 * H) NetOnline(a, true)
+	NetRun(0.5 * H) NetRecord(m, ahHint)
+	NetRun(0.5 * H) NetOnline(m, false)
+	NetRun(1 * H) NetOnline(a, false)
+	NetRun(1 * H) NetOnline(b, true)
+	NetRun(10 * 60)
+	check(not Has(b, "mitglied", ahHint), "B logs in at 14:00, nobody who has it is online: not yet")
+	NetOnline(m, true)
+	NetRun(10 * 60)
+	check(Has(b, "mitglied", ahHint), "the member comes back: B gets it on first contact")
+
+	-- Relay: with the guild rule, a member online 10-15 passes it on, with and without A.
+	for _, withA in ipairs({ false, true }) do
+		NetReset(true)
+		m, a, b = NetPlayer("Mitglied", false), NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+		local relay = NetPlayer("Lager", false)
+		NetRun(10 * H) NetOnline(m, true) NetOnline(relay, true)
+		NetRun(1 * H) if withA then NetOnline(a, true) end
+		NetRun(0.5 * H) NetRecord(m, ahHint)
+		NetRun(0.5 * H) NetOnline(m, false)
+		NetRun(1 * H) if withA then NetOnline(a, false) end
+		NetRun(1 * H) NetOnline(b, true)
+		NetRun(10 * 60)
+		check(Has(b, "mitglied", ahHint), "relay keeps the notice for B" .. (withA and " (A was online too)" or ""))
+	end
+
+	-- Many officers: three direct recipients, the rest through the rounds.
+	NetReset()
+	m = NetPlayer("Mitglied", false)
+	local officers = {}
+	for i = 1, 30 do officers[i] = NetPlayer("Offi" .. i, true) NetOnline(officers[i], true) end
+	NetOnline(m, true)
+	NetRun(60)
+	local before = #net.log
+	NetRecord(m, ahHint)
+	NetRun(10)
+	local direct = 0
+	for i = before + 1, #net.log do if net.log[i].from == "mitglied" and net.log[i].message:find("^AUDX") then direct = direct + 1 end end
+	check(direct == 3, "a new record goes to three officers directly")
+	-- Along the ring (R12) all 30 have it after 18 rounds.
+	NetRun(20 * S.INTERVAL_SECONDS)
+	local holding = 0
+	for _, o in ipairs(officers) do if Has(o, "mitglied", ahHint) then holding = holding + 1 end end
+	check(holding == 30, "after some rounds every officer has it")
+
+	-- Done marks: the later one wins everywhere.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	a.store, b.store = St.New(), St.New()
+	NetOnline(a, true) NetOnline(b, true)
+	St.Add(a.store, "mitglied", "Mitglied", ahHint, net.now)
+	local hintId = R.HintId(select(2, R.Decode(ahHint)))
+	St.SetDone(a.store, "mitglied", hintId, 1, "OffiA", net.now)
+	NetRun(S.INTERVAL_SECONDS * 3)
+	check(St.Timeline(b.store)[1] and St.Timeline(b.store)[1].done.s == 1, "a done mark reaches the other officer")
+	St.SetDone(b.store, "mitglied", hintId, 0, "OffiB", net.now)
+	NetRun(S.INTERVAL_SECONDS * 3)
+	check(St.Timeline(a.store)[1].done.s == 0 and St.Timeline(a.store)[1].done.by == "OffiB", "done marks: the later one wins on both sides")
+
+	-- Permissions: no holder, no data; foreign data only from holders.
+	NetReset()
+	m = NetPlayer("Mitglied", false)
+	local other = NetPlayer("Anderer", false)
+	a = NetPlayer("OffiA", true)
+	NetOnline(m, true) NetOnline(other, true) NetOnline(a, true)
+	other.engine:Handle("Mitglied", "AUDX", "Mitglied\t" .. ahHint)
+	a.engine:Handle("Anderer", "AUDX", "Mitglied\t" .. ahHint)
+	check(not Has(other, "mitglied", ahHint) and not Has(a, "mitglied", ahHint), "a normal member keeps nothing; a non-holder cannot forward")
+	-- Nothing goes out to a non-holder: no AUDS answer, no AUDM answer about the member or others.
+	local leakRaw = R.Encode("T", { t = 9, n = "X", k = "e", gm = 0, rm = 1, gi = "", ri = "" })
+	m.own[#m.own + 1] = leakRaw
+	a.store = a.store or St.New()
+	St.Add(a.store, "mitglied", "Mitglied", leakRaw, net.now)
+	NetRun(10)
+	local function SentTo(from, to)
+		local n = 0
+		for _, entry in ipairs(net.log) do if entry.from == from and entry.to == to then n = n + 1 end end
+		return n
+	end
+	net.log = {}
+	a.engine:Handle("Anderer", "AUDS", "0\t0")
+	NetRun(10)
+	check(SentTo("offia", "anderer") == 0, "a non-holder's AUDS gets no answer")
+	net.log = {}
+	a.engine:Handle("Anderer", "AUDM", "Mitglied\t0")
+	NetRun(10)
+	check(SentTo("offia", "anderer") == 0, "a non-holder's AUDM about another member gets no answer")
+	net.log = {}
+	m.engine:Handle("Anderer", "AUDM", "Mitglied\t0")
+	NetRun(10)
+	check(SentTo("mitglied", "anderer") == 0, "a non-holder's AUDM about the member itself gets no answer")
+
+	-- Same second as the end of a sync: still delivered (Prüfschwerpunkt 1).
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	a.store, b.store = St.New(), St.New()
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(60)
+	local mark = b.store.peers.offia and b.store.peers.offia.s1
+	check(mark ~= nil, "B noted how far it synced with A")
+	local lateHint = R.Encode("H", { t = mark, hk = "mail", sev = "o", a = "X", b = "s" })
+	St.Add(a.store, "mitglied", "Mitglied", lateHint, mark)
+	NetRun(S.INTERVAL_SECONDS * 3)
+	check(Has(b, "mitglied", lateHint), "a record from the same second as the sync end arrives with the next sync")
+
+	-- Details on request: from a holder while the member is offline.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	a.store, b.store = St.New(), St.New()
+	b.store.peers.offia = { s1 = 1e9, s2 = 1e9 }
+	local tradeRaw = R.Encode("T", { t = 5, n = "X", k = "e", gm = 0, rm = 1, gi = "", ri = "" })
+	St.Add(a.store, "mitglied", "Mitglied", tradeRaw, 1)
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(60)
+	check(not Has(b, "mitglied", tradeRaw), "nothing new by the sync")
+	b.engine:RequestMember("mitglied", "Mitglied")
+	NetRun(60)
+	check(Has(b, "mitglied", tradeRaw), "details on request from a holder")
+
+	-- First sync of a new officer: tier 1 first, paced.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	NetOnline(a, true)
+	a.store = a.store or St.New()
+	for i = 1, 300 do
+		St.Add(a.store, "m" .. i, "M" .. i, R.Encode("H", { t = i, hk = "mail", sev = "o", a = "X", b = "s" }), 1)
+		St.Add(a.store, "m" .. i, "M" .. i, R.Encode("T", { t = i, n = "X", k = "e", gm = 0, rm = 1, gi = "", ri = "" }), 1)
+	end
+	-- The entries arrived at 1: let the clock pass that before B asks, or A's answer at 0 marks 0
+	-- and the inclusive boundary sends everything again with the next sync.
+	NetRun(60)
+	net.log = {}
+	NetOnline(b, true)
+	NetRun(3 * H)
+	local firstTier2, lastTier1 = nil, 0
+	for i, entry in ipairs(net.log) do
+		if entry.from == "offia" and entry.message:find("^AUDX") then
+			if entry.message:find("\tT\t", 1, true) then firstTier2 = firstTier2 or i else lastTier1 = i end
+		end
+	end
+	check(firstTier2 and lastTier1 < firstTier2, "first sync: all notices before the details")
+	check(#St.Timeline(b.store) == 300 and #St.GetMember(b.store, "m300").trades == 1, "first sync complete")
+	local lastAt, paced = nil, true
+	for _, entry in ipairs(net.log) do
+		if entry.from == "offia" then
+			if lastAt and entry.at - lastAt < S.PACE_SECONDS then paced = false end
+			lastAt = entry.at
+		end
+	end
+	check(paced, "at most one message per second")
+	-- R28: the details (tier 2) leave room for the rest of the addon: one message per 3 paces.
+	local tier2Times = {}
+	for _, entry in ipairs(net.log) do
+		local details = entry.message:find("^AUDX") and entry.message:find("\tT\t", 1, true)
+		if entry.from == "offia" and (details or entry.message:find("^AUDE\t2\t")) then tier2Times[#tier2Times + 1] = entry.at end
+	end
+	local slow = #tier2Times > 10
+	for i = 2, #tier2Times do if tier2Times[i] - tier2Times[i - 1] < 3 * S.PACE_SECONDS then slow = false end end
+	check(slow, "tier 2 answers: at most one message per 3 seconds (" .. #tier2Times .. ")")
+
+	-- An AUDE nobody asked for; a failed send drops what waits for that target, the watermark stays.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	a.store = St.New()
+	NetOnline(a, true) NetOnline(m, true)
+	NetRun(10)
+	a.engine:Handle("OffiB", "AUDE", "1\t500")
+	check(a.store.peers.offib == nil, "an AUDE nobody asked for changes nothing")
+	local logRaws = {}
+	for i = 1, 6 do
+		logRaws[i] = R.Encode("L", { t = 100 + i, k = "ah", m = ("x"):rep(150) })
+		NetRecord(m, logRaws[i])
+	end
+	NetRun(S.BUNDLE_SECONDS)
+	a.online = false -- gone before anyone noticed
+	NetRun(S.PACE_SECONDS)
+	check(m.engine:Queued() == 0 and m.sent.offia == nil and Has(a, "mitglied", logRaws[1]) and not Has(a, "mitglied", logRaws[2]),
+		"a failed send drops the rest for that target, the watermark stays")
+	NetRun(10)
+	NetOnline(a, true)
+	NetRun(30)
+	local got = 0
+	for _, raw in ipairs(logRaws) do if Has(a, "mitglied", raw) then got = got + 1 end end
+	check(got == 6 and m.sent.offia ~= nil, "back online: everything since the watermark comes again")
+
+	-- Throttling (R10): "retry" keeps the message at the head and tries again 3 paces later.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(a, true) NetOnline(m, true)
+	NetRun(10)
+	net.retry.offia = 4
+	logRaws = {}
+	for i = 1, 3 do
+		logRaws[i] = R.Encode("L", { t = 200 + i, k = "ah", m = ("y"):rep(150) })
+		NetRecord(m, logRaws[i])
+	end
+	NetRun(60)
+	got = 0
+	for _, raw in ipairs(logRaws) do if Has(a, "mitglied", raw) then got = got + 1 end end
+	local retried, spaced = 0, true
+	for i, try in ipairs(net.attempts) do
+		if try.retry then
+			retried = retried + 1
+			local nextTry = net.attempts[i + 1]
+			if not nextTry or nextTry.at - try.at < 3 * S.PACE_SECONDS then spaced = false end
+		end
+	end
+	check(got == 3 and m.sent.offia ~= nil and retried == 4 and #net.attempts == 7, "throttled: everything arrives after the retries, the watermark moves")
+	check(spaced, "throttled: at least three paces between the attempts")
+	local order = {}
+	for _, entry in ipairs(net.log) do
+		if entry.from == "mitglied" and entry.to == "offia" then
+			for i, raw in ipairs(logRaws) do if entry.message:find(raw, 1, true) then order[#order + 1] = i end end
+		end
+	end
+	check(table.concat(order, ",") == "1,2,3", "throttled: the message stays at the head, the order holds")
+	-- A target that stays throttled is given up after 10 retries; the other recipient still gets its share.
+	NetReset()
+	m, a, b = NetPlayer("Mitglied", false), NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	local stuck, free = a, b
+	if S.Score("mitglied", "offib") > S.Score("mitglied", "offia") then stuck, free = b, a end
+	NetOnline(a, true) NetOnline(b, true) NetOnline(m, true)
+	NetRun(10)
+	net.retry[stuck.key] = 1000
+	NetRecord(m, ahHint)
+	NetRun(120)
+	local tries = 0
+	for _, try in ipairs(net.attempts) do if try.from == "mitglied" then tries = tries + 1 end end
+	check(tries == 11 and not Has(stuck, "mitglied", ahHint) and m.sent[stuck.key] == nil, "still throttled after 10 retries: that target is dropped")
+	check(Has(free, "mitglied", ahHint) and m.sent[free.key] ~= nil and m.engine:Queued() == 0, "the other recipient is not blocked for good")
+
+	-- R11: an AUDS answer leaves out what the holder stored about the asker.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	a.store = St.New()
+	local aboutB = R.Encode("H", { t = 7, hk = "mail", sev = "o", a = "Y", b = "s" })
+	St.Add(a.store, "offib", "OffiB", aboutB, 0)
+	St.Add(a.store, "mitglied", "Mitglied", ahHint, 0)
+	NetRun(60)
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(60)
+	local aboutAsker = false
+	for _, entry in ipairs(net.log) do
+		if entry.from == "offia" and entry.to == "offib" and entry.message:find("^AUDX")
+			and (entry.message:find("^AUDX\tOffiB\t") or entry.message:find("\029OffiB\t", 1, true)) then
+			aboutAsker = true
+		end
+	end
+	check(Has(b, "mitglied", ahHint) and not aboutAsker, "the asker gets no AUDX about itself")
+	-- R19: a done mark another holder set on our own notice reaches us; nothing else about us does.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	a.store, b.store = St.New(), St.New()
+	local ownNotice = R.Encode("H", { t = 40, hk = "mail", sev = "o", a = "Q", b = "s" })
+	St.Add(b.store, "offia", "OffiA", ownNotice, 0)
+	St.Add(b.store, "offia", "OffiA", R.Encode("C", { t = 41, l = 9, x = 0, m = 1, p = 5, r = "int" }), 0)
+	local ownMark = St.SetDone(b.store, "offia", R.HintId(select(2, R.Decode(ownNotice))), 1, "OffiB", 0)
+	NetRun(60)
+	NetOnline(b, true) NetOnline(a, true) -- A comes last and asks B at Start
+	NetRun(60)
+	local aboutSelf = 0
+	for raw in pairs(a.store.members.offia and a.store.members.offia.recs or {}) do if raw ~= ownMark then aboutSelf = aboutSelf + 1 end end
+	check(Has(a, "offia", ownMark) and aboutSelf == 0, "a done mark on our own notice reaches us, nothing else about us")
+	a.engine:Handle("Mitglied", "AUDX", "OffiA\t" .. R.Encode("E", { t = 50, s = 0, by = "Mitglied", id = "40:mail:Q" }))
+	local mine = St.GetMember(a.store, "offia")
+	check(mine and mine.done["40:mail:Q"] and mine.done["40:mail:Q"].s == 1, "marks about us only from holders")
+
+	-- Flow control: no new AUDS while the asked peer owes its AUDE 2, and at most for three intervals.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	b.engine.Handle = function() end -- B never answers
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(4 * S.INTERVAL_SECONDS + 60)
+	local asks = {}
+	for _, entry in ipairs(net.log) do if entry.from == "offia" and entry.message:find("^AUDS") then asks[#asks + 1] = entry.at end end
+	check(#asks == 2 and asks[2] - asks[1] == 3 * S.INTERVAL_SECONDS, "no new AUDS while the answer is owed, again after three intervals")
+	-- A second AUDS while the tier 2 answer to that peer still waits: tier 1 again, tier 2 once.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	a.store, b.store = St.New(), St.New()
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(60)
+	St.Add(a.store, "mitglied", "Mitglied", R.Encode("T", { t = 30, n = "X", k = "e", gm = 0, rm = 1, gi = "", ri = "" }), 60)
+	net.log = {}
+	a.engine:Handle("OffiB", "AUDS", "0\t0")
+	a.engine:Handle("OffiB", "AUDS", "0\t0")
+	NetRun(30)
+	local ends = { 0, 0 }
+	for _, entry in ipairs(net.log) do
+		local tier = entry.from == "offia" and tonumber(entry.message:match("^AUDE\t(%d)\t"))
+		if tier then ends[tier] = ends[tier] + 1 end
+	end
+	check(ends[1] == 2 and ends[2] == 1, "a repeated AUDS gets tier 1 again but only one tier 2 answer")
+
+	-- R12: among 20 holders one new entry travels at most 3 + 3 * H times.
+	NetReset()
+	m = NetPlayer("Mitglied", false)
+	local ring = {}
+	for i = 1, 20 do ring[i] = NetPlayer("Ring" .. i, true) NetOnline(ring[i], true) end
+	NetOnline(m, true)
+	NetRun(60)
+	local fresh = R.Encode("H", { t = 77, hk = "mail", sev = "o", a = "Z", b = "s" })
+	NetRecord(m, fresh)
+	NetRun(15 * S.INTERVAL_SECONDS) -- all have it after 9 rounds, the count stops growing after 12
+	local copies, everyone = 0, true
+	for _, entry in ipairs(net.log) do if entry.message:find(fresh, 1, true) then copies = copies + 1 end end
+	for _, o in ipairs(ring) do if not Has(o, "mitglied", fresh) then everyone = false end end
+	check(everyone and copies <= 3 + 3 * 20, "20 holders: all get the entry, sent at most 3 + 3 * H times (" .. copies .. ")")
+	-- R12: a new ring neighbour after the first completed sync sends only what came since gs.base.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	a.store, b.store = St.New(), St.New()
+	NetRun(1000)
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(60)
+	check(b.store.base ~= nil and b.store.base > 0, "the first completed sync sets the base")
+	local c = NetPlayer("OffiC", true)
+	c.store = St.New()
+	local oldRaw = R.Encode("H", { t = 50, hk = "mail", sev = "o", a = "Alt", b = "s" })
+	local newRaw = R.Encode("H", { t = 1500, hk = "mail", sev = "o", a = "Neu", b = "s" })
+	St.Add(c.store, "mitglied", "Mitglied", oldRaw, 100)
+	NetRun(500)
+	St.Add(c.store, "mitglied", "Mitglied", newRaw, net.now)
+	NetOnline(c, true)
+	NetRun(6 * S.INTERVAL_SECONDS)
+	check(Has(b, "mitglied", newRaw) and not Has(b, "mitglied", oldRaw), "a new neighbour after the first sync: only entries since the base")
+	-- R14: every completed tier 2 sync moves the base; a neighbour met later sends only what came
+	-- since the newer base.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	a.store, b.store = St.New(), St.New()
+	NetRun(1000)
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(60)
+	local firstBase = b.store.base
+	NetRun(2000)
+	local laterBase = b.store.base
+	check(firstBase and laterBase and laterBase > firstBase + 1000, "every completed sync moves the base forward")
+	c = NetPlayer("OffiC", true)
+	c.store = St.New()
+	local midRaw = R.Encode("H", { t = 60, hk = "mail", sev = "o", a = "Mitte", b = "s" })
+	local lateRaw = R.Encode("H", { t = 61, hk = "mail", sev = "o", a = "Spaet", b = "s" })
+	St.Add(c.store, "mitglied", "Mitglied", midRaw, (firstBase or 0) + 100)
+	St.Add(c.store, "mitglied", "Mitglied", lateRaw, net.now)
+	NetOnline(c, true)
+	NetRun(6 * S.INTERVAL_SECONDS)
+	check(Has(b, "mitglied", lateRaw) and not Has(b, "mitglied", midRaw), "a neighbour met later sends only entries since the newer base")
+	-- R12: one AUDX carries several members.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	a.store, b.store = St.New(), St.New()
+	local small = {}
+	for i = 1, 3 do
+		small[i] = R.Encode("H", { t = i, hk = "mail", sev = "o", a = "Q", b = "s" })
+		St.Add(a.store, "x" .. i, "X" .. i, small[i], 0)
+	end
+	NetRun(10)
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(60)
+	local grouped, all = false, true
+	for _, entry in ipairs(net.log) do
+		if entry.from == "offia" and entry.message:find("^AUDX") and entry.message:find("\029", 1, true) then grouped = true end
+	end
+	for i = 1, 3 do if not Has(b, "x" .. i, small[i]) then all = false end end
+	check(grouped and all, "one AUDX carries several members, all are stored")
+	local own, forged = R.Encode("H", { t = 3, hk = "mail", sev = "o", a = "P", b = "s" }), R.Encode("H", { t = 4, hk = "mail", sev = "o", a = "P", b = "s" })
+	b.engine:Handle("Mitglied", "AUDX", "Mitglied\t" .. own .. "\029Anderer\t" .. forged)
+	check(Has(b, "mitglied", own) and not Has(b, "anderer", forged), "a member's AUDX counts only for its own group")
+
+	-- R24: officers first: with 2 officers and 20 relays online, the 3 direct recipients are both
+	-- officers and one relay.
+	NetReset(true)
+	m = NetPlayer("Mitglied", false)
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	for i = 1, 20 do NetOnline(NetPlayer("Lager" .. i, false), true) end
+	NetOnline(a, true) NetOnline(b, true) NetOnline(m, true)
+	NetRun(60)
+	local firstEntry = #net.log + 1
+	NetRecord(m, ahHint)
+	NetRun(10)
+	local hit, relaysHit = {}, 0
+	for i = firstEntry, #net.log do
+		local entry = net.log[i]
+		if entry.from == "mitglied" and entry.message:find("^AUDX") then hit[entry.to] = true end
+	end
+	for key in pairs(hit) do if key:find("^lager") then relaysHit = relaysHit + 1 end end
+	local chosen = m.engine:Recipients()
+	check(hit.offia and hit.offib and relaysHit == 1 and #chosen == 3 and chosen[1].officer and chosen[2].officer and not chosen[3].officer,
+		"2 officers and 20 relays online: the member sends to both officers and one relay")
+
+	-- M5: a target that went offline loses its queued messages at the next change of the peers, even
+	-- where a whisper to an offline player reports success.
+	local function BigStore(p, count)
+		p.store = St.New()
+		for i = 1, count do
+			St.Add(p.store, "m" .. i, "M" .. i, R.Encode("T", { t = i, n = "X", k = "e", gm = 0, rm = i, gi = "", ri = "" }), 1)
+		end
+	end
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	BigStore(a, 400)
+	b.store = St.New()
+	NetRun(60)
+	net.offlineOk = true
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(30)
+	local underWay = #Between("offia", "offib")
+	NetOnline(b, false)
+	local gone = #net.log + 1
+	NetRun(600)
+	check(underWay > 0 and #Between("offia", "offib", gone) == 0 and a.engine:Queued() == 0, "a target gone offline: its queued messages are dropped")
+	-- M5: an answer is not sent to a target that lost the holder role since.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	BigStore(a, 400)
+	b.store = St.New()
+	NetRun(60)
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(30)
+	underWay = #Between("offia", "offib")
+	b.holder = false
+	local demoted = #net.log + 1
+	NetRun(600)
+	check(underWay > 0 and #Between("offia", "offib", demoted) == 0 and a.engine:Queued() == 0, "a target that lost the holder role gets no more answers")
+
+	-- R23: catch-up driven by the receiver. A holder that cannot store yet (no store) while the
+	-- member already counts it as a holder gets the member's entries once it is ready.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	a.ready = false
+	NetOnline(a, true) NetOnline(m, true)
+	NetRun(60)
+	NetRecord(m, ahHint)
+	NetRun(60)
+	local pushedBefore = m.sent.offia ~= nil and #Between("mitglied", "offia", 1, "^AUDX") > 0
+	a.ready = true
+	NetRun(S.INTERVAL_SECONDS) -- the next tick (in the game also the next roster update) finds it ready
+	check(pushedBefore and Has(a, "mitglied", ahHint), "a holder not ready while the member pushed: it catches up once it is ready")
+	local mark = a.store.direct and a.store.direct.mitglied
+	check(mark ~= nil and mark > 0, "the end of the member's answer is the holder's direct watermark")
+	-- A /reload of the holder: messages to it are lost meanwhile, it catches up when it is back.
+	local reloadHint = R.Encode("H", { t = 20 * H, hk = "mail", sev = "o", a = "Reload", b = "s" })
+	a.ready = false
+	NetRecord(m, reloadHint)
+	NetRun(30)
+	NetReload(a)
+	NetRun(60)
+	check(Has(a, "mitglied", reloadHint), "a holder's /reload: what it missed meanwhile comes with the catch-up")
+	local reloadAsk = Between("offia", "mitglied", 1, "^AUDQ\t")
+	check(#reloadAsk >= 2 and reloadAsk[#reloadAsk].message == "AUDQ\t" .. mark, "the catch-up asks from the direct watermark on")
+	-- A push lost at the receiver comes with the catch-up when the member logs in again.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(a, true) NetOnline(m, true)
+	NetRun(60)
+	net.lose.offia = true
+	-- Recorded now, so it lies before the push watermark the lost push leaves behind.
+	local lostHint = R.Encode("H", { t = net.now, hk = "mail", sev = "o", a = "Verloren", b = "s" })
+	NetRecord(m, lostHint)
+	NetRun(30)
+	net.lose.offia = nil
+	local lostFirst = not Has(a, "mitglied", lostHint) and (m.sent.offia or 0) > R.Time(lostHint)
+	NetOnline(m, false)
+	NetRun(60)
+	NetOnline(m, true)
+	NetRun(60)
+	check(lostFirst and Has(a, "mitglied", lostHint), "a push lost at the receiver arrives with the catch-up at the member's next login")
+	-- Only holders get an answer.
+	net.log = {}
+	m.engine:Handle("Anderer", "AUDQ", "0")
+	local queuedForOther = m.engine:Queued()
+	NetRun(10)
+	check(queuedForOther == 0 and #Between("mitglied", "anderer") == 0, "a non-holder's AUDQ gets no answer, nothing is even queued")
+	-- Part of an answer could not be stored: the watermark stays and the member is asked again.
+	local markBefore = a.store.direct.mitglied
+	local partHint = R.Encode("H", { t = net.now, hk = "mail", sev = "o", a = "Teil", b = "s" })
+	m.own[#m.own + 1] = partHint
+	a.engine:MemberSeen("mitglied")
+	a.ready = false
+	a.engine:Handle("Mitglied", "AUDX", "Mitglied\t" .. partHint)
+	a.ready = true
+	a.engine:Handle("Mitglied", "AUDE", "4\t" .. (markBefore + 100))
+	check(a.store.direct.mitglied == markBefore and not Has(a, "mitglied", partHint), "an answer with a part that could not be stored leaves the watermark")
+	NetRun(30)
+	check(Has(a, "mitglied", partHint) and a.store.direct.mitglied > markBefore, "the member is asked again and the watermark moves then")
+	-- At most 3 holders ask a member, the ones it sends to.
+	NetReset()
+	m = NetPlayer("Mitglied", false)
+	for i = 1, 10 do NetOnline(NetPlayer("Offi" .. i, true), true) end
+	NetRun(60)
+	local loginAt = #net.log + 1
+	NetOnline(m, true)
+	NetRun(60)
+	local askers, same = {}, true
+	for i = loginAt, #net.log do
+		local entry = net.log[i]
+		if entry.to == "mitglied" and entry.message:find("^AUDQ\t") then askers[#askers + 1] = entry.from end
+	end
+	local recipientKeys = {}
+	for _, recipient in ipairs(m.engine:Recipients()) do recipientKeys[recipient.key] = true end
+	for _, key in ipairs(askers) do if not recipientKeys[key] then same = false end end
+	check(#askers == 3 and same, "10 officers online: the 3 the member sends to catch up with it, nobody else")
+	-- Before the start (while HELLO and the HI answers come in) nobody is asked; at the start once.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	m.online, a.online = true, true
+	a.engine:MemberSeen("mitglied")
+	a.engine:PeersChanged()
+	NetRun(10)
+	local early = #Between("offia", "mitglied", 1, "^AUDQ\t")
+	a.engine:Start()
+	NetRun(10)
+	check(early == 0 and #Between("offia", "mitglied", 1, "^AUDQ\t") == 1, "no catch-up before the start, then once")
+	-- An answer queued before our start (a holder asked right after our HELLO) survives the start.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(a, true)
+	m.online = true
+	m.engine:Handle("OffiA", "AUDQ", "0")
+	m.engine:Start()
+	NetRun(10)
+	check(#Between("mitglied", "offia", 1, "^AUDE\t4\t") == 1, "an answer queued before the start still goes out")
+
+	-- An entry that only a catch-up brings: the member never pushes it (older than its push watermarks
+	-- or added without Record).
+	local function Unpushed(p, at, label)
+		local raw = R.Encode("H", { t = at, hk = "mail", sev = "o", a = label, b = "s" })
+		p.own[#p.own + 1] = raw
+		return raw
+	end
+	-- A catch-up ask lost on the way (no AUDE 4): asked again at the first tick CATCH_UP_SECONDS after
+	-- it went out, without a new HELLO of the member.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(a, true) NetOnline(m, true)
+	NetRun(60)
+	local quietHint = Unpushed(m, net.now, "Still")
+	net.lose.mitglied = true
+	a.engine:MemberSeen("mitglied")
+	NetRun(10)
+	net.lose.mitglied = nil
+	local lostAsks = #Between("offia", "mitglied", 1, "^AUDQ\t")
+	NetRun(S.CATCH_UP_SECONDS + S.INTERVAL_SECONDS)
+	check(lostAsks == 2 and Has(a, "mitglied", quietHint), "a lost catch-up ask is made again once it is CATCH_UP_SECONDS old")
+	-- An ask dropped because the member went offline before it went out: the member is asked at once
+	-- when it is back, also within CATCH_UP_SECONDS.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(a, true)
+	net.retry.mitglied = 1000
+	NetOnline(m, true)
+	NetRun(5)
+	local stuckAsk = #Between("offia", "mitglied", 1, "^AUDQ\t") == 0 and a.engine:Queued() > 0
+	NetOnline(m, false)
+	net.retry.mitglied = nil
+	NetRun(5)
+	local backHint = Unpushed(m, 1, "Zurueck")
+	m.sent.offia = net.now
+	NetOnline(m, true)
+	NetRun(60)
+	check(stuckAsk and Has(a, "mitglied", backHint), "an ask dropped while the member was away: asked at once when it is back")
+	-- An ask whose send failed for good: the member is asked again at the next tick.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(a, true)
+	net.retry.mitglied = S.RETRIES + 1
+	NetOnline(m, true)
+	NetRun(60)
+	local failedHint = Unpushed(m, 1, "Fehlschlag")
+	local failed = not Has(a, "mitglied", failedHint) and net.retry.mitglied == 0
+	NetRun(S.INTERVAL_SECONDS)
+	check(failed and Has(a, "mitglied", failedHint), "an ask that could not be sent: asked again at the next tick")
+	-- An ask still waiting in a busy queue (here A's first push to B) is not lost: one AUDQ, also when
+	-- a tick comes CATCH_UP_SECONDS after it was queued.
+	NetReset()
+	m, a, b = NetPlayer("Mitglied", false), NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	for i = 1, 2500 do a.own[i] = R.Encode("T", { t = i, n = "X", k = "e", gm = 0, rm = i, gi = "", ri = "" }) end
+	-- Off the full second: NetRun skips a tick that falls on the time of a timer, and the busy
+	-- queue has one every second.
+	NetRun(14 * S.INTERVAL_SECONDS - 9.5)
+	NetOnline(b, true) NetOnline(a, true)
+	NetRun(8.5)
+	NetOnline(m, true) -- one second before a tick
+	NetRun(S.CATCH_UP_SECONDS + 5)
+	local busy = a.engine:Queued() > 0 and #Between("offia", "mitglied", 1, "^AUDQ\t") == 0
+	NetRun(600)
+	check(busy and #Between("offia", "mitglied", 1, "^AUDQ\t") == 1, "an ask waiting in a busy queue is not made twice")
+
+	-- AUDQ again while the answer to the first one still waits: one answer. Once it went out, a new
+	-- AUDQ is answered again.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(a, true) NetOnline(m, true)
+	NetRun(60)
+	local twiceAt = #net.log + 1
+	m.engine:Handle("OffiA", "AUDQ", "0")
+	m.engine:Handle("OffiA", "AUDQ", "0")
+	NetRun(30)
+	local answers = #Between("mitglied", "offia", twiceAt, "^AUDE\t4\t")
+	m.engine:Handle("OffiA", "AUDQ", "0")
+	NetRun(30)
+	check(answers == 1 and #Between("mitglied", "offia", twiceAt, "^AUDE\t4\t") == 2, "AUDQ twice before the answer went out: answered once")
+
+	-- A push queued before our start (an entry recorded while the HI answers came in) is not queued a
+	-- second time by the start.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(a, true)
+	m.online = true
+	m.own[#m.own + 1] = ahHint
+	m.engine:PeersChanged()
+	m.engine:Start()
+	NetRun(10)
+	local copies = 0
+	for _, entry in ipairs(Between("mitglied", "offia", 1, "^AUDX")) do if entry.message:find(ahHint, 1, true) then copies = copies + 1 end end
+	check(copies == 1, "a push queued before the start goes out once")
+
+	-- The answer to a holder that went offline is dropped, even where a whisper to an offline player
+	-- reports success: at the next change of the peers, or else when it is its turn.
+	for _, quiet in ipairs({ false, true }) do
+		NetReset()
+		m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+		for i = 1, 3000 do m.own[i] = R.Encode("T", { t = i, n = "X", k = "e", gm = 0, rm = i, gi = "", ri = "" }) end
+		NetRun(3100)
+		m.sent.offia = net.now -- only the catch-up carries them
+		net.offlineOk = true
+		NetOnline(m, true) NetOnline(a, true)
+		NetRun(S.ANSWER_GRACE_SECONDS + 30)
+		local answering = #Between("mitglied", "offia", 1, "^AUDX") > 0 and m.engine:Queued() > 0
+		if quiet then a.online = false else NetOnline(a, false) end
+		local away = #net.log + 1
+		NetRun(600)
+		check(answering and #Between("mitglied", "offia", away) == 0 and m.engine:Queued() == 0,
+			"a holder gone offline: the rest of the answer to its catch-up is dropped" .. (quiet and " (no change of the peers)" or ""))
+	end
+	-- A holder that asks right after its login, before our roster shows it online: the answer still
+	-- goes out, its ask is recent.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(m, true)
+	NetRun(60)
+	local earlyHint = Unpushed(m, net.now, "Frueh")
+	net.unseen.offia = true
+	NetOnline(a, true)
+	NetRun(0.5) -- the AUDQ is in, the end of the answer still waits
+	m.engine:PeersChanged()
+	NetRun(30)
+	check(Has(a, "mitglied", earlyHint) and #Between("mitglied", "offia", 1, "^AUDE\t4\t") == 1, "a holder not in our roster yet still gets the answer to its ask")
+
+	-- Done marks are officer state: a member cannot mark its own notices done (a modified client
+	-- could hide them from every officer), its other entries still count.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(a, true) NetOnline(m, true)
+	NetRun(60)
+	local selfMark = R.Encode("E", { t = net.now + 864000, s = 1, by = "OffiA", id = R.HintId(select(2, R.Decode(ahHint))) })
+	a.engine:Handle("Mitglied", "AUDX", "Mitglied\t" .. ahHint .. "\030" .. selfMark)
+	local notice = St.Timeline(a.store)[1]
+	check(notice and not (notice.done and notice.done.s == 1), "a member's done mark on its own notice is not taken")
+end
 
 -- Audit: recording --------------------------------------------------------------
 MAX_LEVEL = 60
@@ -979,11 +1937,6 @@ check(LastAddonMessage() == "AUDNO", "permissions unreadable: only the top two r
 ResetCalls()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDREQ\t0", "GUILD", "Freund-ClassicBetaPvE2")
 check(CallCount("SendAddonMessage") == 0, "requests over the guild channel ignored")
-ns.Rules.Set("audit", false)
-ResetCalls()
-FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDREQ\t0", "WHISPER", "Freund-ClassicBetaPvE2")
-check(LastAddonMessage() == "AUDNO", "audit switched off by the guild: refused")
-ns.Rules.Set("audit", true)
 RunTimers()
 
 -- Audit: officer fetches -------------------------------------------------------
@@ -997,7 +1950,7 @@ ClearMessages()
 for _, message in ipairs(answer) do
 	FireEvent("CHAT_MSG_ADDON", "GFForever", message, "WHISPER", "Freund-ClassicBetaPvE2")
 end
-local cache = ns.db.auditCache["freund-classicbetapve2"]
+local cache = A.GetData("freund-classicbetapve2")
 -- Earlier tests left two identical snapshots in the same second; the transfer keeps one of them.
 local distinctSnapshots = {}
 for _, s in ipairs(records.snapshots) do
@@ -1012,13 +1965,14 @@ check(cachedTrade.gi == "2589:20" and cachedTrade.ri == "5350:5" and cachedTrade
 check(cache.snapshots[#cache.snapshots].r == "out" and cache.snapshots[#cache.snapshots].m == 20000, "snapshot survives the transfer")
 ResetCalls()
 A.Request("Freund-ClassicBetaPvE2")
-check(LastAddonMessage() == "AUDREQ\t" .. cache.latest, "next request only asks for new entries")
+check(LastAddonMessage() == "AUDREQ\t" .. ns.AuditAuto.LatestTime("freund-classicbetapve2"), "next request only asks for new entries")
 for _, message in ipairs(answer) do
 	FireEvent("CHAT_MSG_ADDON", "GFForever", message, "WHISPER", "Freund-ClassicBetaPvE2")
 end
+cache = A.GetData("freund-classicbetapve2")
 check(#cache.snapshots == snapshotTotal and #cache.log == #ns.char.log and #cache.trades == #records.trades, "records received twice are not duplicated")
 FireEvent("CHAT_MSG_ADDON", "GFForever", answer[1], "WHISPER", "Crossy-OtherRealm")
-check(ns.db.auditCache["crossy-otherrealm"] == nil, "unrequested data ignored")
+check(A.GetData("crossy-otherrealm") == nil, "unrequested data ignored")
 A.Request("Crossy-OtherRealm")
 FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDNO", "WHISPER", "Crossy-OtherRealm")
 check(A.GetRequestState("crossy-otherrealm") == "denied", "refusal recorded")
@@ -1057,7 +2011,10 @@ ResetCalls()
 check(A.FormatItems("2589:20,777:1") == "20x |cffffffff[Leinenstoff]|r, 1x [#777]" and CallCount("RequestLoadItem") == 1, "items named; unknown items requested")
 local tradeText = A.FormatTrade(cachedTrade)
 check(tradeText:find("Handel mit Freund (Gilde)", 1, true) ~= nil and tradeText:find("gegeben: 20x", 1, true) ~= nil and tradeText:find("500c", 1, true) ~= nil, "trade formatted")
-check(A.FormatMail(cache.mail[#cache.mail]):find("Post von Freund (Gilde)", 1, true) ~= nil, "mail formatted")
+-- The member sent and took mail in the same second; the store keeps no order within a second.
+local takenMail
+for _, mail in ipairs(cache.mail) do if mail.d == "r" then takenMail = mail end end
+check(A.FormatMail(takenMail):find("Post von Freund (Gilde)", 1, true) ~= nil, "mail formatted")
 
 -- Audit: window ------------------------------------------------------------------
 ns.db.lastTab = "audit"
@@ -1069,7 +2026,540 @@ CAN_VIEW_OFFICER = false
 SlashCmdList.GUILDFOUNDFOREVER("audit")
 check(GuildFoundForeverFrame:IsShown() and ns.db.lastTab == "audit", "/gff audit opens the tab, also without officer rights")
 ns.UI.Toggle()
+do
+	CAN_VIEW_OFFICER = true
+	local now = os.time({ year = 2026, month = 11, day = 4, hour = 12 }) -- midday, so "today" and "yesterday" are clear
+	local function e(t, hk, at, doneState) return { key = "x", name = "X", hint = { t = t, hk = hk, sev = "o" }, id = t .. ":" .. hk .. ":", at = at, done = doneState and { s = doneState, by = "O", t = t } or nil, new = at > now - 100 } end
+	local entries = { e(now - 10, "mail", now - 5), e(now - 20, "trade", now - 5000, 1), e(now - 86400, "blocked", now - 86400) }
+	local lines = ns.UI.BuildAuditTimeline(entries, nil, false, now)
+	check(#lines == 5 and lines[1].day:find("Heute", 1, true) and lines[1].day:find("1 neu", 1, true) and lines[4].day == "Gestern", "timeline: days, newest first, new count today")
+	check(#ns.UI.BuildAuditTimeline(entries, nil, true, now) == 4, "done notices hidden")
+	check(#ns.UI.BuildAuditTimeline(entries, "trade", false, now) == 2, "filter by kind")
+	-- M6: today's heading counts every new notice (by arrival, not done) whatever its date, as the
+	-- login report does; without notices from today a heading for today carries the count.
+	local mixed = { e(now - 10, "mail", now - 5), e(now - 86400, "blocked", now - 86400), e(now - 2 * 86400, "trade", now - 5), e(now - 3 * 86400, "mail", now - 5, 1) }
+	local mixedLines = ns.UI.BuildAuditTimeline(mixed, nil, false, now)
+	check(mixedLines[1].day:find("Heute", 1, true) and mixedLines[1].day:find("2 neu", 1, true), "today's heading counts every new notice, also older ones that arrived now")
+	local onlyOld = ns.UI.BuildAuditTimeline({ e(now - 3 * 86400, "mail", now - 5) }, nil, false, now)
+	check(#onlyOld == 3 and onlyOld[1].day:find("Heute", 1, true) and onlyOld[1].day:find("1 neu", 1, true) and onlyOld[2].day == date("%d.%m.", now - 3 * 86400),
+		"no notice from today: a heading for today carries the count")
+	ns.UI.ShowAudit()
+	check(FindWidgetByText("Button", "Hinweise") and FindWidgetByText("Button", "Beitritt") and FindWidgetByText("FontString", "Erledigte ausblenden"), "officers see the timeline with its filters")
+	-- R27: refreshes caused by data are collected for about a second.
+	RunTimers()
+	local timersBefore = #TIMERS
+	ns.Fire("AUDIT_UPDATED")
+	ns.Fire("AUDIT_UPDATED")
+	check(#TIMERS == timersBefore + 1 and TIMERS[#TIMERS].d >= 1, "refreshes of the audit tab are collected for a second")
+	RunTimers()
+	ns.UI.ShowAudit("Freund-ClassicBetaPvE2")
+	check(FindWidgetByText("Button", "Daten anfordern"):IsShown(), "a name opens the member view")
+	ns.UI.Toggle()
+	CAN_VIEW_OFFICER = false
+	ns.UI.ShowAudit()
+	check(not FindWidgetByText("Button", "Hinweise"):IsShown() and FindWidgetByText("FontString", "Deine Audit-Daten gehen automatisch an die Offiziere deiner Gilde."), "members: own data with the note")
+	-- M2: a join the addon did not see (first run already in the guild) has no time.
+	local savedJoin = ns.char.audit.join
+	ns.char.audit.join = { t = 0, l = 0, g = "Testgilde" }
+	ns.UI.RefreshAudit()
+	check(FindWidgetByText("FontString", "Beitrittszeit unbekannt") ~= nil, "join time unknown: said so in the member view")
+	ns.char.audit.join = savedJoin
+	ns.UI.Toggle()
+end
 ns.db.lastTab = "rules"
+
+-- Audit: own notices ----------------------------------------------------------------
+do
+	local own = ns.char.audit
+	local function lastHint() return own.hints[#own.hints] end
+	local function joinNotices() local n = 0 for _, h in ipairs(own.hints) do if h.hk == "join" then n = n + 1 end end return n end
+	-- Earlier sections ran the interval ticker before /played was known, so the oldest snapshot is an
+	-- interval snapshot without played time; the first login took it as the first state.
+	check(own.first and own.first.t == own.snapshots[1].t and own.first.l == 20 and own.first.p == nil, "first state with the addon kept: the oldest snapshot")
+	local installHint
+	for _, h in ipairs(own.hints) do if h.hk == "install" then installHint = h end end
+	check(installHint and installHint.sev == "r" and tonumber(installHint.b) == 3600, "played before the addon was installed: notice")
+	-- The run started in the guild without a first state: that join time is unknown, without a notice.
+	-- The guild map section left the guild and came back, which is a real join with one notice.
+	check(own.join and own.join.g == "Testgilde" and own.join.t > 0 and own.guild == "Testgilde" and joinNotices() == 1,
+		"joining the guild recorded: unknown on the first run, real after leaving")
+	local hk, sev, a = A.CheckLogin({ t = 1, l = 5, x = 0, m = 0, p = 1000, r = "out" }, { t = 2, l = 5, x = 0, m = 0, p = 4600, r = "in" })
+	check(hk == "played" and sev == "r" and tonumber(a) == 3600, "login check: played without the addon")
+	check(A.CheckLogin({ t = 1, l = 5, x = 0, m = 0, p = 1000, r = "int" }, { t = 2, l = 5, x = 0, m = 0, p = 1700, r = "in" }) == nil, "login check: crash within the tolerance")
+	check(A.CheckLogin({ t = 1, l = 5, x = 0, m = 100, p = 1000, r = "out" }, { t = 2, l = 6, x = 0, m = 900, p = 1000, r = "in" }) == "changed", "login check: changed offline")
+	local recorded = {}
+	ns.RegisterCallback("AUDIT_RECORDED", function(raw) recorded[#recorded + 1] = raw end)
+	MONEY = MONEY + 1
+	local recordedBefore = #recorded
+	RunTickers()
+	local intervalAsLast, intervalAsSnapshot = false, false
+	for i = recordedBefore + 1, #recorded do
+		if recorded[i]:find("^C\t") and recorded[i]:find("\tint$") then intervalAsLast = true end
+		if recorded[i]:find("^S\t") and recorded[i]:find("\tint$") then intervalAsSnapshot = true end
+	end
+	check(intervalAsLast and not intervalAsSnapshot, "interval snapshot reported as the last state only")
+	UNITS.NPC = { name = "Fremder", guild = false }
+	TRADE = { player = {}, target = {}, playerMoney = 0, targetMoney = 2500 }
+	FireEvent("TRADE_SHOW")
+	FireEvent("TRADE_ACCEPT_UPDATE", 1, 1)
+	FireEvent("UI_INFO_MESSAGE", 0, "Trade complete.")
+	check(lastHint().hk == "trade" and lastHint().sev == "r" and lastHint().a == "Fremder" and lastHint().c == "2500", "gold from a non-guild player: red notice")
+	check(recorded[#recorded]:find("^H\t") ~= nil and recorded[#recorded - 1]:find("^T\t") ~= nil, "trade and notice reported as new records")
+	FireEvent("TRADE_CLOSED")
+	RunTimers()
+	local hintCount = #own.hints
+	ns.Log("invite", "Gruppeneinladung von Fremder abgelehnt")
+	Advance(11)
+	ns.Log("summon", "Beschwörung durch Fremder abgelehnt")
+	check(#own.hints == hintCount, "declined invites and summons are no notices")
+	check(recorded[#recorded]:find("^L\t") ~= nil, "log entries reported as new records")
+	Advance(11)
+	ns.Log("ah", "Versuch, das Auktionshaus zu öffnen")
+	check(lastHint().hk == "blocked" and lastHint().sev == "y" and lastHint().a == "ah", "blocked auction house: yellow notice")
+	-- The client may say "no guild" for a moment at login: the guild stays unless it is still gone 10 s later.
+	local joinsBefore = joinNotices()
+	IN_GUILD = false
+	FireEvent("PLAYER_GUILD_UPDATE")
+	IN_GUILD = true
+	RunTimers()
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(own.guild == "Testgilde" and joinNotices() == joinsBefore, "no guild for a moment: the guild is kept, no new join")
+	IN_GUILD = false
+	FireEvent("PLAYER_GUILD_UPDATE")
+	RunTimers()
+	check(own.guild == nil, "leaving the guild forgets it")
+	INBOX = { { sender = "Fremder", canReply = true, money = 50, items = {} } }
+	TakeInboxMoney(1)
+	check(lastHint().hk == "mail" and lastHint().a == "Fremder" and lastHint().b == "r", "mail from anyone without a guild: notice")
+	Advance(10)
+	own.sent = own.sent or {}
+	own.sent["freund-classicbetapve2"] = GetServerTime() - 5
+	IN_GUILD = true
+	FireEvent("PLAYER_GUILD_UPDATE")
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(lastHint().hk == "join" and lastHint().sev == "g" and own.join.t == GetServerTime(), "joining again: join notice and new join state")
+	-- M3: the officers dropped our data when we left, so the push watermarks start over.
+	check(next(ns.char.audit.sent) == nil, "joining again: the push watermarks start over")
+	local raws = A.OwnRaws(0)
+	local kinds, hasInterval = {}, false
+	for _, raw in ipairs(raws) do
+		kinds[raw:sub(1, 1)] = true
+		if raw:find("^S\t") and raw:find("\tint$") then hasInterval = true end
+	end
+	check(kinds.C and kinds.J and kinds.F and kinds.H and kinds.T and not hasInterval, "own records to send: last, join and first state, no interval snapshots")
+	check(A.FormatHint(lastHint()):find("Testgilde", 1, true) ~= nil and A.HintColor(lastHint()) == "999999" and A.HintFilter("install") == "noaddon", "notice text, colour and filter")
+	check(A.FormatHint({ t = 1, hk = "changed", sev = "o", a = "5", b = "6", c = "100:900" }) == "Level 5 -> 6, Gold 100c -> 900c", "offline change: plain arrows the game fonts can show")
+	local savedAudit, savedLog = ns.char.audit, ns.char.log
+	-- First run after the update from 0.8: records without a first state, already in a guild.
+	ns.char.audit = { snapshots = { { t = 50, l = 7, x = 0, m = 0, p = 4000, r = "out" }, { t = 60, l = 8, x = 0, m = 0, p = 5000, r = "out" } },
+		trades = {}, mail = {}, hints = {}, sent = {} }
+	ns.Fire("INIT")
+	FireEvent("GUILD_ROSTER_UPDATE")
+	local upgraded = ns.char.audit
+	check(upgraded.first and upgraded.first.t == 50 and upgraded.first.l == 7 and upgraded.first.p == 4000, "update from 0.8: the oldest snapshot is the first state")
+	check(upgraded.join and upgraded.join.t == 0 and upgraded.join.l == 0 and upgraded.join.g == "Testgilde" and upgraded.guild == "Testgilde" and #upgraded.hints == 0,
+		"update from 0.8: joined before 1.0, no notice")
+	-- First run with the addon, no older records, already in a guild: when they joined is unknown.
+	ns.char.audit = { snapshots = {}, trades = {}, mail = {}, hints = {}, sent = {} }
+	ns.Fire("INIT")
+	FireEvent("GUILD_ROSTER_UPDATE")
+	local fresh = ns.char.audit
+	check(fresh.join and fresh.join.t == 0 and fresh.join.l == 0 and fresh.join.g == "Testgilde" and #fresh.hints == 0, "first run already in a guild: join time unknown, no notice")
+	-- First run without a guild: joining later in the session is a real join.
+	ns.char.audit = { snapshots = {}, trades = {}, mail = {}, hints = {}, sent = {} }
+	ns.Fire("INIT")
+	IN_GUILD = false
+	FireEvent("PLAYER_GUILD_UPDATE")
+	RunTimers()
+	Advance(5)
+	IN_GUILD = true
+	FireEvent("PLAYER_GUILD_UPDATE")
+	FireEvent("GUILD_ROSTER_UPDATE")
+	local joinedLater = ns.char.audit
+	check(joinedLater.join and joinedLater.join.t == GetServerTime() and #joinedLater.hints == 1 and joinedLater.hints[1].hk == "join",
+		"first run without a guild: joining later is a real join with a notice")
+	ns.char.audit = { snapshots = { { t = 1, l = 5, x = 0, m = 0, p = 10, r = "out" }, { t = 2, l = 6, x = 0, m = 0, p = 20, r = "out" } },
+		trades = { { t = 1, n = "X", k = "g", gm = 0, rm = 0, gi = "", ri = "" } }, mail = {}, hints = { { t = 1, hk = "mail", sev = "o" } },
+		first = { t = 1, l = 1, p = 0 }, join = { t = 1, l = 1, g = "Testgilde" }, sent = {} }
+	ns.char.log = { { t = 1, k = "ah", m = "alt" } }
+	A.PruneOwn(2 + 864001)
+	check(#ns.char.audit.snapshots == 1 and ns.char.audit.snapshots[1].t == 2 and #ns.char.audit.trades == 0 and #ns.char.audit.hints == 0 and #ns.char.log == 0, "older than 10 days dropped, the newest snapshot stays")
+	check(ns.char.audit.first and ns.char.audit.join, "join and first state stay")
+	ns.char.audit, ns.char.log = savedAudit, savedLog
+	UNITS.NPC = nil
+end
+
+-- Audit: automatic ------------------------------------------------------------------
+local AA = ns.AuditAuto
+do
+	CAN_VIEW_OFFICER = true
+	RANK_FLAGS = { [1] = { [11] = true }, [2] = { [11] = true }, [4] = { [11] = true }, [5] = { [11] = false } }
+	-- HELLOs here carry versions no newer than our own (0.7.0): the notice about a newer version
+	-- comes once per session, and the section "Addon messages" tests it.
+	ResetCalls()
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "HELLO\t0.7.0\tA", "GUILD", "Freund-ClassicBetaPvE2")
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "HI\t1.0.0\tA", "WHISPER", "Crossy-OtherRealm")
+	RunTimers()
+	-- The engine runs since the login: a new recipient gets the own data right away.
+	local pushes = SentMessages("AUDX\t")
+	-- R23: Freund counts us among his recipients: we catch up with him, on first contact 10 days back.
+	local function AudqTo(name)
+		local list = {}
+		for _, c in ipairs(SentMessages("AUDQ\t")) do if c.args[4] == name then list[#list + 1] = c.args[2] end end
+		return list
+	end
+	local firstAsk = AudqTo("Freund-ClassicBetaPvE2")
+	check(#firstAsk == 1 and firstAsk[1] == "AUDQ\t" .. (GetServerTime() - 864000), "an officer catches up with a member that came online: AUDQ from 10 days back")
+	local answeredAt = GetServerTime() - 5
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDE\t4\t" .. answeredAt, "WHISPER", "Freund-ClassicBetaPvE2")
+	check(AA.GetStore().direct and AA.GetStore().direct["freund-classicbetapve2"] == answeredAt, "the end of Freund's answer is our direct watermark for him")
+	-- His next HELLO (same capabilities, e.g. after a /reload) asks again from the watermark on.
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "HELLO\t0.7.0\tA", "GUILD", "Freund-ClassicBetaPvE2")
+	RunTimers()
+	local nextAsk = AudqTo("Freund-ClassicBetaPvE2")
+	check(#nextAsk == 2 and nextAsk[2] == "AUDQ\t" .. answeredAt, "Freund announces himself again: caught up from the watermark on")
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDE\t4\t" .. GetServerTime(), "WHISPER", "Freund-ClassicBetaPvE2")
+	check(#pushes > 0 and pushes[1].args[4] == "Freund-ClassicBetaPvE2", "own data goes to the officer running the new version")
+	local toCrossy = false
+	for _, c in ipairs(pushes) do if c.args[4] == "Crossy-OtherRealm" then toCrossy = true end end
+	check(not toCrossy, "a normal member gets nothing without the relay rule")
+	check(not Said("hat deine Audit-Daten abgerufen"), "automatic sharing does not tell the member")
+	ResetCalls()
+	ns.Log("ah", "Auktionshaus im Automatiktest")
+	RunTimers()
+	local carried = false
+	for _, c in ipairs(SentMessages("AUDX\t")) do
+		if c.args[4] == "Freund-ClassicBetaPvE2" and c.args[2]:find("Auktionshaus im Automatiktest", 1, true) then carried = true end
+	end
+	check(carried, "a new own record goes out by itself")
+	-- Throttled by the server (code 3): the engine tries again 3 s later instead of dropping it.
+	ResetCalls()
+	SEND_RESULT = 3
+	ns.Log("ah", "Gedrosselt im Automatiktest")
+	RunTimers(2)
+	SEND_RESULT = nil
+	RunTimers()
+	local retried = false
+	for _, c in ipairs(SentMessages("AUDX\t")) do
+		if c.args[2]:find("Gedrosselt im Automatiktest", 1, true) then retried = true end
+	end
+	check(retried, "a throttled message goes out once the server lets it through")
+	-- R23: an officer catches up with us: AUDX about us, then AUDE 4 with our time; a normal member gets nothing.
+	ResetCalls()
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDQ\t0", "WHISPER", "Freund-ClassicBetaPvE2")
+	RunTimers()
+	local aboutUs, endMarks = 0, SentMessages("AUDE\t4\t")
+	for _, c in ipairs(SentMessages("AUDX\tMagus-ClassicBetaPvE2\t")) do if c.args[4] == "Freund-ClassicBetaPvE2" then aboutUs = aboutUs + 1 end end
+	check(aboutUs > 0 and #endMarks == 1 and endMarks[1].args[2] == "AUDE\t4\t" .. GetServerTime() and endMarks[1].args[4] == "Freund-ClassicBetaPvE2",
+		"AUDQ from an officer: our own entries, then AUDE 4 with our time")
+	ResetCalls()
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDQ\t0", "WHISPER", "Crossy-OtherRealm")
+	RunTimers()
+	check(#SentMessages("AUDE\t4\t") == 0 and #SentMessages("AUDX\t") == 0, "AUDQ from a normal member: no answer")
+	-- R25: a HELLO from someone not in our roster yet (joined just now): the roster is requested, at
+	-- most every 10 s, and the catch-up follows once the member is there.
+	ResetCalls()
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "HELLO\t0.7.0\tA", "GUILD", "Neuling-ClassicBetaPvE2")
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "HELLO\t0.7.0\tA", "GUILD", "Neuling-ClassicBetaPvE2")
+	check(CallCount("GuildRoster") == 1, "a HELLO from a name not in the roster: the roster is requested, at most every 10 s")
+	ROSTER[#ROSTER + 1] = { "Neuling-ClassicBetaPvE2", true, 4, "WARRIOR" }
+	FireEvent("GUILD_ROSTER_UPDATE")
+	RunTimers()
+	check(#AudqTo("Neuling-ClassicBetaPvE2") == 1, "the new member appears in the roster: the officer catches up with it")
+	table.remove(ROSTER)
+	FireEvent("GUILD_ROSTER_UPDATE")
+	RunTimers()
+	local fHint = R.Encode("H", { t = GetServerTime() - 60, hk = "blocked", sev = "y", a = "ah", b = "AH" })
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. fHint, "WHISPER", "Freund-ClassicBetaPvE2")
+	local found
+	for _, e in ipairs(AA.GetTimeline()) do if e.key == "freund-classicbetapve2" and e.hint.hk == "blocked" then found = e end end
+	check(found and found.name == "Freund-ClassicBetaPvE2" and found.new, "a pushed notice is in the timeline, new since the last login")
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. R.Encode("H", { t = 7, hk = "mail", sev = "o", a = "Gilde", b = "s" }), "GUILD", "Freund-ClassicBetaPvE2")
+	check(#St.Timeline(AA.GetStore()) == 1, "audit messages over the guild channel are ignored")
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. R.Encode("H", { t = 5, hk = "mail", sev = "o", a = "X", b = "s" }), "WHISPER", "Crossy-OtherRealm")
+	check(#St.Timeline(AA.GetStore()) == 1, "forwarding by a normal member is refused")
+	-- R22: the relay role comes from the guild info only; a local setting (or an officer's draft) does not count.
+	ns.Rules.Set("auditRelay", true)
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. R.Encode("H", { t = 5, hk = "mail", sev = "o", a = "X", b = "s" }), "WHISPER", "Crossy-OtherRealm")
+	check(#St.Timeline(AA.GetStore()) == 1, "a local relay setting without V in the guild info: forwarding by a member is still refused")
+	ClearMessages()
+	ns.ShowStatus()
+	check(Said("Mitglieder speichern Audit-Daten zwischen: nein"), "/gff status: a local relay setting does not count")
+	CloseMessages()
+	GUILD_INFO_TEXT = "Willkommen\n" .. DEFAULT_TAG:gsub("V=0", "V=1")
+	FireEvent("GUILD_ROSTER_UPDATE")
+	ClearMessages()
+	ns.ShowStatus()
+	check(Said("Mitglieder speichern Audit-Daten zwischen: ja"), "/gff status: V=1 from the guild info counts")
+	CloseMessages()
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. R.Encode("H", { t = 5, hk = "mail", sev = "o", a = "X", b = "s" }), "WHISPER", "Crossy-OtherRealm")
+	check(#St.Timeline(AA.GetStore()) == 2, "with V=1 in the guild info a member may forward")
+	local recipients = AA.Recipients()
+	check(#recipients == 2 and recipients[1].key == "freund-classicbetapve2" and recipients[1].officer and recipients[2].key == "crossy-otherrealm" and not recipients[2].officer,
+		"with V=1: our own entries go to the officer first, then to the relay")
+	GUILD_INFO_TEXT = "Willkommen"
+	FireEvent("GUILD_ROSTER_UPDATE")
+	ns.Rules.Set("auditRelay", false)
+	-- R27: without a change the timeline comes from the cache; a stored notice renews it.
+	local cachedLine = AA.GetTimeline()
+	check(AA.GetTimeline() == cachedLine, "no change: the timeline comes from the cache")
+	local laterHint = R.Encode("H", { t = GetServerTime() - 30, hk = "mail", sev = "o", a = "Cache", b = "s" })
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. laterHint, "WHISPER", "Freund-ClassicBetaPvE2")
+	local renewed, withLater = AA.GetTimeline(), false
+	for _, e in ipairs(renewed) do if e.hint.a == "Cache" then withLater = true end end
+	check(renewed ~= cachedLine and withLater, "a stored notice renews the cached timeline")
+	-- The cache also follows the login times, the roster and our own notices.
+	local cachedAgain = AA.GetTimeline()
+	local savedPrev = ns.char.auditSeen.prev
+	ns.char.auditSeen.prev = savedPrev - 1
+	check(AA.GetTimeline() ~= cachedAgain, "other login times: the timeline is built again")
+	ns.char.auditSeen.prev = savedPrev
+	cachedAgain = AA.GetTimeline()
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(AA.GetTimeline() ~= cachedAgain, "a roster update (names, online state): the timeline is built again")
+	cachedAgain = AA.GetTimeline()
+	ns.Log("ah", "Eigener Hinweis im Cache")
+	local ownInLine = false
+	for _, e in ipairs(AA.GetTimeline()) do if e.key == ns.Guild.GetPlayerKey() and e.hint.b == "Eigener Hinweis im Cache" then ownInLine = true end end
+	check(ownInLine, "a new own notice is in the timeline at once")
+	RunTimers()
+	local tooOld = R.Encode("H", { t = GetServerTime() - 864000 - 100, hk = "mail", sev = "o", a = "Zu alt", b = "s" })
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. tooOld, "WHISPER", "Freund-ClassicBetaPvE2")
+	local function HasOld() for _, e in ipairs(AA.GetTimeline()) do if e.hint.a == "Zu alt" then return true end end return false end
+	local oldShown = HasOld()
+	AA.Start()
+	check(oldShown and not HasOld(), "a notice pruned after 10 days leaves the cached timeline")
+	RunTimers()
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tCrossy-OtherRealm\t" .. fHint, "WHISPER", "Crossy-OtherRealm")
+	local crossy
+	for _, e in ipairs(AA.GetTimeline()) do if e.key == "crossy-otherrealm" then crossy = e end end
+	check(crossy and Ambiguate(crossy.name, "guild") == "Crossy", "other realms: stored by normalized key, shown by name")
+	local preFound
+	for _, e in ipairs(AA.GetTimeline()) do if e.key == ns.Guild.GetPlayerKey() and e.hint.hk == "mail" then preFound = e.pre end end
+	check(preFound == true, "own notices from before joining are marked")
+	-- R19: an officer marks one of our own notices done; only the mark about us is kept.
+	local ownEntry
+	for _, e in ipairs(AA.GetTimeline()) do if e.key == ns.Guild.GetPlayerKey() and not e.done then ownEntry = e end end
+	local markAboutUs = R.Encode("E", { t = GetServerTime(), s = 1, by = "Freund-ClassicBetaPvE2", id = ownEntry.id })
+	local hintAboutUs = R.Encode("H", { t = 3, hk = "mail", sev = "o", a = "Fremd", b = "s" })
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tMagus-ClassicBetaPvE2\t" .. markAboutUs .. "\030" .. hintAboutUs, "WHISPER", "Freund-ClassicBetaPvE2")
+	local markedDone, foreignAboutUs
+	for _, e in ipairs(AA.GetTimeline()) do
+		if e.key == ns.Guild.GetPlayerKey() and e.id == ownEntry.id then markedDone = e.done and e.done.s == 1 and e.done.by == "Freund-ClassicBetaPvE2" end
+		if e.key == ns.Guild.GetPlayerKey() and e.hint.a == "Fremd" then foreignAboutUs = true end
+	end
+	check(markedDone and not foreignAboutUs, "an officer's done mark on our own notice shows in our timeline, nothing else about us is kept")
+	-- M4: ticking one of our own notices keeps our real name, as the other officers show it.
+	local ownKey = ns.Guild.GetPlayerKey()
+	AA.GetStore().members[ownKey] = nil
+	AA.SetDone(ownKey, ownEntry.id, true)
+	local ownMember = AA.GetStore().members[ownKey]
+	check(ownMember and ownMember.name == "Magus-ClassicBetaPvE2", "a done mark on our own notice carries our real name")
+	-- M8: old account-wide audit data fetched more than 10 days ago goes at load.
+	ns.db.auditCache["alt-classicbetapve2"] = { name = "Alt-ClassicBetaPvE2", fetched = GetServerTime() - 864001, snapshots = {}, trades = {}, mail = {}, log = {} }
+	ns.db.auditCache["frisch-classicbetapve2"] = { name = "Frisch-ClassicBetaPvE2", fetched = GetServerTime() - 10, snapshots = {}, trades = {}, mail = {}, log = {} }
+	ns.Fire("INIT")
+	check(ns.db.auditCache["alt-classicbetapve2"] == nil and ns.db.auditCache["frisch-classicbetapve2"] ~= nil, "old audit cache: entries fetched more than 10 days ago go at load")
+	ns.db.auditCache["frisch-classicbetapve2"] = nil
+	-- Prüfschwerpunkt 3: an officer with an old version is no recipient.
+	ROSTER[3][2] = true
+	FireEvent("GUILD_ROSTER_UPDATE")
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "HELLO\t0.6.0", "GUILD", "Offline-ClassicBetaPvE2")
+	RunTimers()
+	ResetCalls()
+	AA.Start()
+	RunTimers()
+	local toOld = false
+	for _, c in ipairs(SentMessages("AUDX\t")) do if c.args[4] == "Offline-ClassicBetaPvE2" then toOld = true end end
+	check(not toOld, "an officer running an old version is no recipient")
+	ROSTER[3][2] = false
+	FireEvent("GUILD_ROSTER_UPDATE")
+	-- Notices in the messages: one at login, collected during the session.
+	CloseMessages()
+	ClearMessages()
+	ns.char.auditSeen.prev = 0
+	AA.ReportLoginHints()
+	local loginReport = ns.Messages.GetList("audit")[1]
+	check(loginReport and loginReport.m:find("neue Audit%-Hinweise") and loginReport.i and loginReport.a == "audit", "login: one important message with the count")
+	local toast = GuildFoundForeverMessagesToast
+	check(toast:IsShown() and toast.entry == loginReport, "the login report shows the hint")
+	toast:RunScript("OnClick")
+	check(GuildFoundForeverFrame:IsShown() and ns.db.lastTab == "audit" and not ns.MessageWindow.IsShown(), "clicking the hint opens the audit tab")
+	ns.UI.Toggle()
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. R.Encode("H", { t = GetServerTime(), hk = "trade", sev = "o", a = "Y", b = "0", c = "0", d = "1" }), "WHISPER", "Freund-ClassicBetaPvE2")
+	RunTickers()
+	local sessionReport = ns.Messages.GetList("audit")[1]
+	check(sessionReport ~= loginReport and sessionReport.m:find("weitere Audit%-Hinweise") and not sessionReport.i, "during the session: collected, not important")
+	-- R17: a /reload is no login: the login times stay and no second login report comes.
+	CloseMessages()
+	ClearMessages()
+	local seen = ns.char.auditSeen
+	local prevBefore, thisBefore = seen.prev, seen.this
+	Advance(5)
+	FireEvent("PLAYER_ENTERING_WORLD", false, true)
+	RunTimers()
+	check(seen.prev == prevBefore and seen.this == thisBefore, "a reload is no login: the login times stay")
+	AA.Start()
+	RunTimers()
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDE\t1\t" .. GetServerTime(), "WHISPER", "Freund-ClassicBetaPvE2")
+	RunTimers()
+	check(not Said("neue Audit-Hinweise"), "after a reload the first sync brings no second login report")
+	-- M7: the addon notes when we were last online (every minute and at logout); after the next
+	-- real login only what arrived after the end of this session is new.
+	local inSession = R.Encode("H", { t = GetServerTime(), hk = "mail", sev = "o", a = "Sitzung", b = "s" })
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. inSession, "WHISPER", "Freund-ClassicBetaPvE2")
+	Advance(60)
+	FireEvent("PLAYER_LOGOUT")
+	local lastSeen = seen.last
+	check(lastSeen == GetServerTime(), "logout notes when we were last online")
+	Advance(3600)
+	FireEvent("PLAYER_ENTERING_WORLD", true, false)
+	RunTimers()
+	check(seen.prev == lastSeen and seen.this == GetServerTime(), "a real login: new is what arrived after the end of the previous session")
+	local sessionEntry
+	for _, e in ipairs(AA.GetTimeline()) do if e.hint.a == "Sitzung" then sessionEntry = e end end
+	check(sessionEntry and not sessionEntry.new, "a notice that arrived during the previous session is not new after the next login")
+	AA.Start()
+	RunTimers()
+	Advance(1)
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. R.Encode("H", { t = GetServerTime(), hk = "mail", sev = "o", a = "Danach", b = "s" }), "WHISPER", "Freund-ClassicBetaPvE2")
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDE\t1\t" .. GetServerTime(), "WHISPER", "Freund-ClassicBetaPvE2")
+	RunTimers()
+	check(Said("neue Audit-Hinweise"), "after a real login the first sync brings the login report")
+	CloseMessages()
+	-- Prüfschwerpunkt 5: no guild name yet.
+	local savedGetGuildInfo, errorsBefore = GetGuildInfo, #ERRORS
+	GetGuildInfo = function() return nil end
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. R.Encode("H", { t = 9, hk = "mail", sev = "o", a = "Z", b = "s" }), "WHISPER", "Freund-ClassicBetaPvE2")
+	check(#ERRORS == errorsBefore, "no guild name yet: the message is dropped without an error")
+	GetGuildInfo = savedGetGuildInfo
+	-- Former members and rank loss, not before the roster is loaded.
+	St.Add(AA.GetStore(), "weg-classicbetapve2", "Weg-ClassicBetaPvE2", fHint, GetServerTime())
+	ns.char.auditStore["Alte Gilde"] = St.New()
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(AA.GetStore().members["weg-classicbetapve2"] == nil, "former members leave the store")
+	check(ns.char.auditStore["Alte Gilde"] == nil, "the data of a guild the character is no longer in goes too")
+	local savedRoster = ROSTER
+	ROSTER = {}
+	CAN_VIEW_OFFICER = false
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde ~= nil, "empty roster: nothing deleted")
+	ROSTER = savedRoster
+	-- R26: the officer view says no (e.g. not loaded yet at login) while the rank permissions say
+	-- officer: the data stays, and we still hold the guild's data as the others see us.
+	CAN_VIEW_OFFICER = true
+	St.Add(AA.GetStore(), "freund-classicbetapve2", "Freund-ClassicBetaPvE2", fHint, GetServerTime())
+	CAN_VIEW_OFFICER = false
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde ~= nil and AA.GetStore() ~= nil and AA.GetStore().members["freund-classicbetapve2"] ~= nil,
+		"no officer view, but officer by the rank permissions: the data stays and is still held")
+	CAN_VIEW_OFFICER = true
+	-- R16: rank permissions unreadable: deleted only without the officer view on two ready rosters
+	-- at least 60 s apart; the officer view in between starts the count again. The guild master and
+	-- the rank below count as officers without readable permissions (R26), so we are rank 3 here.
+	local savedFlags = RANK_FLAGS
+	RANK_FLAGS = {}
+	ROSTER[1][3] = 3
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde ~= nil, "rank permissions not readable yet: nothing deleted")
+	Advance(30)
+	CAN_VIEW_OFFICER = true
+	FireEvent("GUILD_ROSTER_UPDATE")
+	CAN_VIEW_OFFICER = false
+	Advance(40)
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde ~= nil, "unreadable permissions: the officer view in between starts the count again")
+	Advance(30)
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde ~= nil, "unreadable permissions: less than 60 s without the officer view keeps the data")
+	Advance(30)
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde == nil, "unreadable permissions: no officer view twice, 60 s apart: deleted")
+	ROSTER[1][3] = 0
+	-- Readable permissions and the guild info read: at once, once both the officer view and the rank
+	-- permissions say no.
+	CAN_VIEW_OFFICER = true
+	local again = AA.GetStore()
+	CAN_VIEW_OFFICER = false
+	RANK_FLAGS = { [1] = { [11] = false }, [2] = { [11] = true }, [4] = { [11] = true }, [5] = { [11] = false } }
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(again ~= nil and ns.char.auditStore.Testgilde == nil and AA.GetStore() == nil, "rank lost: foreign data deleted")
+	-- R22: a local relay setting gives us no relay role either.
+	ns.Rules.Set("auditRelay", true)
+	check(AA.GetStore() == nil, "a local relay setting without V in the guild info: no relay role, no store")
+	GUILD_INFO_TEXT = "Willkommen\n" .. DEFAULT_TAG:gsub("V=0", "V=1")
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(AA.GetStore() ~= nil, "V=1 in the guild info: a normal member holds the guild's data")
+	St.Add(AA.GetStore(), "freund-classicbetapve2", "Freund-ClassicBetaPvE2", fHint, GetServerTime())
+	-- The tags go: the relay's data goes at once, the guild info is read.
+	GUILD_INFO_TEXT = "Willkommen"
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde == nil, "V gone from the guild info: the relay's data is deleted")
+	-- A relay's data from the last session waits while the guild info is not read yet (as at login).
+	GUILD_INFO_TEXT = ""
+	FireEvent("GUILD_ROSTER_UPDATE")
+	ns.char.auditStore.Testgilde = St.New()
+	St.Add(ns.char.auditStore.Testgilde, "freund-classicbetapve2", "Freund-ClassicBetaPvE2", fHint, GetServerTime())
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde ~= nil, "guild info not read yet: the relay's data stays")
+	GUILD_INFO_TEXT = "Willkommen\n" .. DEFAULT_TAG:gsub("V=0", "V=1")
+	Advance(70)
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde ~= nil and AA.GetStore().members["freund-classicbetapve2"] ~= nil, "the guild info arrives with V=1: the relay keeps its data")
+	GUILD_INFO_TEXT = "Willkommen"
+	FireEvent("GUILD_ROSTER_UPDATE")
+	ns.Rules.Set("auditRelay", false)
+	RANK_FLAGS = savedFlags
+	CAN_VIEW_OFFICER = true
+	-- Migration of the old account-wide cache.
+	ns.db.auditCache["freund-classicbetapve2"] = { name = "Freund-ClassicBetaPvE2", fetched = 123, latest = 50,
+		snapshots = { { t = 50, l = 10, x = 0, m = 1, p = 2, r = "out" } }, trades = {}, mail = {}, log = {} }
+	AA.Migrate()
+	check(ns.db.auditCache["freund-classicbetapve2"] == nil and #AA.GetMemberData("freund-classicbetapve2").snapshots == 1, "old cache moved into the store")
+	-- Prüfschwerpunkt 2: empty roster at start, recipients later.
+	ROSTER = {}
+	FireEvent("GUILD_ROSTER_UPDATE")
+	ResetCalls()
+	AA.Start()
+	RunTimers()
+	check(#SentMessages("AUDX\t") == 0, "no roster: nothing sent yet")
+	ROSTER = savedRoster
+	FireEvent("GUILD_ROSTER_UPDATE")
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "HI\t1.0.0\tA", "WHISPER", "Freund-ClassicBetaPvE2")
+	RunTimers()
+	check(#SentMessages("AUDX\t") > 0, "roster and officer arrive: sending catches up")
+	-- R21: out of the guild: the guild's data goes once "no guild" still holds 10 s later (the
+	-- client may say "no guild" for a moment at login).
+	St.Add(AA.GetStore(), "freund-classicbetapve2", "Freund-ClassicBetaPvE2", fHint, GetServerTime())
+	IN_GUILD = false
+	FireEvent("PLAYER_GUILD_UPDATE")
+	IN_GUILD = true
+	RunTimers()
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde ~= nil, "no guild for a moment: the guild's data stays")
+	IN_GUILD = false
+	FireEvent("PLAYER_GUILD_UPDATE")
+	RunTimers()
+	check(next(ns.char.auditStore) == nil, "still no guild 10 s later: the guild's data is deleted")
+	-- R25: joining a guild during the session announces us (HELLO) once the roster is there.
+	ResetCalls()
+	IN_GUILD = true
+	FireEvent("PLAYER_GUILD_UPDATE")
+	FireEvent("GUILD_ROSTER_UPDATE")
+	RunTimers()
+	local joinHellos = SentMessages("HELLO\t")
+	check(#joinHellos == 1 and joinHellos[1].args[3] == "GUILD", "joined during the session: HELLO to the guild once the roster is there")
+	-- Back to the state the later sections expect: nobody announced the automatic audit, no
+	-- officer view, rank permissions unreadable.
+	ROSTER[2][2], ROSTER[4][2] = false, false
+	FireEvent("GUILD_ROSTER_UPDATE")
+	ROSTER[2][2], ROSTER[4][2] = true, true
+	FireEvent("GUILD_ROSTER_UPDATE")
+	CAN_VIEW_OFFICER = false
+	RANK_FLAGS = {}
+	RunTimers()
+	ResetCalls()
+end
 
 -- Professions: skills ------------------------------------------------------------
 local P = ns.Professions
@@ -1616,6 +3106,53 @@ FireEvent("CHAT_MSG_ADDON", "GFForever", "HELLO\t0.8.0", "GUILD", "Freund-Classi
 check(Said("0.8.0", "system") and ns.Messages.GetList("system")[1].i, "newer version announced as an important message")
 local V = ns.Comm.VersionNumber
 check(V("0.7.0") == 700 and V("v1.2.3") == 10203 and V("0.7.0-beta") == 700 and V("1.0") == 10000 and V("dev") == 0 and V(nil) == 0, "version numbers from release tags")
+check(ns.Comm.BuildHello() == "HELLO\t0.7.0\tA", "HELLO carries the capabilities")
+ResetCalls()
+FireEvent("CHAT_MSG_ADDON", "GFForever", "HELLO\t1.0.0\tA", "GUILD", "Freund-ClassicBetaPvE2")
+RunTimers()
+-- Freund is an officer with the new version now: the automatic audit whispers him as well.
+local hi = SentMessages("HI\t")[1]
+check(hi and hi.args[2] == "HI\t0.7.0\tA" and hi.args[3] == "WHISPER" and hi.args[4] == "Freund-ClassicBetaPvE2", "HELLO answered with HI by whisper")
+check(ns.Comm.HasCapability("Freund-ClassicBetaPvE2", "A") and not ns.Comm.HasCapability("Crossy-OtherRealm", "A"), "capabilities from HELLO")
+FireEvent("CHAT_MSG_ADDON", "GFForever", "HI\t1.0.0\tA", "WHISPER", "Crossy-OtherRealm")
+check(ns.Comm.HasCapability("Crossy-OtherRealm", "A") and #ns.Comm.GetCapablePeers("A") == 2, "capabilities from HI")
+FireEvent("CHAT_MSG_ADDON", "GFForever", "HELLO\t0.8.0", "GUILD", "Freund-ClassicBetaPvE2")
+check(not ns.Comm.HasCapability("Freund-ClassicBetaPvE2", "A"), "a HELLO without capabilities (old version) clears them")
+FireEvent("CHAT_MSG_ADDON", "GFForever", "HELLO\t1.0.0\tA", "GUILD", "Freund-ClassicBetaPvE2")
+ROSTER[4][2] = false
+FireEvent("GUILD_ROSTER_UPDATE")
+check(not ns.Comm.HasCapability("Crossy-OtherRealm", "A"), "members who went offline lose their presence")
+ROSTER[4][2] = true
+FireEvent("GUILD_ROSTER_UPDATE")
+FireEvent("CHAT_MSG_ADDON", "GFForever", "HI\t1.0.0\tA", "WHISPER", "Crossy-OtherRealm")
+do
+	-- A roster that is not loaded (yet) says nothing about who went offline.
+	local fullRoster = ROSTER
+	ROSTER = {}
+	FireEvent("GUILD_ROSTER_UPDATE")
+	ROSTER = fullRoster
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.Comm.HasCapability("Freund-ClassicBetaPvE2", "A") and ns.Comm.HasCapability("Crossy-OtherRealm", "A"), "an empty roster keeps the presence")
+end
+do
+	-- A recruit's HELLO can come before the roster lists it: its presence survives that roster, so
+	-- the next one shows it with the capability. Gone from the roster for long, the presence goes.
+	local recruit = "Neuling-ClassicBetaPvE2"
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "HELLO\t1.0.0\tA", "GUILD", recruit)
+	FireEvent("GUILD_ROSTER_UPDATE")
+	ROSTER[#ROSTER + 1] = { recruit, true, 4, "WARRIOR" }
+	FireEvent("GUILD_ROSTER_UPDATE")
+	local kept = ns.Comm.HasCapability(recruit, "A")
+	ROSTER[#ROSTER][2] = false
+	Advance(121)
+	FireEvent("GUILD_ROSTER_UPDATE")
+	ROSTER[#ROSTER][2] = true
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(kept and not ns.Comm.HasCapability(recruit, "A"), "a recruit not in the roster yet keeps its presence for a while")
+	table.remove(ROSTER)
+	FireEvent("GUILD_ROSTER_UPDATE")
+	RunTimers()
+end
 ResetCalls()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "PING", "GUILD", "Magus-ClassicBetaPvE2")
 check(CallCount("SendAddonMessage") == 0, "own messages ignored")

@@ -28,7 +28,7 @@ local function CheckSummon()
 	lastCancelTime = GetTime()
 	HideSummonDialog()
 	ns.Warn("blocked", L.SUMMON_BLOCKED, summoner)
-	ns.Log("travel", L.LOG_SUMMON:format(summoner))
+	ns.Log("summon", L.LOG_SUMMON:format(summoner))
 end
 
 ns.On("CONFIRM_SUMMON", CheckSummon)
@@ -107,7 +107,7 @@ local function CheckArrival()
 	end
 	if zone:find(pendingPortal.destination, 1, true) then
 		ns.Warn("blocked", L.PORTAL_USED, pendingPortal.caster)
-		ns.Log("travel", L.LOG_PORTAL:format(pendingPortal.caster, pendingPortal.destination))
+		ns.Log("portal", L.LOG_PORTAL:format(pendingPortal.caster, pendingPortal.destination))
 		pendingPortal = nil
 	end
 end

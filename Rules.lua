@@ -31,6 +31,12 @@ function Rules.Get(key)
 	return ns.db and ns.db.rules[key]
 end
 
+-- The audit relay rule (V) counts only when it comes from the guild info: a local setting or an
+-- officer's draft must not make members hold the guild's audit data.
+function Rules.AuditRelay()
+	return Rules.IsGuildSetting("auditRelay") and Rules.Get("auditRelay") and true or false
+end
+
 function Rules.Set(key, value)
 	ns.db.rules[key] = value
 	ns.Fire("RULES_CHANGED")

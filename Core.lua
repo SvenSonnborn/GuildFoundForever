@@ -31,9 +31,9 @@ ns.defaults = {
 		chatEpic = true,
 		chatRare = false,
 		chatRecipe = true,
-		audit = true,
 		professions = false, -- the officers switch the professions tab on
 		dungeonFinder = false, -- and the dungeon finder tab
+		auditRelay = false, -- members store audit data for officers
 	},
 	-- which announcements of other members this player wants to see
 	notify = {
@@ -48,7 +48,7 @@ ns.defaults = {
 	partnerGuilds = {},
 	partnerSeen = {}, -- normalized player name -> { g = partner guild (lower case), t = last seen }
 	deathlog = {},
-	auditCache = {}, -- officers: last fetched audit data per member
+	auditCache = {}, -- officers before 0.9: fetched audit data per member; AuditAuto.Migrate moves it into auditStore
 	professionDirectory = {}, -- guild name -> member -> { n, c, t, p = { skillLineID -> { s, m } } }
 	recipeCache = {}, -- member -> skillLineID -> { ids, fetched, scanned }
 	groupLeaveDelay = 10,
@@ -61,7 +61,9 @@ ns.defaults = {
 
 ns.charDefaults = {
 	log = {},
-	audit = { snapshots = {}, trades = {}, mail = {} },
+	audit = { snapshots = {}, trades = {}, mail = {}, hints = {}, sent = {} }, -- also join, first, guild (Audit.lua)
+	auditStore = {}, -- officers and relays: the guild's audit data, per guild name (AuditAuto.lua)
+	auditSeen = { prev = 0, this = 0 }, -- this: the real login (not /reload), last: last seen online, prev: end of the session before, reported: login of the last login report (AuditAuto.lua)
 	professions = {},
 	finder = { selected = {}, onlyFitting = false }, -- dungeon finder: picked activities (ID -> true)
 	messages = {}, -- message window, newest last (Messages.lua)
@@ -138,7 +140,7 @@ function ns.Alert(...)
 	end
 end
 
--- A message with marks: opts.important, opts.silent, opts.link (see Messages.Add). No formatting.
+-- A message with marks: opts.important, opts.silent, opts.link, opts.action (see Messages.Add). No formatting.
 function ns.Notify(category, text, opts)
 	return ns.Messages.Add(category, text, opts)
 end
@@ -235,6 +237,8 @@ ns.On("ADDON_LOADED", function(_, loadedName)
 	GuildFoundForeverDB.map = nil
 	if GuildFoundForeverDB.rules then
 		GuildFoundForeverDB.rules.guildMap = nil
+		-- The audit is always on since the automatic audit; the rule is gone.
+		GuildFoundForeverDB.rules.audit = nil
 	end
 	ApplyDefaults(GuildFoundForeverDB, ns.defaults)
 	ApplyDefaults(GuildFoundForeverCharDB, ns.charDefaults)
@@ -262,10 +266,12 @@ function ns.Log(kind, msg)
 	if last and last.m == msg and now - last.t < 10 then
 		return
 	end
-	log[#log + 1] = { t = now, k = kind, m = msg }
+	local entry = { t = now, k = kind, m = msg }
+	log[#log + 1] = entry
 	while #log > MAX_LOG_ENTRIES do
 		table.remove(log, 1)
 	end
+	ns.Fire("LOGGED", entry)
 end
 
 ---------------------------------------------------------------------------
@@ -295,7 +301,7 @@ function ns.ShowStatus()
 	lines[#lines + 1] = L.STATUS_PARTNERS:format(#partners > 0 and table.concat(partners, ", ") or L.NONE)
 	lines[#lines + 1] = L.STATUS_CHAT:format(YesNo(Rules.Get("chatLevelCap")), YesNo(Rules.Get("chatDeath")), YesNo(Rules.Get("chatEpic")),
 		YesNo(Rules.Get("chatRare")), YesNo(Rules.Get("chatRecipe")))
-	lines[#lines + 1] = L.STATUS_AUDIT:format(YesNo(Rules.Get("audit")))
+	lines[#lines + 1] = L.STATUS_RELAY:format(YesNo(Rules.AuditRelay()))
 	lines[#lines + 1] = L.STATUS_PROFESSIONS:format(YesNo(Rules.Get("professions")))
 	lines[#lines + 1] = L.STATUS_FINDER:format(YesNo(Rules.Get("dungeonFinder")))
 	local lockLevel = Rules.GetGroupLockLevel()
