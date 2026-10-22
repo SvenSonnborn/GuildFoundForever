@@ -10,7 +10,8 @@ local _, ns = ...
 --
 -- Messages (all whispered):
 --   AUDX <member>\t<raw>\030<raw>...   entries about members; several groups of
---        [\029<member>\t<raw>...]       "<member>\t<raws>" joined by character 29
+--        [\029<member>\t<raw>...]       "<member>\t<raws>" joined by character 29; about the
+--                                       receiver itself only done marks (E) count
 --   AUDS <since1>\t<since2>            "send me what you stored since these times" (tier 1, tier 2)
 --   AUDE <tier>\t<now>                 end of tier 1 or 2 of an AUDS answer, or of an AUDM answer (3)
 --   AUDM <member>\t<since>             ask for the details (tier 2) of one member
@@ -327,13 +328,29 @@ local function Ask(self, peer)
 	self.lastAsked = peer.key
 end
 
--- One tier of an AUDS answer: AUDX with every member but the asker, then AUDE with the time the
--- answer was taken from the store, so entries stored in that same second come again next time.
+local function IsMark(raw)
+	return raw:sub(1, 2) == "E\t"
+end
+
+local function OnlyMarks(raws)
+	local marks = {}
+	for _, raw in ipairs(raws) do
+		if IsMark(raw) then
+			marks[#marks + 1] = raw
+		end
+	end
+	return marks
+end
+
+-- One tier of an AUDS answer: AUDX with every member, about the asker itself only the done marks
+-- (the only thing it keeps about itself), then AUDE with the time the answer was taken from the
+-- store, so entries stored in that same second come again next time.
 local function Answer(self, gs, target, since, tier, prio, now)
 	local entries = {}
 	for _, entry in ipairs(St.Since(gs, since, tier)) do
-		if entry.key ~= target.key then
-			entries[#entries + 1] = { name = entry.name or entry.key, raws = entry.raws }
+		local raws = entry.key == target.key and OnlyMarks(entry.raws) or entry.raws
+		if #raws > 0 then
+			entries[#entries + 1] = { name = entry.name or entry.key, raws = raws }
 		end
 	end
 	QueueRaws(self, prio, target, entries)
@@ -342,7 +359,8 @@ end
 
 local HANDLERS = {}
 
--- Every group is checked on its own: from the member itself or from a holder.
+-- Every group is checked on its own: from the member itself or from a holder. About ourselves we
+-- keep only the done marks other holders set on our own notices.
 function HANDLERS.AUDX(self, sender, senderKey, payload)
 	local env = self.env
 	if not env.amHolder() then
@@ -356,9 +374,10 @@ function HANDLERS.AUDX(self, sender, senderKey, payload)
 	for group in payload:gmatch("[^\029]+") do
 		local name, list = strsplit("\t", group, 2)
 		local key = name and name ~= "" and list and env.key(name) or nil
-		if key and key ~= env.self and env.isMember(key) and (senderKey == key or env.isHolder(senderKey)) then
+		local aboutSelf = key == env.self
+		if key and env.isMember(key) and (aboutSelf and env.isHolder(senderKey) or not aboutSelf and (senderKey == key or env.isHolder(senderKey))) then
 			for raw in list:gmatch("[^\030]+") do
-				if St.Add(gs, key, name, raw, now) then
+				if (not aboutSelf or IsMark(raw)) and St.Add(gs, key, name, raw, now) then
 					env.onStored(key, raw, now)
 				end
 			end

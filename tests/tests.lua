@@ -1000,6 +1000,15 @@ do
 	local hintLine, marksLeft = St.Timeline(hs), 0
 	for raw in pairs(hs.members["h-r"].recs) do if raw:find("^E\t") then marksLeft = marksLeft + 1 end end
 	check(#hintLine == 500 and hintLine[500].hint.t == 5002 and hintLine[1].done and marksLeft == 1, "pruning: at most 500 notices, the marks of dropped ones go with them")
+	-- R18: interval snapshots (from "Request data" answers or the old cache) stay but never go out.
+	local is = St.New()
+	local intRaw = R.Encode("S", { t = 100, l = 5, x = 0, m = 1, p = 10, r = "int" })
+	local outRaw = R.Encode("S", { t = 101, l = 5, x = 0, m = 1, p = 11, r = "out" })
+	St.Add(is, "i-r", "I-R", intRaw, 1)
+	St.Add(is, "i-r", "I-R", outRaw, 1)
+	local passedOn, passedOnlyKey = St.Since(is, 0, 2), St.Since(is, 0, 2, "i-r")
+	check(#St.GetMember(is, "i-r").snapshots == 2 and #passedOn == 1 and #passedOn[1].raws == 1 and passedOn[1].raws[1] == outRaw
+		and #passedOnlyKey[1].raws == 1, "interval snapshots stay in the store but are never passed on")
 end
 
 -- Audit: sync between players ---------------------------------------------------------
@@ -1341,6 +1350,23 @@ do
 		end
 	end
 	check(Has(b, "mitglied", ahHint) and not aboutAsker, "the asker gets no AUDX about itself")
+	-- R19: a done mark another holder set on our own notice reaches us; nothing else about us does.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	a.store, b.store = St.New(), St.New()
+	local ownNotice = R.Encode("H", { t = 40, hk = "mail", sev = "o", a = "Q", b = "s" })
+	St.Add(b.store, "offia", "OffiA", ownNotice, 0)
+	St.Add(b.store, "offia", "OffiA", R.Encode("C", { t = 41, l = 9, x = 0, m = 1, p = 5, r = "int" }), 0)
+	local ownMark = St.SetDone(b.store, "offia", R.HintId(select(2, R.Decode(ownNotice))), 1, "OffiB", 0)
+	NetRun(60)
+	NetOnline(b, true) NetOnline(a, true) -- A comes last and asks B at Start
+	NetRun(60)
+	local aboutSelf = 0
+	for raw in pairs(a.store.members.offia and a.store.members.offia.recs or {}) do if raw ~= ownMark then aboutSelf = aboutSelf + 1 end end
+	check(Has(a, "offia", ownMark) and aboutSelf == 0, "a done mark on our own notice reaches us, nothing else about us")
+	a.engine:Handle("Mitglied", "AUDX", "OffiA\t" .. R.Encode("E", { t = 50, s = 0, by = "Mitglied", id = "40:mail:Q" }))
+	local mine = St.GetMember(a.store, "offia")
+	check(mine and mine.done["40:mail:Q"] and mine.done["40:mail:Q"].s == 1, "marks about us only from holders")
 
 	-- Flow control: no new AUDS while the asked peer owes its AUDE 2, and at most for three intervals.
 	NetReset()
@@ -1809,6 +1835,18 @@ do
 	local preFound
 	for _, e in ipairs(AA.GetTimeline()) do if e.key == ns.Guild.GetPlayerKey() and e.hint.hk == "mail" then preFound = e.pre end end
 	check(preFound == true, "own notices from before joining are marked")
+	-- R19: an officer marks one of our own notices done; only the mark about us is kept.
+	local ownEntry
+	for _, e in ipairs(AA.GetTimeline()) do if e.key == ns.Guild.GetPlayerKey() and not e.done then ownEntry = e end end
+	local markAboutUs = R.Encode("E", { t = GetServerTime(), s = 1, by = "Freund-ClassicBetaPvE2", id = ownEntry.id })
+	local hintAboutUs = R.Encode("H", { t = 3, hk = "mail", sev = "o", a = "Fremd", b = "s" })
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tMagus-ClassicBetaPvE2\t" .. markAboutUs .. "\030" .. hintAboutUs, "WHISPER", "Freund-ClassicBetaPvE2")
+	local markedDone, foreignAboutUs
+	for _, e in ipairs(AA.GetTimeline()) do
+		if e.key == ns.Guild.GetPlayerKey() and e.id == ownEntry.id then markedDone = e.done and e.done.s == 1 and e.done.by == "Freund-ClassicBetaPvE2" end
+		if e.key == ns.Guild.GetPlayerKey() and e.hint.a == "Fremd" then foreignAboutUs = true end
+	end
+	check(markedDone and not foreignAboutUs, "an officer's done mark on our own notice shows in our timeline, nothing else about us is kept")
 	-- Prüfschwerpunkt 3: an officer with an old version is no recipient.
 	ROSTER[3][2] = true
 	FireEvent("GUILD_ROSTER_UPDATE")

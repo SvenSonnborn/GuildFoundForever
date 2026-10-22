@@ -51,14 +51,20 @@ function St.Add(gs, key, name, raw, at)
 	return true
 end
 
--- Entries that arrived at or after `since`, of one tier, newest member first.
+-- Interval snapshots ("S ... int", r is the last field) come in only with "Request data" answers
+-- and the old cache. They stay for the member view but are never passed on.
+local function IsInterval(raw)
+	return raw:sub(1, 2) == "S\t" and raw:sub(-4) == "\tint"
+end
+
+-- Entries that arrived at or after `since`, of one tier, newest member first; no interval snapshots.
 function St.Since(gs, since, tier, onlyKey)
 	local result = {}
 	for key, member in pairs(gs.members) do
 		if not onlyKey or key == onlyKey then
 			local raws, newest = {}, 0
 			for raw, at in pairs(member.recs) do
-				if at >= since and R.Tier((strsplit("\t", raw))) == tier then
+				if at >= since and R.Tier((strsplit("\t", raw))) == tier and not IsInterval(raw) then
 					raws[#raws + 1] = raw
 					if at > newest then
 						newest = at
