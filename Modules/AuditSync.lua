@@ -56,8 +56,8 @@ Sync.TIER2_PACE_SECONDS = 3 * Sync.PACE_SECONDS
 Sync.BUNDLE_SECONDS = 2
 Sync.INTERVAL_SECONDS = 300
 Sync.FIRST_CONTACT_SECONDS = 864000
--- A catch-up ask without its AUDE 4 counts as under way this long; a new announcement of the
--- member asks again after that.
+-- A catch-up ask without its AUDE 4 counts as under way this long; after that the next tick (or a
+-- new announcement of the member) asks again.
 Sync.CATCH_UP_SECONDS = 300
 -- An answer to a holder our roster does not show online goes out only this long after its ask: the
 -- roster refreshes every 60 s, so a holder that just logged in shows up within that time.
