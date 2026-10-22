@@ -157,7 +157,7 @@ Festgelegt am 26.09.2026: Erfasst werden Verlauf, Handel, Post und blockierte Ak
     - Klick auf den Namen öffnet die Ansicht „Mitglieder“ bei diesem Mitglied.
     - Fuß: „Zuletzt abgeglichen: <Zeit>, über <Name>“, die Zahl offener Hinweise und während eines Abgleichs sein Fortschritt.
   - **Mitglieder:** Liste nach offenen Hinweisen sortiert (mit Anzahl), `*` bei schon vorhandenen Daten. Rechts stehen der Status (wie alt die Daten sind, ob die Einzelheiten vollständig sind), der Beitrittsstand, der Knopf „Daten anfordern“, die Zusammenfassung (Level, Gold, Spielzeit), die Hinweise und die Ansichten Verlauf, Handel, Post und Blockiert. Lange Zeilen zeigen beim Überfahren den vollen Text; die Listen lassen sich mit dem Mausrad blättern.
-- **Erledigt-Marken:** Der Haken in der Zeitleiste gilt für alle Offiziere. Die spätere Marke gewinnt. Maus über dem Haken zeigt, wer abgehakt hat und wann. Die Marken gehen an alle Offiziere (auch an den, um dessen Eintrag es geht) und an Zwischenspeicher, aber nie an normale Mitglieder.
+- **Erledigt-Marken:** Der Haken in der Zeitleiste gilt für alle Offiziere. Die spätere Marke gewinnt. Maus über dem Haken zeigt, wer abgehakt hat und wann. Die Marken gehen an alle Offiziere (auch an den, um dessen Eintrag es geht) und an Zwischenspeicher, aber nie an normale Mitglieder. Angenommen werden sie nur von Offizieren und Zwischenspeichern: Ein Mitglied kann seine eigenen Hinweise nicht abhaken.
 - **Meldungen:**
   - Nach dem Einloggen kommt eine wichtige Meldung der Art „Audit“, z. B. „5 neue Audit-Hinweise“, sobald der erste Abgleich fertig ist (spätestens nach 2 Minuten). Ein Klick darauf öffnet den Tab „Audit“ in der Ansicht „Hinweise“. Das gilt nur für echte Logins, nicht für `/reload`.
   - Während der Sitzung meldet das Addon neue Hinweise gesammelt, höchstens alle 10 Minuten. Diese Meldung ist nicht wichtig, das Icon leuchtet also nicht.
@@ -384,7 +384,7 @@ UI.lua                   Fenster mit Tabs, Einstellungs-Eintrag, Addon-Menü an 
   | `AUD <eintrag>␞<eintrag>…` | Flüstern | Audit-Einträge, getrennt durch Zeichen 30: `S` Verlauf, `T` Handel, `M` Post, `L` blockiert |
   | `AUDEND <anzahl> <zeit>` | Flüstern | Ende der Antwort |
   | `AUDNO` | Flüstern | Anfrage abgelehnt |
-  | `AUDX <mitglied>␉<eintrag>␞<eintrag>…` | Flüstern | automatischer Audit: Einträge über ein Mitglied; mehrere Mitglieder in einer Nachricht, getrennt durch Zeichen 29. Über den Empfänger selbst zählen nur Erledigt-Marken (`E`). Arten: `S` Stand, `C` letzter Stand, `T` Handel, `M` Post, `L` blockiert, `H` Hinweis, `J` Beitrittsstand, `F` erster Stand, `E` Erledigt-Marke |
+  | `AUDX <mitglied>␉<eintrag>␞<eintrag>…` | Flüstern | automatischer Audit: Einträge über ein Mitglied; mehrere Mitglieder in einer Nachricht, getrennt durch Zeichen 29. Über den Empfänger selbst zählen nur Erledigt-Marken (`E`), und die nur von Offizieren und Zwischenspeichern. Arten: `S` Stand, `C` letzter Stand, `T` Handel, `M` Post, `L` blockiert, `H` Hinweis, `J` Beitrittsstand, `F` erster Stand, `E` Erledigt-Marke |
   | `AUDS <seit1>␉<seit2>` | Flüstern | „schick mir, was du seit diesen Zeiten gespeichert hast“ (Stufe 1, Stufe 2) |
   | `AUDE <stufe>␉<zeit>` | Flüstern | Ende einer Antwort: Stufe 1 oder 2 einer `AUDS`-Antwort, 3 einer `AUDM`-Antwort, 4 einer `AUDQ`-Antwort (`<zeit>` ist dann die Uhrzeit des Mitglieds, bis zu der der Halter nun alles hat) |
   | `AUDM <mitglied>␉<seit>` | Flüstern | Einzelheiten (Stufe 2) eines Mitglieds anfordern |

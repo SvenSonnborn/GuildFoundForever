@@ -554,8 +554,9 @@ end
 
 local HANDLERS = {}
 
--- Every group is checked on its own: from the member itself or from a holder. About ourselves we
--- keep only the done marks other holders set on our own notices.
+-- Every group is checked on its own: from the member itself or from a holder. Done marks are
+-- officer state and come only from holders; about ourselves we keep only the done marks other
+-- holders set on our own notices.
 function HANDLERS.AUDX(self, sender, senderKey, payload)
 	local env = self.env
 	local gs = env.amHolder() and env.store()
@@ -565,6 +566,7 @@ function HANDLERS.AUDX(self, sender, senderKey, payload)
 		return
 	end
 	local now = env.now()
+	local fromHolder = env.isHolder(senderKey)
 	for group in payload:gmatch("[^\029]+") do
 		local name, list = strsplit("\t", group, 2)
 		local key = name and name ~= "" and list and env.key(name) or nil
@@ -572,9 +574,10 @@ function HANDLERS.AUDX(self, sender, senderKey, payload)
 		if key and key == senderKey and not env.isMember(key) then
 			-- A member not in our roster yet (it just joined): caught up with once it is there.
 			Missed(self, senderKey)
-		elseif key and env.isMember(key) and (aboutSelf and env.isHolder(senderKey) or not aboutSelf and (senderKey == key or env.isHolder(senderKey))) then
+		elseif key and env.isMember(key) and (aboutSelf and fromHolder or not aboutSelf and (senderKey == key or fromHolder)) then
 			for raw in list:gmatch("[^\030]+") do
-				if (not aboutSelf or IsMark(raw)) and St.Add(gs, key, name, raw, now) then
+				local mark = IsMark(raw)
+				if (mark and fromHolder or not mark and not aboutSelf) and St.Add(gs, key, name, raw, now) then
 					env.onStored(key, raw, now)
 				end
 			end

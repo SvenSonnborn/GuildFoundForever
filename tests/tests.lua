@@ -1827,6 +1827,17 @@ do
 	m.engine:PeersChanged()
 	NetRun(30)
 	check(Has(a, "mitglied", earlyHint) and #Between("mitglied", "offia", 1, "^AUDE\t4\t") == 1, "a holder not in our roster yet still gets the answer to its ask")
+
+	-- Done marks are officer state: a member cannot mark its own notices done (a modified client
+	-- could hide them from every officer), its other entries still count.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(a, true) NetOnline(m, true)
+	NetRun(60)
+	local selfMark = R.Encode("E", { t = net.now + 864000, s = 1, by = "OffiA", id = R.HintId(select(2, R.Decode(ahHint))) })
+	a.engine:Handle("Mitglied", "AUDX", "Mitglied\t" .. ahHint .. "\030" .. selfMark)
+	local notice = St.Timeline(a.store)[1]
+	check(notice and not (notice.done and notice.done.s == 1), "a member's done mark on its own notice is not taken")
 end
 
 -- Audit: recording --------------------------------------------------------------
