@@ -675,7 +675,7 @@ Festgelegt am 26.09.2026:
 - Name: **Guild Found Forever** (Ordner und Dateien `GuildFoundForever`, Befehl `/gff`, Addon-Nachrichten `GFForever`). Der Arbeitsname „GuildPact“ sagte nicht, was das Addon macht; umbenannt vor der ersten Veröffentlichung, gespeicherte Testdaten unter dem alten Namen werden nicht übernommen.
 - Lizenz: **MIT**.
 - Quellcode öffentlich auf **GitHub**. Ein Tag löst das automatische Packen und Hochladen aus.
-- **Jetzt als Beta** (`0.7.0-beta`), **1.0.0 zum Launch** am 04.11.2026.
+- **Jetzt als Beta** (`0.7.0-beta`), ~~**1.0.0 zum Launch** am 04.11.2026~~. Geändert am 22.10.2026: Bis 1.0.0 kommen noch Funktionen dazu, bis dahin bleibt es bei Betas (als Nächstes `0.9.0-beta`).
 - Nur **CurseForge** (Projekt-ID 1712933) und GitHub-Releases. Wago wurde verworfen.
 
 Stand der Technik (26.09.2026):
