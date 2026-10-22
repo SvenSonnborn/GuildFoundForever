@@ -237,7 +237,13 @@ Wunsch vom 26.09.2026: Gruppen melden sich an, um Mitglieder zu suchen. Was gesu
 - **Log:** blockierte Aktionen werden pro Charakter gespeichert (maximal 200 Einträge).
 - **Oberfläche:**
   - **Meldungen statt Chat** (seit 0.8.0): Das Addon schreibt nichts mehr in den Chat. Alle Meldungen stehen im Meldungsfenster (Stil der Banner) mit den Filtern Blockiert, Gilde, Audit, Dungeonsuche und System, Uhrzeit, Detailbereich und Item-Tooltips; die letzten 300 bleiben pro Charakter erhalten. Das Minimap-Icon zählt die ungelesenen, wichtige Meldungen blenden daneben 4 Sekunden einen Hinweis ein. Roter Bildschirmtext, Raid-Warnungen, Banner und der Beitrittsdialog bleiben. Spezifikation: `docs/specs/2026-09-30-meldungsfenster.md`.
-  - Fenster über `/gff` mit den Tabs „Regeln“, „Berufe“ und „Dungeonsuche“ (beide nur, wenn die Gildenregel an ist), „Deathlog“ und „Audit“.
+  - Fenster über `/gff` mit den Tabs „Übersicht“, „Regeln“, „Berufe“ und „Dungeonsuche“ (beide nur, wenn die Gildenregel an ist), „Deathlog“ und „Audit“.
+  - **Übersicht (Gilden-Dashboard „Gildenpuls“, seit 0.9.0):**
+    - Links die **Chronik der Woche**: Höchstlevel, Tode mit Ursache, epische Beute, Rezepte und Beitritte der letzten 7 Tage, nach Tagen gruppiert, mit farbigem Quadrat je Art, Namen in Klassenfarbe und Uhrzeit. Quelle sind die Ankündigungen (unabhängig davon, was man sich selbst anzeigen lässt) und die Systemmeldung zum Gildenbeitritt. Gespeichert werden 14 Tage, höchstens 300 Einträge pro Gilde, kontoweit.
+    - Rechts **jetzt online** mit „davon mit Addon“, einem Balken der Klassen online und einer Legende; die **Level der Gilde** als 12 Säulen zu je 5 Level, die Höchstlevel-Säule in Akzentfarbe; **Wer war da?**, die Zahl verschiedener Spieler pro Tag über 14 Tage, vom Addon selbst gezählt, solange man online ist.
+    - Unten rechts **für Offiziere**: offene Audit-Hinweise (Klick öffnet die Zeitleiste), online ohne Addon, 30+ Tage nicht da und ob die Regeln in der Gildeninfo dem eigenen Entwurf entsprechen. Alle anderen sehen dort **diese Woche**: auf Höchstlevel, Tode, neu in der Gilde, aktiv in den letzten 7 Tagen.
+    - Bewusst anders als das Dashboard von iRC: keine Kennzahl-Kacheln, kein Aktivitäts-Score, keine waagrechten Verteilungsbalken. Spezifikation: `docs/specs/2026-10-22-dashboard.md`.
+    - Mit sechs Tabs sind die Tab-Buttons 120 statt 140 Pixel breit.
   - Im Tab „Regeln“ stehen Audit, Berufe und Dungeonsuche zusammen unter „Gildenfunktionen“.
   - Das Zahnrad in der Titelleiste neben dem X öffnet die Einstellungen: Gildenchat-Regeln, eigene Benachrichtigungen, Banner, Testmeldung und Banner-Vorschau. Nochmal klicken führt zum letzten Tab zurück.
   - **Look: Klassisch oder Modern** (seit 0.9.0): Ein Schalter in der Titelleiste links neben dem Zahnrad wechselt sofort, ohne `/reload`, und gilt für das ganze Konto (auch `/gff style`).
@@ -369,6 +375,7 @@ Modules/Audit.lua        Audit: Verlauf, Handel und Post festhalten, eigene Hinw
 Modules/AuditAuto.lua    Audit im Spiel: verbindet die Abgleich-Engine mit Comm, Gilde, Regeln und SavedVariables; Rollen, Speicher pro Gilde, Meldungen
 Modules/Professions.lua  Berufe: eigene Skills und Rezepte lesen, Verzeichnis der Gilde, Rezepte auf Anfrage
 Modules/Finder.lua       Dungeonsuche: Dungeons und Stufen aus dem Spiel, Gruppe und Rollen lesen, Anmeldungen, Beitrittsanfragen
+Modules/Dashboard.lua    Daten der Übersicht: Chronik der Woche, „Wer war da?“ pro Tag, Zahlen aus der Mitgliederliste
 MapPin.xml               Vorlage für die Pins der Gildenkarte (Verhalten in GuildMap.lua)
 Banner.lua               Banner für Ankündigungen: Stile Beute, Tod, Höchstlevel, Test; Warteschlange
 MessageWindow.lua        Meldungsfenster und Hinweis im Stil der Banner
@@ -376,7 +383,7 @@ MinimapButton.lua        Minimap-Icon: Klicks, Zähler, Leuchten, Ziehen am Kart
 UI.lua                   Fenster mit Tabs, Einstellungs-Eintrag, Addon-Menü an der Minimap
 ```
 
-- Interne Nachrichten zwischen den Modulen: `INIT`, `LOGIN`, `RULES_CHANGED`, `ROSTER_UPDATED`, `DEATHLOG_UPDATED`, `AUDIT_UPDATED`, `AUDIT_RECORDED` (ein neuer eigener Audit-Eintrag, außer Zwischenständen), `LOGGED` (ein Eintrag im Log der blockierten Aktionen), `PEERS_CHANGED` (die Fähigkeiten der Spieler online haben sich geändert), `PEER_SEEN` (ein `HELLO` oder `HI` kam an, auch mit unveränderten Fähigkeiten), `PROFESSIONS_UPDATED`, `FINDER_UPDATED`, `MESSAGES_UPDATED`, `SETTINGS_CHANGED`, `STYLE_CHANGED` (der Look wurde umgeschaltet) (siehe `ns.RegisterCallback` / `ns.Fire`).
+- Interne Nachrichten zwischen den Modulen: `INIT`, `LOGIN`, `RULES_CHANGED`, `ROSTER_UPDATED`, `DEATHLOG_UPDATED`, `AUDIT_UPDATED`, `AUDIT_RECORDED` (ein neuer eigener Audit-Eintrag, außer Zwischenständen), `LOGGED` (ein Eintrag im Log der blockierten Aktionen), `PEERS_CHANGED` (die Fähigkeiten der Spieler online haben sich geändert), `PEER_SEEN` (ein `HELLO` oder `HI` kam an, auch mit unveränderten Fähigkeiten), `PROFESSIONS_UPDATED`, `FINDER_UPDATED`, `MESSAGES_UPDATED`, `SETTINGS_CHANGED`, `STYLE_CHANGED` (der Look wurde umgeschaltet), `ANNOUNCED` (eine eigene oder empfangene Ankündigung, unabhängig von den persönlichen Einstellungen), `CHRONICLE_UPDATED` (siehe `ns.RegisterCallback` / `ns.Fire`).
 - Mitgliederliste: `ROSTER_UPDATED` kommt bei jedem Neuladen (mindestens jede Minute), auch ohne Änderung. `Guild.GetRosterRevision()` steigt nur, wenn sich Mitglieder, Ränge, Level, Klassen, online/offline oder die vollen Tage seit „zuletzt online“ geändert haben; teure Auswertungen (Audit-Zeitleiste, Dashboard) bauen nur dann neu. Jeder Eintrag von `Guild.GetRosterEntries()` hat `lastOnline` (Tage seit zuletzt online aus `GetGuildRosterLastOnline`, 0 während online, `nil` wenn unbekannt).
 - Addon-Nachrichten (Präfix `GFForever`, Felder mit Tab getrennt):
 
@@ -503,6 +510,14 @@ Neu in 0.9.0-beta (automatischer Audit; mit zwei bis drei Spielern, ein Offizier
 - [ ] Ein Mitglied mit Version 0.8.0 beantwortet „Daten anfordern“ weiterhin (`AUDREQ`/`AUD` kommen an).
 - [ ] Texte: „->“ und alle neuen Texte werden richtig dargestellt, auf Deutsch und Englisch.
 - [ ] Mit einer größeren Gilde: Ruckelt das Spiel? Verdrängt der Audit Gildenkarte oder Dungeonsuche? Wie lange dauert es, bis ein Eintrag bei allen Offizieren ist?
+
+Neu in 0.9.0-beta (Übersicht):
+
+- [ ] Tab „Übersicht“: alle sechs Tabs passen nebeneinander, in beiden Looks; nichts überlappt (Chronik, Klassenbalken, Säulen, Zahlen).
+- [ ] Chronik: Höchstlevel, Tod, epische Beute und Rezept eines anderen Mitglieds erscheinen, auch wenn man sie sich selbst nicht anzeigen lässt; ein Gildenbeitritt erscheint mit „tritt der Gilde bei“ (Systemmeldung auf Deutsch und Englisch); Item-Links sind farbig.
+- [ ] `GetGuildRosterLastOnline` liefert in Forever Jahre, Monate, Tage, Stunden für Offline-Mitglieder; „30+ Tage nicht da“ und „aktiv in den letzten 7 Tagen“ stimmen mit der Gildenliste überein.
+- [ ] „Wer war da?“ zählt über den Tag weiter, auch nach `/reload`; um Mitternacht beginnt ein neuer Tag.
+- [ ] Offiziere sehen ihren Kasten, ein Klick auf „Offene Audit-Hinweise“ öffnet die Zeitleiste; Mitglieder sehen „Diese Woche“.
 
 Neu in 0.9.0-beta (Look Klassisch/Modern):
 
@@ -727,6 +742,9 @@ Offen:
   - Zwischenstände alle 10 Minuten gehen nicht an die Offiziere, nur der jeweils letzte Stand.
   - Bei einem Charakter, der beim ersten Start des Addons schon in der Gilde war, ist der Beitrittszeitpunkt unbekannt.
   - Die Position des Rechts „Offiziersnotiz ansehen“ (Nr. 11) stammt aus der Classic-API und muss in Forever bestätigt werden (siehe Testliste).
+- Übersicht:
+  - Chronik und „Wer war da?“ enthalten nur, was das eigene Addon gesehen hat, während man online war. Zwei Mitglieder können also verschiedene Chroniken sehen; es wird nichts abgeglichen.
+  - Ankündigungen kommen nur von Mitgliedern mit Addon; Beitritte nur über die Systemmeldung, die man selbst bekommt.
 - Dungeonsuche:
   - Es erscheinen nur Anmeldungen von Mitgliedern mit Addon; Partnergilden sehen sie nicht.
   - Rollen von Gruppenmitgliedern ohne Addon kennt das Addon nur, wenn das Spiel sie zugewiesen hat oder die Spezialisierung kennt; sonst zeigt der Platz die Klasse.
