@@ -22,6 +22,7 @@ local LOGIN_REPORT_SECONDS = 120  -- the login report when no sync completed by 
 local SESSION_REPORT_SECONDS = 600
 local ROLE_LOST_SECONDS = 60      -- without readable rank permissions: no role this long before data goes
 local GUILD_GONE_SECONDS = 10     -- "no guild" must still hold this much later before the data goes
+local ROSTER_REQUEST_SECONDS = 10 -- a HELLO from a name not in the roster asks for it at most this often
 local CAPABILITY = "A"
 
 local started = false       -- the engine ran Start this session
@@ -30,6 +31,7 @@ local loggedIn = false
 local peersPending = false
 local migrated = false      -- the old account-wide cache was looked at this session
 local roleLostAt            -- GetTime() of the first ready roster without a role (permissions unreadable)
+local rosterAskedAt         -- GetTime() of the last roster request for an unknown HELLO
 local sessionHints = 0      -- notices stored since the last report
 
 -- ns.char.auditSeen: prev and this are the last two real logins (not /reload); reported is the
@@ -108,6 +110,18 @@ local function Holders()
 	return list
 end
 
+-- Everyone online running the automatic audit, without ourselves (the members a holder catches
+-- up with).
+local function Peers()
+	local list = {}
+	for _, entry in ipairs(ns.Guild.GetRosterEntries()) do
+		if entry.online and not ns.Guild.IsSelf(entry.fullName) and ns.Comm.HasCapability(entry.fullName, CAPABILITY) then
+			list[#list + 1] = { key = entry.key, name = entry.fullName }
+		end
+	end
+	return list
+end
+
 -- A throttled message is tried again by the engine; every other failure drops it.
 local function Send(message, target)
 	local ok, code = ns.Comm.Send(message, "WHISPER", target)
@@ -147,10 +161,12 @@ local env = setmetatable({
 	after = function(seconds, fn) C_Timer.After(seconds, fn) end,
 	send = Send,
 	holders = Holders,
+	peers = Peers,
 	isHolder = IsHolder,
 	capable = function(key) return ns.Comm.HasCapability(key, CAPABILITY) end,
 	isMember = IsMember,
 	amHolder = AmHolder,
+	amOfficer = function() return Audit.IsOfficer(ns.Guild.GetPlayerKey()) end,
 	store = function() return AA.GetStore() end,
 	ownSince = function(since) return Audit.OwnRaws(since) end,
 	sent = SentMarks,
@@ -553,6 +569,23 @@ end)
 
 ns.RegisterCallback("PEERS_CHANGED", SchedulePeersChanged)
 
+-- A HELLO or HI with the automatic audit: as a holder we catch up with that member (it may have
+-- lost pushes to us, e.g. while we reloaded). Someone not online in our roster yet (a recruit
+-- invited just now) makes us ask for the roster; the catch-up follows once it is there.
+ns.RegisterCallback("PEER_SEEN", function(sender, caps)
+	if not ns.char or not caps:find(CAPABILITY, 1, true) then
+		return
+	end
+	if AmHolder() and not ns.Comm.HasCapability(sender, CAPABILITY) then
+		local now = GetTime()
+		if not rosterAskedAt or now - rosterAskedAt >= ROSTER_REQUEST_SECONDS then
+			rosterAskedAt = now
+			ns.Guild.RequestRoster()
+		end
+	end
+	engine:MemberSeen(ns.Guild.NormalizeName(sender))
+end)
+
 -- Every own record goes out (Audit.lua fires it, interval snapshots only as the last state).
 ns.RegisterCallback("AUDIT_RECORDED", function(raw)
 	if raw and ns.char then
@@ -560,7 +593,7 @@ ns.RegisterCallback("AUDIT_RECORDED", function(raw)
 	end
 end)
 
-for _, command in ipairs({ "AUDX", "AUDS", "AUDE", "AUDM" }) do
+for _, command in ipairs({ "AUDX", "AUDS", "AUDE", "AUDM", "AUDQ" }) do
 	ns.Comm.RegisterHandler(command, function(sender, channel, payload)
 		if channel == "WHISPER" and ns.char then
 			engine:Handle(sender, command, payload)

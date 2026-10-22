@@ -1,20 +1,26 @@
 local _, ns = ...
 
 -- The audit protocol between players. Members push their own new entries to at most RECIPIENTS
--- online holders (officers, or members when the guild rule V is on). The online holders, sorted by
--- key, form a ring; each one syncs in turn with its successor, its predecessor and the holder
--- half-way round, one per round, so an entry reaches every holder with at most three transfers
--- each. Every message goes through one paced queue. The engine talks to the game only through the
--- env table given to Sync.New, so the tests can run several players in one Lua state. No WoW API
--- calls, no module state.
+-- online holders (officers first, then members when the guild rule V is on). The push is only the
+-- fast path: its watermark moves when the message went out, not when it was stored. So every
+-- holder also catches up with the online members that count it among their recipients, once it is
+-- ready to store and whenever such a member announces itself (AUDQ, from the holder's direct
+-- watermark for that member). The online holders, sorted by key, form a ring; each one syncs in
+-- turn with its successor, its predecessor and the holder half-way round, one per round, so an
+-- entry reaches every holder with at most three transfers each. Every message goes through one
+-- paced queue. The engine talks to the game only through the env table given to Sync.New, so the
+-- tests can run several players in one Lua state. No WoW API calls, no module state.
 --
 -- Messages (all whispered):
 --   AUDX <member>\t<raw>\030<raw>...   entries about members; several groups of
 --        [\029<member>\t<raw>...]       "<member>\t<raws>" joined by character 29; about the
 --                                       receiver itself only done marks (E) count
 --   AUDS <since1>\t<since2>            "send me what you stored since these times" (tier 1, tier 2)
---   AUDE <tier>\t<now>                 end of tier 1 or 2 of an AUDS answer, or of an AUDM answer (3)
+--   AUDE <tier>\t<now>                 end of an answer: tier 1 or 2 of an AUDS answer, 3 of an AUDM
+--                                       answer, 4 of an AUDQ answer (now: the member's clock)
 --   AUDM <member>\t<since>             ask for the details (tier 2) of one member
+--   AUDQ <since>                       holder to member: "send me your own entries since then",
+--                                       all tiers (Audit.OwnRaws), answered as AUDX about the member
 --
 -- env, every field required:
 --   self, selfName               own key and full name
@@ -23,13 +29,16 @@ local _, ns = ...
 --   after(seconds, fn)           timer
 --   send(message, target)        whisper to a full name, returns ok, code; code "retry" (throttled)
 --                                means the same message is tried again
---   holders()                    { { key, name }, ... }: online officers and relays with capability A, not self
+--   holders()                    { { key, name, officer }, ... }: online officers and relays with
+--                                capability A, not self; officer is false for relays
+--   peers()                      { { key, name }, ... }: everyone online with capability A, not self
 --   isHolder(key)                officer or relay, online or not
 --   capable(key)                 online with capability A
 --   isMember(key)                in the guild roster
 --   amHolder()                   whether we are an officer or relay ourselves
+--   amOfficer()                  whether we are an officer (as the others read our rank)
 --   store()                      the guild's store, nil without a role or guild name; the engine
---                                keeps gs.peers[key] = { s1, s2 } and gs.base in it
+--                                keeps gs.peers[key] = { s1, s2 }, gs.base and gs.direct[key] in it
 --   ownSince(since)              own encoded entries from since on (Audit.OwnRaws)
 --   sent()                       push watermark per recipient, [key] = time
 --   onStored(key, raw, at)       a foreign entry was newly stored
@@ -47,6 +56,9 @@ Sync.TIER2_PACE_SECONDS = 3 * Sync.PACE_SECONDS
 Sync.BUNDLE_SECONDS = 2
 Sync.INTERVAL_SECONDS = 300
 Sync.FIRST_CONTACT_SECONDS = 864000
+-- A catch-up ask without its AUDE 4 counts as under way this long; a new announcement of the
+-- member asks again after that.
+Sync.CATCH_UP_SECONDS = 300
 Sync.MESSAGE_LIMIT = 240
 -- A throttled message stays at the head and is tried again RETRY_SECONDS later, RETRIES times at most.
 Sync.RETRIES = 10
@@ -56,8 +68,9 @@ local SEPARATOR = "\030"
 local GROUP = "\029"
 local HEAD = "AUDX\t"
 
--- Queue priorities, the lowest goes first; within one priority first in, first out.
-local ASK, OWN, MEMBER_ANSWER, TIER1_ANSWER, TIER2_ANSWER = 0, 1, 2, 3, 4
+-- Queue priorities, the lowest goes first; within one priority first in, first out. The catch-up
+-- asks (one per member, many at login) wait behind the notices but not behind the details.
+local ASK, OWN, MEMBER_ANSWER, TIER1_ANSWER, CATCH_UP, TIER2_ANSWER = 0, 1, 2, 3, 4, 5
 local LAST_PRIORITY = TIER2_ANSWER
 
 -- djb2 over "member|holder": every member ranks the holders in its own fixed order.
@@ -177,6 +190,7 @@ local function Drop(self, key)
 	end
 	self.pushed[key] = nil
 	self.asked[key] = nil
+	self.catching[key] = nil
 end
 
 local function IsAnswer(prio)
@@ -236,7 +250,7 @@ local function DropGone(self)
 	local function Keep(item)
 		if online[item.key] then
 			return true
-		elseif item.prio == ASK then
+		elseif item.prio == ASK or item.prio == CATCH_UP then
 			return env.capable(item.key) and true or false
 		elseif item.prio == MEMBER_ANSWER then
 			return env.isHolder(item.key) and true or false
@@ -408,17 +422,115 @@ local function Answer(self, gs, target, since, tier, prio, now)
 	Queue(self, prio, target.name, "AUDE\t" .. tier .. "\t" .. now)
 end
 
+---------------------------------------------------------------------------
+-- Catch-up with the members, driven by the holder
+---------------------------------------------------------------------------
+
+-- Whether the member, ranking the holders as Recipients() does (officers first, then by Score),
+-- puts us among its RECIPIENTS, as far as we can see who is online. Stops at the third holder
+-- ahead of us; relays need no Score against officers and the other way round.
+local function AmRecipientOf(self, memberKey, holders)
+	local env = self.env
+	local officer = env.amOfficer() and true or false
+	local mine = Sync.Score(memberKey, env.self)
+	local ahead = 0
+	for _, holder in ipairs(holders) do
+		if holder.key ~= memberKey and holder.key ~= env.self then
+			local other = holder.officer and true or false
+			local before = false
+			if other ~= officer then
+				before = other
+			else
+				local score = Sync.Score(memberKey, holder.key)
+				before = score > mine or (score == mine and holder.key < env.self)
+			end
+			if before then
+				ahead = ahead + 1
+				if ahead >= Sync.RECIPIENTS then
+					return false
+				end
+			end
+		end
+	end
+	return true
+end
+
+-- Asks a member for its own entries since our direct watermark for it, the last 10 days on first
+-- contact. Whatever went missing before is covered by this answer.
+local function AskMember(self, peer)
+	local env = self.env
+	local gs = env.store()
+	local now = env.now()
+	local since = gs.direct and gs.direct[peer.key] or (now - Sync.FIRST_CONTACT_SECONDS)
+	self.catching[peer.key] = now
+	self.missed[peer.key] = nil
+	Queue(self, CATCH_UP, peer.name, "AUDQ\t" .. since)
+end
+
+-- Once we can store (after the start, also after a /reload): every online member not looked at
+-- this session (or announced again since) that counts us among its recipients is asked once.
+-- Without the role, the members are looked at again once we have it.
+local function CatchUp(self)
+	local env = self.env
+	if not IsHolder(self) then
+		self.checked = {}
+		return
+	end
+	if not self.started then
+		return
+	end
+	local holders = nil
+	for _, peer in ipairs(env.peers() or {}) do
+		if peer.key ~= env.self and not self.checked[peer.key] then
+			self.checked[peer.key] = true
+			holders = holders or env.holders() or {}
+			if AmRecipientOf(self, peer.key, holders) then
+				AskMember(self, peer)
+			end
+		end
+	end
+end
+
+-- Something the member sent us could not be stored (we could not store yet, or it is not in our
+-- roster yet): it is asked again, and an answer still under way does not move the watermark.
+local function Missed(self, key)
+	self.checked[key] = nil
+	self.missed[key] = true
+end
+
+-- The end of a member's answer to our AUDQ: its entries up to `at` (its clock) are here, unless a
+-- part could not be stored; then it is asked again from the old watermark.
+local function CatchUpDone(self, key, at)
+	local env = self.env
+	if not at or not self.catching[key] then
+		return
+	end
+	self.catching[key] = nil
+	if self.missed[key] then
+		self.missed[key] = nil
+		self.checked[key] = nil
+		CatchUp(self)
+		return
+	end
+	local gs = env.amHolder() and env.store()
+	if gs then
+		gs.direct = gs.direct or {}
+		if not gs.direct[key] or at > gs.direct[key] then
+			gs.direct[key] = at
+		end
+	end
+end
+
 local HANDLERS = {}
 
 -- Every group is checked on its own: from the member itself or from a holder. About ourselves we
 -- keep only the done marks other holders set on our own notices.
 function HANDLERS.AUDX(self, sender, senderKey, payload)
 	local env = self.env
-	if not env.amHolder() then
-		return
-	end
-	local gs = env.store()
+	local gs = env.amHolder() and env.store()
 	if not gs then
+		-- We cannot store yet, but the sender counts us as a holder: catch up with it once we can.
+		Missed(self, senderKey)
 		return
 	end
 	local now = env.now()
@@ -426,7 +538,10 @@ function HANDLERS.AUDX(self, sender, senderKey, payload)
 		local name, list = strsplit("\t", group, 2)
 		local key = name and name ~= "" and list and env.key(name) or nil
 		local aboutSelf = key == env.self
-		if key and env.isMember(key) and (aboutSelf and env.isHolder(senderKey) or not aboutSelf and (senderKey == key or env.isHolder(senderKey))) then
+		if key and key == senderKey and not env.isMember(key) then
+			-- A member not in our roster yet (it just joined): caught up with once it is there.
+			Missed(self, senderKey)
+		elseif key and env.isMember(key) and (aboutSelf and env.isHolder(senderKey) or not aboutSelf and (senderKey == key or env.isHolder(senderKey))) then
 			for raw in list:gmatch("[^\030]+") do
 				if (not aboutSelf or IsMark(raw)) and St.Add(gs, key, name, raw, now) then
 					env.onStored(key, raw, now)
@@ -455,11 +570,16 @@ function HANDLERS.AUDS(self, sender, senderKey, payload)
 	end
 end
 
--- Only from a peer we asked. Tier 3 (end of an AUDM answer) needs nothing: its entries came as AUDX.
+-- Only from a peer we asked. Tier 3 (end of an AUDM answer) needs nothing: its entries came as
+-- AUDX. Tier 4 ends a member's answer to our AUDQ.
 function HANDLERS.AUDE(self, sender, senderKey, payload)
 	local env = self.env
 	local tier, at = strsplit("\t", payload)
 	tier, at = tonumber(tier), tonumber(at)
+	if tier == 4 then
+		CatchUpDone(self, senderKey, at)
+		return
+	end
 	if (tier ~= 1 and tier ~= 2) or not at or not self.asked[senderKey] or not env.amHolder() then
 		return
 	end
@@ -516,6 +636,20 @@ function HANDLERS.AUDM(self, sender, senderKey, payload)
 	Queue(self, MEMBER_ANSWER, sender, "AUDE\t3\t" .. env.now())
 end
 
+-- A holder catches up with us: all our own entries since then (every tier, also the last, join and
+-- first state), then AUDE 4 with the time the answer was taken, so entries of that same second
+-- come again next time. Only holders, as we read the roster, get an answer.
+function HANDLERS.AUDQ(self, sender, senderKey, payload)
+	local env = self.env
+	if senderKey == env.self or not env.isHolder(senderKey) then
+		return
+	end
+	local now = env.now()
+	local raws = Ordered(env.ownSince(tonumber(payload) or 0))
+	QueueRaws(self, MEMBER_ANSWER, { key = senderKey, name = sender }, { { name = env.selfName, raws = raws } })
+	Queue(self, MEMBER_ANSWER, sender, "AUDE\t4\t" .. now)
+end
+
 ---------------------------------------------------------------------------
 -- The engine
 ---------------------------------------------------------------------------
@@ -523,21 +657,25 @@ end
 local Engine = {}
 Engine.__index = Engine
 
+-- One engine per session (a /reload starts a new one). checked: members looked at for the
+-- catch-up; catching[key]: when we asked that member (AUDQ); missed[key]: something it sent could
+-- not be stored.
 function Sync.New(env)
-	local self = setmetatable({ env = env, queues = {}, pumping = false, pushed = {}, asked = {}, round = 0 }, Engine)
+	local self = setmetatable({
+		env = env, queues = {}, pumping = false, pushed = {}, asked = {}, round = 0, started = false,
+		checked = {}, catching = {}, missed = {},
+	}, Engine)
 	for prio = 0, LAST_PRIORITY do
 		self.queues[prio] = {}
 	end
 	return self
 end
 
--- Clears the queue, sends the own data to the recipients and, as a holder, syncs with our
--- successor in the ring.
+-- Sends the own data to the recipients and, as a holder, syncs with our successor in the ring and
+-- catches up with the members. What is queued already (e.g. answers to holders that asked before
+-- the start) stays.
 function Engine:Start()
-	for prio = 0, LAST_PRIORITY do
-		self.queues[prio] = {}
-	end
-	self.head = nil
+	self.started = true
 	self.pushed, self.asked, self.lastAsked, self.round = {}, {}, nil, 0
 	local extra = self.bundle
 	self.bundle = nil
@@ -549,13 +687,32 @@ function Engine:Start()
 			self.round = 1
 		end
 	end
+	CatchUp(self)
 end
 
 -- Messages for targets that are gone are dropped; new recipients get the own data since their
--- watermark.
+-- watermark; members that came online (or we can store now) are caught up with.
 function Engine:PeersChanged()
 	DropGone(self)
 	Distribute(self, nil)
+	CatchUp(self)
+end
+
+-- A member announced itself (HELLO or HI): it may have lost pushes to us since our last catch-up,
+-- so it is asked again, unless an ask is under way. One that is not online in our roster yet is
+-- asked once it is there (the next PeersChanged).
+function Engine:MemberSeen(key)
+	local env = self.env
+	if not key or key == env.self then
+		return
+	end
+	local asked = self.catching[key]
+	if asked and env.now() - asked < Sync.CATCH_UP_SECONDS then
+		return
+	end
+	self.catching[key] = nil
+	self.checked[key] = nil
+	CatchUp(self)
 end
 
 -- A new own entry; everything recorded within BUNDLE_SECONDS goes out together.
@@ -579,9 +736,11 @@ function Engine:Record(raw)
 end
 
 -- One sync with the next of our ring partners in turn. Skipped while the last asked peer is online
--- and has not finished (AUDE 2), at most for three intervals.
+-- and has not finished (AUDE 2), at most for three intervals. Members not caught up with yet (we
+-- could not store before) are asked.
 function Engine:Tick()
 	local env = self.env
+	CatchUp(self)
 	if not IsHolder(self) then
 		return
 	end
