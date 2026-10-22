@@ -233,6 +233,18 @@ function Comm.HasCapability(name, cap)
 	return peer ~= nil and ns.Guild.GetOnlineMembers()[key] ~= nil and peer.caps:find(cap, 1, true) ~= nil
 end
 
+-- Players online who announced the addon (any version), ourselves included.
+function Comm.CountOnlineWithAddon()
+	local online = ns.Guild.GetOnlineMembers()
+	local count = IsInGuild() and 1 or 0
+	for key in pairs(peers) do
+		if online[key] and not ns.Guild.IsSelf(key) then
+			count = count + 1
+		end
+	end
+	return count
+end
+
 -- Sorted keys of the other online players who announced the capability.
 function Comm.GetCapablePeers(cap)
 	local result = {}

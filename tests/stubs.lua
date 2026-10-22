@@ -68,7 +68,8 @@ for _, e in ipairs({ "ADDON_LOADED", "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "G
 	"GROUP_ROSTER_UPDATE", "ZONE_CHANGED_NEW_AREA", "PLAYER_REGEN_ENABLED", "PLAYER_LEVEL_UP", "CONFIRM_SUMMON",
 	"PLAYER_TARGET_CHANGED", "UPDATE_MOUSEOVER_UNIT", "UNIT_SPELLCAST_SUCCEEDED", "PLAYER_DEAD", "CHAT_MSG_LOOT",
 	"TIME_PLAYED_MSG", "PLAYER_LOGOUT", "UI_INFO_MESSAGE", "MAIL_SEND_SUCCESS", "MAIL_FAILED", "GET_ITEM_INFO_RECEIVED",
-	"SKILL_LINES_CHANGED", "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "NEW_RECIPE_LEARNED" }) do
+	"SKILL_LINES_CHANGED", "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "NEW_RECIPE_LEARNED", "CHAT_MSG_SYSTEM",
+	"PLAYER_REGEN_DISABLED" }) do
 	KNOWN_EVENTS[e] = true -- PLAYER_TRADE_MONEY is deliberately unknown to exercise the pcall path
 end
 
@@ -238,6 +239,12 @@ Settings = {
 	RegisterAddOnCategory = function(c) record("RegisterAddOnCategory", c.name) end,
 }
 C_AddOns = { GetAddOnMetadata = function(_, key) if key == "Version" then return "0.7.0" end end }
+-- The newest widget whose text contains the given plain text (colour codes and all).
+function FindWidgetContaining(kind, text)
+	for i = #frames, 1, -1 do
+		if frames[i]._kind == kind and type(frames[i]._text) == "string" and frames[i]._text:find(text, 1, true) then return frames[i] end
+	end
+end
 function FindWidgetByText(kind, text)
 	for i = #frames, 1, -1 do
 		if frames[i]._kind == kind and frames[i]._text == text then return frames[i] end
@@ -280,9 +287,9 @@ ATLASES = {}
 function GetFileIDFromPath(path) return FILES[path] end
 C_Texture = { GetAtlasExists = function(atlas) return ATLASES[atlas] == true end }
 function CreateColor(r, g, b, a) return { r = r, g = g, b = b, a = a } end
-GameFontNormalHuge = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 20 end }
 -- Blizzard's font objects: name, size, colour
 for _, font in ipairs({
+	{ "GameFontNormalHuge", 20, 1, 0.82, 0 },
 	{ "GameFontNormal", 12, 1, 0.82, 0 }, { "GameFontHighlight", 12, 1, 1, 1 }, { "GameFontDisable", 12, 0.5, 0.5, 0.5 },
 	{ "GameFontNormalSmall", 10, 1, 0.82, 0 }, { "GameFontHighlightSmall", 10, 1, 1, 1 }, { "GameFontDisableSmall", 10, 0.5, 0.5, 0.5 },
 	{ "GameFontNormalLarge", 16, 1, 0.82, 0 },
@@ -351,6 +358,8 @@ LOOT_ITEM_SELF_MULTIPLE = "You receive loot: %sx%d."
 function GetNormalizedRealmName() return "ClassicBetaPvE2" end
 
 IN_GUILD = true
+GUILD_NAME = "Testgilde"
+ERR_GUILD_JOIN_S = "%s has joined the guild."
 ROSTER = { -- name, online, rank index, class
 	{ "Magus-ClassicBetaPvE2", true, 0, "MAGE" },
 	{ "Freund-ClassicBetaPvE2", true, 1, "WARRIOR" },
@@ -384,7 +393,7 @@ end
 function UnitGUID(unit) if unit == "player" then return "Player-1" end end
 function GetGuildInfo(unit)
 	if unit == "player" then
-		if IN_GUILD then return "Testgilde", "Rang", 1 end
+		if IN_GUILD then return GUILD_NAME, "Rang", 1 end
 		return nil
 	end
 	local u = UNITS[unit]

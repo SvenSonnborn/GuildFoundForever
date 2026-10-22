@@ -37,6 +37,7 @@ Modules\Audit.lua
 Modules\AuditAuto.lua
 Modules\Professions.lua
 Modules\Finder.lua
+Modules\Dashboard.lua
 Banner.lua
 MessageWindow.lua
 MinimapButton.lua

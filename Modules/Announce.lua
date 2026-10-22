@@ -313,6 +313,7 @@ local function Publish(kind, data)
 		ns.Comm.PostGuildChat(GuildChatText(kind, data))
 	end
 	-- Our own guild addon messages are ignored on receipt, so show the announcement here.
+	ns.Fire("ANNOUNCED", playerName, kind, data)
 	Notify(playerName, kind, data)
 end
 
@@ -346,6 +347,8 @@ ns.Comm.RegisterHandler("ANN", function(sender, channel, payload)
 	if kind == "death" then
 		AddDeath(sender, data)
 	end
+	-- Whatever the personal settings show: the dashboard's chronicle records it.
+	ns.Fire("ANNOUNCED", sender, kind, data)
 	Notify(sender, kind, data)
 end)
 

@@ -48,6 +48,8 @@ ns.defaults = {
 	partnerGuilds = {},
 	partnerSeen = {}, -- normalized player name -> { g = partner guild (lower case), t = last seen }
 	deathlog = {},
+	chronicle = {}, -- guild name -> the dashboard's chronicle of announcements and joins (Dashboard.lua)
+	activity = {}, -- guild name -> different players online per day (Dashboard.lua)
 	auditCache = {}, -- officers before 0.9: fetched audit data per member; AuditAuto.Migrate moves it into auditStore
 	professionDirectory = {}, -- guild name -> member -> { n, c, t, p = { skillLineID -> { s, m } } }
 	recipeCache = {}, -- member -> skillLineID -> { ids, fetched, scanned }

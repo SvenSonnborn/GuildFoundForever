@@ -3346,6 +3346,90 @@ do
 	CloseMessages()
 end
 
+-- Dashboard ------------------------------------------------------------------------------------
+do
+	local D = ns.Dashboard
+	local now = GetServerTime()
+	-- Earlier sections announced and changed the roster as well: start from empty records.
+	ns.db.chronicle.Testgilde, ns.db.activity.Testgilde = nil, nil
+	local function Find(kind, name) for _, e in ipairs(D.Chronicle()) do if e.k == kind and e.n == name then return e end end end
+	local function Count(kind, name) local n = 0 for _, e in ipairs(D.Chronicle()) do if e.k == kind and e.n == name then n = n + 1 end end return n end
+	local function Ann(sender, kind, t, level, class, zone, extra)
+		FireEvent("CHAT_MSG_ADDON", "GFForever", table.concat({ "ANN", kind, t, level, class, zone, extra or "" }, "\t"), "GUILD", sender)
+	end
+	Ann("Freund-ClassicBetaPvE2", "cap", now - 60, 60, "WARRIOR", "Tanaris")
+	Ann("Crossy-OtherRealm", "death", now - 120, 34, "ROGUE", "Todesminen", "Rhahk'Zor")
+	Ann("Freund-ClassicBetaPvE2", "epic", now - 180, 60, "WARRIOR", "Schwarzfelstiefen", link(11684, "Eisenfeind"))
+	Ann("Crossy-OtherRealm", "recipe", now - 240, 34, "ROGUE", "Eisenschmiede", "Arkanitbarren")
+	Ann("Crossy-OtherRealm", "rare", now - 300, 34, "ROGUE", "Eisenschmiede", link(1, "Blaues"))
+	Ann("Freund-ClassicBetaPvE2", "test", now - 360, 60, "WARRIOR", "Eisenschmiede")
+	RunTimers()
+	local cap, death = Find("cap", "Freund-ClassicBetaPvE2"), Find("death", "Crossy-OtherRealm")
+	check(cap and cap.l == 60 and cap.c == "WARRIOR" and D.Chronicle()[1] == cap, "chronicle: a max level announcement, newest first")
+	check(death and death.z == "Todesminen" and death.x == "Rhahk'Zor" and Find("epic", "Freund-ClassicBetaPvE2") and Find("recipe", "Crossy-OtherRealm"),
+		"chronicle: deaths with their cause, epic loot and recipes")
+	check(not Find("rare", "Crossy-OtherRealm") and not Find("test", "Freund-ClassicBetaPvE2"), "chronicle: no rare loot, no tests")
+	FireEvent("CHAT_MSG_SYSTEM", ERR_GUILD_JOIN_S:format("Fenna"))
+	check(Find("join", "Fenna") ~= nil, "chronicle: a join from the system message")
+	local twice = { t = now - 30, level = 12, class = "MAGE", zone = "Wald", extra = "Wolf" }
+	ns.Fire("ANNOUNCED", "Doppelt-ClassicBetaPvE2", "death", twice)
+	ns.Fire("ANNOUNCED", "Doppelt-ClassicBetaPvE2", "death", twice)
+	check(Count("death", "Doppelt-ClassicBetaPvE2") == 1, "chronicle: the same entry only once")
+	ns.Fire("ANNOUNCED", "Alt-ClassicBetaPvE2", "cap", { t = now - 8 * 86400, level = 60, class = "MAGE", zone = "", extra = "" })
+	ns.Fire("ANNOUNCED", "Uralt-ClassicBetaPvE2", "cap", { t = now - 15 * 86400, level = 60, class = "MAGE", zone = "", extra = "" })
+	local stored = {}
+	for _, e in ipairs(ns.db.chronicle.Testgilde) do stored[e.n] = true end
+	check(not Find("cap", "Alt-ClassicBetaPvE2") and stored["Alt-ClassicBetaPvE2"] and not stored["Uralt-ClassicBetaPvE2"], "chronicle: 7 days shown, 14 kept")
+	GUILD_NAME = "Andere Gilde"
+	check(#D.Chronicle() == 0, "chronicle: every guild has its own")
+	GUILD_NAME = "Testgilde"
+
+	-- Who was there: different players online per day, counted while we are online.
+	FireEvent("GUILD_ROSTER_UPDATE")
+	local days = D.Activity()
+	check(#days == 14 and days[14].count == 3, "who was there: today counts the members online")
+	ROSTER[3][2] = true
+	FireEvent("GUILD_ROSTER_UPDATE")
+	ROSTER[3][2], ROSTER[4][2] = false, false
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(D.Activity()[14].count == 4, "who was there: each player once a day, also after going offline")
+	ROSTER[4][2] = true
+	Advance(86400)
+	FireEvent("GUILD_ROSTER_UPDATE")
+	days = D.Activity()
+	check(days[14].count == 3 and days[13].count == 4, "who was there: a new day starts over")
+
+	-- Numbers from the roster: online, classes, levels, activity, the addon.
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "HI\t0.7.0\tA", "WHISPER", "Freund-ClassicBetaPvE2")
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "HI\t0.7.0\tA", "WHISPER", "Crossy-OtherRealm")
+	ROSTER[2][5] = 60
+	LAST_ONLINE[3] = { 0, 1, 5, 0 }
+	FireEvent("GUILD_ROSTER_UPDATE")
+	local s = D.Summary()
+	check(s.members == 4 and s.online == 3 and s.classes.WARRIOR == 1 and s.classes.MAGE == 1 and s.classes.ROGUE == 1, "numbers: members online by class")
+	check(#s.levels == 12 and s.levels[12] == 1 and s.levels[4] == 3 and s.maxLevel == 1, "numbers: levels in 12 steps of 5, one at the max level")
+	check(s.active7 == 3 and s.away30 == 1, "numbers: active within 7 days, away for 30 days or more")
+	check(s.withAddon == 3, "numbers: online with the addon, ourselves included")
+
+	-- The tab
+	CAN_VIEW_OFFICER = true
+	ns.db.lastTab = "dashboard"
+	ns.UI.Show()
+	check(FindWidgetByText("Button", "Übersicht") ~= nil and ns.db.lastTab == "dashboard", "dashboard: the overview tab")
+	check(FindWidgetContaining("FontString", "erreicht Level 60") ~= nil and FindWidgetContaining("FontString", "tritt der Gilde bei") ~= nil, "dashboard: the chronicle in the window")
+	local open = FindWidgetContaining("FontString", "Offene Audit-Hinweise")
+	check(open and open:IsShown() and open:GetParent():IsShown(), "dashboard: officers see their box")
+	open:GetParent():RunScript("OnClick")
+	check(ns.db.lastTab == "audit", "dashboard: a click on the open notices opens the audit timeline")
+	CAN_VIEW_OFFICER = false
+	FindWidgetByText("Button", "Übersicht"):RunScript("OnClick")
+	check(not open:GetParent():IsShown() and FindWidgetContaining("FontString", "Tode diese Woche"):GetParent():IsShown(), "dashboard: members see the week in numbers instead")
+	ns.UI.Toggle()
+	ROSTER[2][5], LAST_ONLINE[3] = nil, nil
+	FireEvent("GUILD_ROSTER_UPDATE")
+	RunTimers()
+end
+
 check(CHAT_TOTAL == 0, "nothing went to the chat")
 
 check(#ERRORS == 0, "no errors inside event handlers" .. (#ERRORS > 0 and (": " .. table.concat(ERRORS, " | ")) or ""))

@@ -28,6 +28,8 @@ local COLORS = {
 		buttonBorder = { 0.45, 0.38, 0.22, 0.9 },
 		selectedBorder = { 0.85, 0.68, 0.2, 1 },
 		accent = { 1, 0.82, 0, 1 },
+		muted = { 0.6, 0.6, 0.6, 1 },
+		bar = { 0.478, 0.416, 0.290, 1 },
 	},
 	modern = {
 		window = { 0.071, 0.063, 0.063, 0.97 },
@@ -42,6 +44,7 @@ local COLORS = {
 		selectedBorder = { 0.886, 0.639, 0.231, 1 },
 		input = { 0.055, 0.047, 0.039, 1 },
 		box = { 0.353, 0.310, 0.263, 1 },
+		bar = { 0.353, 0.310, 0.263, 1 },
 		text = { 0.925, 0.902, 0.863, 1 },
 		muted = { 0.561, 0.522, 0.471, 1 },
 		accent = { 0.886, 0.639, 0.231, 1 },
@@ -59,6 +62,7 @@ local FONTS = {
 	{ key = "HighlightSmall", blizzard = "GameFontHighlightSmall", size = 12, color = "text" },
 	{ key = "DisableSmall", blizzard = "GameFontDisableSmall", size = 12, color = "muted" },
 	{ key = "NormalLarge", blizzard = "GameFontNormalLarge", size = 17, color = "accent" },
+	{ key = "Huge", blizzard = "GameFontNormalHuge", size = 28, color = "text" },
 	{ key = "OnAccent", blizzard = "GameFontNormal", size = 13, color = "onAccent" },
 }
 Theme.Fonts = {}
