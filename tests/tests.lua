@@ -983,7 +983,9 @@ end
 -- Audit: sync between players ---------------------------------------------------------
 local S = ns.AuditSync
 do
-	local net = { now = 0, seq = 0, timers = {}, players = {}, log = {}, relay = false }
+	-- retry[targetKey] = n: the next n sends to that target report throttling ("retry"); every send
+	-- to such a target is noted in attempts.
+	local net = { now = 0, seq = 0, timers = {}, players = {}, log = {}, relay = false, retry = {}, attempts = {} }
 	local function NetAfter(at, fn) net.seq = net.seq + 1 net.timers[#net.timers + 1] = { at = at, seq = net.seq, fn = fn } end
 	local function NetPlayer(name, holder)
 		local p = { name = name, key = name:lower(), online = false, holder = holder, own = {}, sent = {} }
@@ -995,6 +997,11 @@ do
 			send = function(message, target)
 				local to = net.players[target:lower()]
 				if not p.online or not to or not to.online then return false, 12 end
+				local retry = net.retry[to.key]
+				if retry then
+					net.attempts[#net.attempts + 1] = { from = p.key, to = to.key, at = net.now, retry = retry > 0 }
+					if retry > 0 then net.retry[to.key] = retry - 1 return false, "retry" end
+				end
 				net.log[#net.log + 1] = { from = p.key, to = to.key, message = message, at = net.now }
 				local command, payload = strsplit("\t", message, 2)
 				NetAfter(net.now, function() if to.online then to.engine:Handle(name, command, payload) end end)
@@ -1053,6 +1060,7 @@ do
 	local function Has(p, memberKey, raw) local m = p.store and p.store.members[memberKey] return m ~= nil and m.recs[raw] ~= nil end
 	local function NetReset(relay)
 		net.now, net.timers, net.players, net.log, net.relay = 0, {}, {}, {}, relay or false
+		net.retry, net.attempts = {}, {}
 	end
 	local H = 3600
 	local ahHint = R.Encode("H", { t = 11.5 * H, hk = "blocked", sev = "y", a = "ah", b = "AH" })
@@ -1221,6 +1229,68 @@ do
 	local got = 0
 	for _, raw in ipairs(logRaws) do if Has(a, "mitglied", raw) then got = got + 1 end end
 	check(got == 6 and m.sent.offia ~= nil, "back online: everything since the watermark comes again")
+
+	-- Throttling (R10): "retry" keeps the message at the head and tries again 3 paces later.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(a, true) NetOnline(m, true)
+	NetRun(10)
+	net.retry.offia = 4
+	logRaws = {}
+	for i = 1, 3 do
+		logRaws[i] = R.Encode("L", { t = 200 + i, k = "ah", m = ("y"):rep(150) })
+		NetRecord(m, logRaws[i])
+	end
+	NetRun(60)
+	got = 0
+	for _, raw in ipairs(logRaws) do if Has(a, "mitglied", raw) then got = got + 1 end end
+	local retried, spaced = 0, true
+	for i, try in ipairs(net.attempts) do
+		if try.retry then
+			retried = retried + 1
+			local nextTry = net.attempts[i + 1]
+			if not nextTry or nextTry.at - try.at < 3 * S.PACE_SECONDS then spaced = false end
+		end
+	end
+	check(got == 3 and m.sent.offia ~= nil and retried == 4 and #net.attempts == 7, "throttled: everything arrives after the retries, the watermark moves")
+	check(spaced, "throttled: at least three paces between the attempts")
+	local order = {}
+	for _, entry in ipairs(net.log) do
+		if entry.from == "mitglied" and entry.to == "offia" then
+			for i, raw in ipairs(logRaws) do if entry.message:find(raw, 1, true) then order[#order + 1] = i end end
+		end
+	end
+	check(table.concat(order, ",") == "1,2,3", "throttled: the message stays at the head, the order holds")
+	-- A target that stays throttled is given up after 10 retries; the other recipient still gets its share.
+	NetReset()
+	m, a, b = NetPlayer("Mitglied", false), NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	local stuck, free = a, b
+	if S.Score("mitglied", "offib") > S.Score("mitglied", "offia") then stuck, free = b, a end
+	NetOnline(a, true) NetOnline(b, true) NetOnline(m, true)
+	NetRun(10)
+	net.retry[stuck.key] = 1000
+	NetRecord(m, ahHint)
+	NetRun(120)
+	local tries = 0
+	for _, try in ipairs(net.attempts) do if try.from == "mitglied" then tries = tries + 1 end end
+	check(tries == 11 and not Has(stuck, "mitglied", ahHint) and m.sent[stuck.key] == nil, "still throttled after 10 retries: that target is dropped")
+	check(Has(free, "mitglied", ahHint) and m.sent[free.key] ~= nil and m.engine:Queued() == 0, "the other recipient is not blocked for good")
+
+	-- R11: an AUDS answer leaves out what the holder stored about the asker.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	a.store = St.New()
+	local aboutB = R.Encode("H", { t = 7, hk = "mail", sev = "o", a = "Y", b = "s" })
+	St.Add(a.store, "offib", "OffiB", aboutB, 0)
+	St.Add(a.store, "mitglied", "Mitglied", ahHint, 0)
+	NetRun(60)
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(60)
+	local aboutAsker = false
+	for _, entry in ipairs(net.log) do
+		if entry.from == "offia" and entry.to == "offib" and entry.message:find("^AUDX\tOffiB\t") then aboutAsker = true end
+	end
+	check(Has(b, "mitglied", ahHint) and not aboutAsker, "the asker gets no AUDX about itself")
 end
 
 -- Audit: recording --------------------------------------------------------------

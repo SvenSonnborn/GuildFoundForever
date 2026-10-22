@@ -17,7 +17,8 @@ local _, ns = ...
 --   key(name)                    normalized key of a name
 --   now()                        server time
 --   after(seconds, fn)           timer
---   send(message, target)        whisper to a full name, returns ok, code
+--   send(message, target)        whisper to a full name, returns ok, code; code "retry" (throttled)
+--                                means the same message is tried again
 --   holders()                    { { key, name }, ... }: online officers and relays with capability A, not self
 --   isHolder(key)                officer or relay, online or not
 --   capable(key)                 online with capability A
@@ -39,6 +40,9 @@ Sync.BUNDLE_SECONDS = 2
 Sync.INTERVAL_SECONDS = 300
 Sync.FIRST_CONTACT_SECONDS = 864000
 Sync.MESSAGE_LIMIT = 240
+-- A throttled message stays at the head and is tried again RETRY_SECONDS later, RETRIES times at most.
+Sync.RETRIES = 10
+Sync.RETRY_SECONDS = 3 * Sync.PACE_SECONDS
 
 local SEPARATOR = "\030"
 
@@ -134,7 +138,8 @@ end
 
 local Pump
 
--- A failed send drops every message still waiting for that target. A recipient that missed
+-- A failed send (any failure but a "retry" within RETRIES) drops every message still waiting for
+-- that target. A recipient that missed
 -- messages gets a full push next time; we stop waiting for the answer of a peer we asked.
 local function Drop(self, key)
 	for prio = 0, LAST_PRIORITY do
@@ -150,27 +155,37 @@ local function Drop(self, key)
 	self.asked[key] = nil
 end
 
+-- Sends the head message: a throttled one ("retry") waits in self.head ahead of everything else.
 function Pump(self)
-	local item = nil
-	for prio = 0, LAST_PRIORITY do
-		local list = self.queues[prio]
-		if list[1] then
-			item = table.remove(list, 1)
-			break
+	local item = self.head
+	self.head = nil
+	if not item then
+		for prio = 0, LAST_PRIORITY do
+			local list = self.queues[prio]
+			if list[1] then
+				item = table.remove(list, 1)
+				break
+			end
 		end
 	end
 	if not item then
 		self.pumping = false
 		return
 	end
-	if self.env.send(item.message, item.target) then
+	local ok, code = self.env.send(item.message, item.target)
+	local wait = Sync.PACE_SECONDS
+	if ok then
 		if item.done then
 			item.done()
 		end
+	elseif code == "retry" and item.tries < Sync.RETRIES then
+		item.tries = item.tries + 1
+		self.head = item
+		wait = Sync.RETRY_SECONDS
 	else
 		Drop(self, item.key)
 	end
-	self.env.after(Sync.PACE_SECONDS, function()
+	self.env.after(wait, function()
 		Pump(self)
 	end)
 end
@@ -178,7 +193,7 @@ end
 -- done runs once the message went out successfully.
 local function Queue(self, prio, target, message, done)
 	local list = self.queues[prio]
-	list[#list + 1] = { target = target, key = self.env.key(target), message = message, done = done }
+	list[#list + 1] = { prio = prio, target = target, key = self.env.key(target), message = message, done = done, tries = 0 }
 	if not self.pumping then
 		self.pumping = true
 		self.env.after(0, function()
@@ -188,6 +203,10 @@ local function Queue(self, prio, target, message, done)
 end
 
 local function Waiting(self, prio, key)
+	local head = self.head
+	if head and head.prio == prio and head.key == key then
+		return true
+	end
 	for _, item in ipairs(self.queues[prio]) do
 		if item.key == key then
 			return true
@@ -392,6 +411,7 @@ function Engine:Start()
 	for prio = 0, LAST_PRIORITY do
 		self.queues[prio] = {}
 	end
+	self.head = nil
 	self.pushed, self.asked, self.lastAsked, self.round = {}, {}, nil, 0
 	local extra = self.bundle
 	self.bundle = nil
@@ -493,7 +513,7 @@ function Engine:Recipients()
 end
 
 function Engine:Queued()
-	local count = 0
+	local count = self.head and 1 or 0
 	for prio = 0, LAST_PRIORITY do
 		count = count + #self.queues[prio]
 	end
