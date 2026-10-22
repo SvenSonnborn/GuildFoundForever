@@ -240,6 +240,12 @@ Wunsch vom 26.09.2026: Gruppen melden sich an, um Mitglieder zu suchen. Was gesu
   - Fenster über `/gff` mit den Tabs „Regeln“, „Berufe“ und „Dungeonsuche“ (beide nur, wenn die Gildenregel an ist), „Deathlog“ und „Audit“.
   - Im Tab „Regeln“ stehen Audit, Berufe und Dungeonsuche zusammen unter „Gildenfunktionen“.
   - Das Zahnrad in der Titelleiste neben dem X öffnet die Einstellungen: Gildenchat-Regeln, eigene Benachrichtigungen, Banner, Testmeldung und Banner-Vorschau. Nochmal klicken führt zum letzten Tab zurück.
+  - **Look: Klassisch oder Modern** (seit 0.9.0): Ein Schalter in der Titelleiste links neben dem Zahnrad wechselt sofort, ohne `/reload`, und gilt für das ganze Konto (auch `/gff style`).
+    - Klassisch ist der WoW-Look mit Blizzards Rahmen, roten Buttons und Friz Quadrata.
+    - Modern ist flach und dunkel: eckige Flächen mit 1 Pixel breitem Rahmen, Arial Narrow und Gold als einzige Akzentfarbe (Palette „Glut“). Tabs sind Text, der offene ist unterstrichen. Häkchen sind Kästchen mit einem goldenen Quadrat.
+    - Clients auf Koreanisch, Chinesisch oder Russisch behalten im modernen Look ihre Schrift, weil Arial Narrow dort Zeichen fehlen.
+    - Umgestellt werden Hauptfenster, Kopier-Dialog, Meldungsfenster und der Hinweis an der Minimap. Banner, Minimap-Icon, Kartenpins und Tooltips bleiben in beiden Looks gleich, Lage und Größe aller Elemente auch.
+    - Spezifikation: `docs/specs/2026-10-22-stile.md`.
   - **Minimap-Icon** (seit 0.8.0): Linksklick öffnet das Fenster, Rechtsklick die Meldungen; am Kartenrand verschiebbar, in den Einstellungen abschaltbar.
   - Dazu ein Eintrag in Blizzards Einstellungen und im Addon-Menü an der Minimap.
   - Texte auf Deutsch und Englisch.
@@ -267,6 +273,7 @@ Ohne Gilde sind alle Regeln und Ankündigungen inaktiv.
 | `/gff preview` | Banner-Vorschau nur bei dir |
 | `/gff banner reset` | Banner an die Standardposition zurücksetzen |
 | `/gff publish` | Regeln und Partnergilden als Text zum Einfügen in die Gildeninfo anzeigen (braucht das Recht, die Gildeninfo zu bearbeiten) |
+| `/gff style [klassisch\|modern]` | Look der Fenster umschalten, ohne Angabe zum jeweils anderen (auch `classic`) |
 | `/gff debug` | Debug-Ausgaben ein/aus |
 
 `/guildfoundforever` funktioniert ebenfalls. Statt `loot`, `level` und `tod` gehen auch `beute`, `maxlevel`/`stufe` und `death`.
@@ -342,6 +349,7 @@ docs/curseforge.md       Projektbeschreibung für CurseForge; nicht in der ZIP
 tests/                   run.ps1, stubs.lua (nachgebaute WoW-API), tests.lua; nicht in der ZIP
 Locales.lua              Texte enUS (Standard) und deDE
 Core.lua                 Namespace, Events, Callbacks, SavedVariables, Log, Slash-Befehle
+Theme.lua                Look Klassisch/Modern: Schriftobjekte, Farben, Skins für Fenster, Buttons, Tabs, Häkchen, Eingabefelder, Schalter
 Messages.lua             Meldungsspeicher: Arten, ungelesen, höchstens 300, Übernahme des alten Logs
 Data.lua                 Item- und Zauber-IDs: Essen/Wasser, Gesundheitssteine, Portale, Teleports
 Rules.lua                Aktive Regeln (Gildeninfo vor lokalen Einstellungen), Partnergilden-Liste
@@ -494,6 +502,16 @@ Neu in 0.9.0-beta (automatischer Audit; mit zwei bis drei Spielern, ein Offizier
 - [ ] Ein Mitglied mit Version 0.8.0 beantwortet „Daten anfordern“ weiterhin (`AUDREQ`/`AUD` kommen an).
 - [ ] Texte: „->“ und alle neuen Texte werden richtig dargestellt, auf Deutsch und Englisch.
 - [ ] Mit einer größeren Gilde: Ruckelt das Spiel? Verdrängt der Audit Gildenkarte oder Dungeonsuche? Wie lange dauert es, bis ein Eintrag bei allen Offizieren ist?
+
+Neu in 0.9.0-beta (Look Klassisch/Modern):
+
+- [ ] Schalter in der Titelleiste: Klick wechselt sofort; beide Wörter und der Knopf zeigen den aktiven Look; nach `/reload` und auf einem anderen Charakter desselben Kontos bleibt er.
+- [ ] Modern: Von Blizzards Fensterrahmen, roten Buttons, Häkchen- und Eingabefeld-Grafik ist nichts mehr zu sehen, auch nicht nach Klicken, Deaktivieren oder Überfahren eines Buttons. Das X oben rechts ist ein schlichtes „×“ und schließt.
+- [ ] Modern: Arial Narrow ist gut lesbar, nichts wird abgeschnitten (Tabs, Regeln, Audit-Zeitleiste, Dungeonsuche, Berufe, Meldungsfenster).
+- [ ] Modern: angehakt/nicht angehakt und deaktivierte Häkchen (Regeln aus der Gildeninfo) sind klar zu unterscheiden; der Hauptbutton „In Gildeninfo veröffentlichen“ ist gold.
+- [ ] Zurück zu Klassisch: alles sieht aus wie vorher (Fensterrahmen, rote Buttons, Häkchen, Eingabefelder, Schrift).
+- [ ] Meldungsfenster und Hinweis an der Minimap wechseln mit, auch wenn das Meldungsfenster beim Umschalten offen ist.
+- [ ] Keine Lua-Fehler und kein „Taint“ (z. B. `/gff` im Kampf öffnen, Einstellungen von Blizzard öffnen).
 
 Neu in 0.8.0 (Meldungsfenster und Minimap-Icon):
 

@@ -17,6 +17,7 @@
 - **Messages:** after a login one important audit message ("5 new audit notices") opens the timeline; during the session new notices are reported together, at most every 10 minutes.
 - **Storage:** officers keep the data per character and guild for 10 days (the last state, the join state and the first state stay), with caps per member. Data of other guilds and former members is deleted. Losing the officer rank (both the officer view and the rank permissions) deletes the foreign data, and so does leaving the guild. Old account-wide audit data fetched more than 10 days ago is deleted.
 - `HELLO` and `HI` carry capabilities; new addon messages `AUDX`, `AUDS`, `AUDE`, `AUDM`, `AUDQ`. "Request data" still works with older versions.
+- **Classic or modern look:** a switch in the title bar, left of the gear, changes the look of the addon's windows at once, for the whole account (also `/gff style`). Classic is the WoW look as before. Modern is flat and dark: square surfaces with thin frames, Arial Narrow and gold as the only accent; tabs are text with the open one underlined. Main window, copy dialog, message window and the hint at the minimap follow the switch; banners, the minimap icon, map pins and tooltips stay the same.
 
 ## 0.8.0-beta
 
