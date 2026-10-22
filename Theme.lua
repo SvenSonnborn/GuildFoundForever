@@ -467,10 +467,11 @@ function Theme.CreateSwitch(parent, name)
 	frameLines[4]:SetWidth(1)
 	local knob = Flat(switch, "OVERLAY", 0)
 	knob:SetSize(SWITCH_KNOB, SWITCH_KNOB)
-	local classicLabel = switch:CreateFontString(nil, "OVERLAY")
+	-- A font string needs its font before its text; the look sets the right one below.
+	local classicLabel = switch:CreateFontString(nil, "OVERLAY", Theme.Fonts.NormalSmall)
 	classicLabel:SetPoint("RIGHT", track, "LEFT", -SWITCH_GAP, 0)
 	classicLabel:SetText(L.STYLE_CLASSIC)
-	local modernLabel = switch:CreateFontString(nil, "OVERLAY")
+	local modernLabel = switch:CreateFontString(nil, "OVERLAY", Theme.Fonts.DisableSmall)
 	modernLabel:SetPoint("LEFT", track, "RIGHT", SWITCH_GAP, 0)
 	modernLabel:SetText(L.STYLE_MODERN)
 	switch.skin = { track = track, knob = knob, frame = frameLines }

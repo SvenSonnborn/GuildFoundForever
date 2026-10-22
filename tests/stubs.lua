@@ -102,7 +102,13 @@ function Widget:Enable() self._enabled = true end
 function Widget:Disable() self._enabled = false end
 function Widget:SetEnabled(e) self._enabled = e and true or false end
 function Widget:IsEnabled() return self._enabled end
-function Widget:SetText(t) self._text = t end
+function Widget:SetText(t)
+	-- As in the game: a font string without a font refuses text (bug report 22.10.2026).
+	if self._kind == "FontString" and not rawget(self, "_fontObject") and not rawget(self, "_font") then
+		error("FontString:SetText(): Font not set", 2)
+	end
+	self._text = t
+end
 function Widget:GetText() return self._text end
 function Widget:SetChecked(c) self._checked = c end
 function Widget:GetChecked() return self._checked end
