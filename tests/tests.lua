@@ -1027,7 +1027,8 @@ do
 			after = function(delay, fn) NetAfter(net.now + delay, fn) end,
 			send = function(message, target)
 				local to = net.players[target:lower()]
-				if not p.online or not to or not to.online then return false, 12 end
+				-- net.offlineOk: a whisper to an offline player reports success (not known for Forever)
+				if not p.online or not to or not (to.online or net.offlineOk) then return false, 12 end
 				local retry = net.retry[to.key]
 				if retry then
 					net.attempts[#net.attempts + 1] = { from = p.key, to = to.key, at = net.now, retry = retry > 0 }
@@ -1041,7 +1042,7 @@ do
 			holders = function()
 				local list = {}
 				for key, other in pairs(net.players) do
-					if other ~= p and other.online and isHolder(other) then list[#list + 1] = { key = key, name = other.name } end
+					if other ~= p and other.online and isHolder(other) then list[#list + 1] = { key = key, name = other.name, officer = other.holder and true or false } end
 				end
 				return list
 			end,
@@ -1092,7 +1093,16 @@ do
 	local function Has(p, memberKey, raw) local m = p.store and p.store.members[memberKey] return m ~= nil and m.recs[raw] ~= nil end
 	local function NetReset(relay)
 		net.now, net.timers, net.players, net.log, net.relay = 0, {}, {}, {}, relay or false
-		net.retry, net.attempts = {}, {}
+		net.retry, net.attempts, net.offlineOk = {}, {}, false
+	end
+	-- Messages from one player to another from the log entry `from` on.
+	local function Between(fromKey, toKey, first, pattern)
+		local list = {}
+		for i = first or 1, #net.log do
+			local entry = net.log[i]
+			if entry.from == fromKey and entry.to == toKey and (not pattern or entry.message:find(pattern)) then list[#list + 1] = entry end
+		end
+		return list
 	end
 	local H = 3600
 	local ahHint = R.Encode("H", { t = 11.5 * H, hk = "blocked", sev = "y", a = "ah", b = "AH" })
@@ -1260,6 +1270,15 @@ do
 		end
 	end
 	check(paced, "at most one message per second")
+	-- R28: the details (tier 2) leave room for the rest of the addon: one message per 3 paces.
+	local tier2Times = {}
+	for _, entry in ipairs(net.log) do
+		local details = entry.message:find("^AUDX") and entry.message:find("\tT\t", 1, true)
+		if entry.from == "offia" and (details or entry.message:find("^AUDE\t2\t")) then tier2Times[#tier2Times + 1] = entry.at end
+	end
+	local slow = #tier2Times > 10
+	for i = 2, #tier2Times do if tier2Times[i] - tier2Times[i - 1] < 3 * S.PACE_SECONDS then slow = false end end
+	check(slow, "tier 2 answers: at most one message per 3 seconds (" .. #tier2Times .. ")")
 
 	-- An AUDE nobody asked for; a failed send drops what waits for that target, the watermark stays.
 	NetReset()
@@ -1469,6 +1488,62 @@ do
 	local own, forged = R.Encode("H", { t = 3, hk = "mail", sev = "o", a = "P", b = "s" }), R.Encode("H", { t = 4, hk = "mail", sev = "o", a = "P", b = "s" })
 	b.engine:Handle("Mitglied", "AUDX", "Mitglied\t" .. own .. "\029Anderer\t" .. forged)
 	check(Has(b, "mitglied", own) and not Has(b, "anderer", forged), "a member's AUDX counts only for its own group")
+
+	-- R24: officers first: with 2 officers and 20 relays online, the 3 direct recipients are both
+	-- officers and one relay.
+	NetReset(true)
+	m = NetPlayer("Mitglied", false)
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	for i = 1, 20 do NetOnline(NetPlayer("Lager" .. i, false), true) end
+	NetOnline(a, true) NetOnline(b, true) NetOnline(m, true)
+	NetRun(60)
+	local firstEntry = #net.log + 1
+	NetRecord(m, ahHint)
+	NetRun(10)
+	local hit, relaysHit = {}, 0
+	for i = firstEntry, #net.log do
+		local entry = net.log[i]
+		if entry.from == "mitglied" and entry.message:find("^AUDX") then hit[entry.to] = true end
+	end
+	for key in pairs(hit) do if key:find("^lager") then relaysHit = relaysHit + 1 end end
+	local chosen = m.engine:Recipients()
+	check(hit.offia and hit.offib and relaysHit == 1 and #chosen == 3 and chosen[1].officer and chosen[2].officer and not chosen[3].officer,
+		"2 officers and 20 relays online: the member sends to both officers and one relay")
+
+	-- M5: a target that went offline loses its queued messages at the next change of the peers, even
+	-- where a whisper to an offline player reports success.
+	local function BigStore(p, count)
+		p.store = St.New()
+		for i = 1, count do
+			St.Add(p.store, "m" .. i, "M" .. i, R.Encode("T", { t = i, n = "X", k = "e", gm = 0, rm = i, gi = "", ri = "" }), 1)
+		end
+	end
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	BigStore(a, 1000)
+	b.store = St.New()
+	NetRun(60)
+	net.offlineOk = true
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(30)
+	local underWay = #Between("offia", "offib")
+	NetOnline(b, false)
+	local gone = #net.log + 1
+	NetRun(600)
+	check(underWay > 0 and #Between("offia", "offib", gone) == 0 and a.engine:Queued() == 0, "a target gone offline: its queued messages are dropped")
+	-- M5: an answer is not sent to a target that lost the holder role since.
+	NetReset()
+	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	BigStore(a, 1000)
+	b.store = St.New()
+	NetRun(60)
+	NetOnline(a, true) NetOnline(b, true)
+	NetRun(30)
+	underWay = #Between("offia", "offib")
+	b.holder = false
+	local demoted = #net.log + 1
+	NetRun(600)
+	check(underWay > 0 and #Between("offia", "offib", demoted) == 0 and a.engine:Queued() == 0, "a target that lost the holder role gets no more answers")
 end
 
 -- Audit: recording --------------------------------------------------------------
@@ -1851,6 +1926,9 @@ do
 	FireEvent("GUILD_ROSTER_UPDATE")
 	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. R.Encode("H", { t = 5, hk = "mail", sev = "o", a = "X", b = "s" }), "WHISPER", "Crossy-OtherRealm")
 	check(#St.Timeline(AA.GetStore()) == 2, "with V=1 in the guild info a member may forward")
+	local recipients = AA.Recipients()
+	check(#recipients == 2 and recipients[1].key == "freund-classicbetapve2" and recipients[1].officer and recipients[2].key == "crossy-otherrealm" and not recipients[2].officer,
+		"with V=1: our own entries go to the officer first, then to the relay")
 	GUILD_INFO_TEXT = "Willkommen"
 	FireEvent("GUILD_ROSTER_UPDATE")
 	ns.Rules.Set("auditRelay", false)

@@ -41,6 +41,9 @@ ns.AuditSync = Sync
 
 Sync.RECIPIENTS = 3
 Sync.PACE_SECONDS = 1
+-- After a detail (tier 2) answer the queue waits longer, so the rest of the addon (guild map,
+-- finder, HI) keeps room in the shared budget during a long first sync.
+Sync.TIER2_PACE_SECONDS = 3 * Sync.PACE_SECONDS
 Sync.BUNDLE_SECONDS = 2
 Sync.INTERVAL_SECONDS = 300
 Sync.FIRST_CONTACT_SECONDS = 864000
@@ -70,7 +73,8 @@ local function TierOf(raw)
 	return R.Tier((strsplit("\t", raw)))
 end
 
--- A copy of the holders, highest Score(memberKey, holder) first; ties by key.
+-- A copy of the holders: officers first, then relays, each highest Score(memberKey, holder) first;
+-- ties by key.
 local function Ranked(holders, memberKey)
 	local list, scores = {}, {}
 	for _, holder in ipairs(holders or {}) do
@@ -78,6 +82,10 @@ local function Ranked(holders, memberKey)
 		scores[holder.key] = Sync.Score(memberKey, holder.key)
 	end
 	table.sort(list, function(a, b)
+		local officerA, officerB = a.officer and true or false, b.officer and true or false
+		if officerA ~= officerB then
+			return officerA
+		end
 		if scores[a.key] ~= scores[b.key] then
 			return scores[a.key] > scores[b.key]
 		end
@@ -171,25 +179,35 @@ local function Drop(self, key)
 	self.asked[key] = nil
 end
 
--- Sends the head message: a throttled one ("retry") waits in self.head ahead of everything else.
-function Pump(self)
-	local item = self.head
-	self.head = nil
-	if not item then
-		for prio = 0, LAST_PRIORITY do
-			local list = self.queues[prio]
-			if list[1] then
-				item = table.remove(list, 1)
-				break
-			end
+local function IsAnswer(prio)
+	return prio == MEMBER_ANSWER or prio == TIER1_ANSWER or prio == TIER2_ANSWER
+end
+
+local function NextItem(self)
+	for prio = 0, LAST_PRIORITY do
+		local list = self.queues[prio]
+		if list[1] then
+			return table.remove(list, 1)
 		end
+	end
+	return nil
+end
+
+-- Sends the head message: a throttled one ("retry") waits in self.head ahead of everything else.
+-- Answers go only to holders: one that lost the role since gets nothing more.
+function Pump(self)
+	local env = self.env
+	local item = self.head or NextItem(self)
+	self.head = nil
+	while item and IsAnswer(item.prio) and not env.isHolder(item.key) do
+		item = NextItem(self)
 	end
 	if not item then
 		self.pumping = false
 		return
 	end
-	local ok, code = self.env.send(item.message, item.target)
-	local wait = Sync.PACE_SECONDS
+	local ok, code = env.send(item.message, item.target)
+	local wait = item.prio == TIER2_ANSWER and Sync.TIER2_PACE_SECONDS or Sync.PACE_SECONDS
 	if ok then
 		if item.done then
 			item.done()
@@ -201,9 +219,42 @@ function Pump(self)
 	else
 		Drop(self, item.key)
 	end
-	self.env.after(wait, function()
+	env.after(wait, function()
 		Pump(self)
 	end)
+end
+
+-- Drops what waits for targets that are gone: pushes and sync answers only go to online holders,
+-- asks to players online with the new version, member answers to anyone still a holder (its
+-- presence may just not be known yet). A whisper to an offline player may well report success.
+local function DropGone(self)
+	local env = self.env
+	local online = {}
+	for _, holder in ipairs(env.holders() or {}) do
+		online[holder.key] = true
+	end
+	local function Keep(item)
+		if online[item.key] then
+			return true
+		elseif item.prio == ASK then
+			return env.capable(item.key) and true or false
+		elseif item.prio == MEMBER_ANSWER then
+			return env.isHolder(item.key) and true or false
+		end
+		return false
+	end
+	for prio = 0, LAST_PRIORITY do
+		local kept = {}
+		for _, item in ipairs(self.queues[prio]) do
+			if Keep(item) then
+				kept[#kept + 1] = item
+			end
+		end
+		self.queues[prio] = kept
+	end
+	if self.head and not Keep(self.head) then
+		self.head = nil
+	end
 end
 
 -- done runs once the message went out successfully.
@@ -500,8 +551,10 @@ function Engine:Start()
 	end
 end
 
--- New recipients get the own data since their watermark.
+-- Messages for targets that are gone are dropped; new recipients get the own data since their
+-- watermark.
 function Engine:PeersChanged()
+	DropGone(self)
 	Distribute(self, nil)
 end
 
@@ -577,11 +630,11 @@ function Engine:RequestMember(key, name)
 	end
 end
 
--- The RECIPIENTS holders ranked highest for us.
+-- The RECIPIENTS holders ranked highest for us: online officers first, then relays.
 function Engine:Recipients()
 	local ranked, list = Ranked(self.env.holders(), self.env.self), {}
 	for i = 1, math.min(Sync.RECIPIENTS, #ranked) do
-		list[i] = { key = ranked[i].key, name = ranked[i].name }
+		list[i] = { key = ranked[i].key, name = ranked[i].name, officer = ranked[i].officer and true or false }
 	end
 	return list
 end

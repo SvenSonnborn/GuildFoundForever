@@ -93,13 +93,16 @@ local function SelfName()
 	return (name or UnitName("player") or "?") .. "-" .. realm
 end
 
--- Every online officer (and member, with rule V) running the automatic audit, without ourselves.
+-- Every online officer (and member, with rule V) running the automatic audit, without ourselves;
+-- officer tells officers from relays (members send to officers first).
 local function Holders()
 	local list, relay = {}, RelayRule()
 	for _, entry in ipairs(ns.Guild.GetRosterEntries()) do
-		if entry.online and not ns.Guild.IsSelf(entry.fullName) and ns.Comm.HasCapability(entry.fullName, CAPABILITY)
-			and (relay or Audit.IsOfficer(entry.fullName)) then
-			list[#list + 1] = { key = entry.key, name = entry.fullName }
+		if entry.online and not ns.Guild.IsSelf(entry.fullName) and ns.Comm.HasCapability(entry.fullName, CAPABILITY) then
+			local officer = Audit.IsOfficer(entry.fullName)
+			if officer or relay then
+				list[#list + 1] = { key = entry.key, name = entry.fullName, officer = officer }
+			end
 		end
 	end
 	return list
@@ -412,6 +415,11 @@ end
 function AA.Status()
 	local at, name = engine:LastSync()
 	return engine:Queued(), at, name
+end
+
+-- The holders our own entries go to directly ({ key, name, officer }); for /dump and the tests.
+function AA.Recipients()
+	return engine:Recipients()
 end
 
 ---------------------------------------------------------------------------
