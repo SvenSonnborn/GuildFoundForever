@@ -264,11 +264,60 @@ function Comm.PostGuildChat(text)
 end
 
 ---------------------------------------------------------------------------
--- Incoming messages: "<COMMAND>\t<payload>", dispatched to registered handlers
+-- Incoming messages: "<COMMAND>\t<payload>", dispatched to registered handlers. Every handler
+-- names its channels; whispers come only from guild members (once the roster is loaded); and one
+-- player may send one command at most RATE.limit times in RATE.window seconds, the rest is
+-- dropped, so a broken or modified client cannot flood anyone.
 ---------------------------------------------------------------------------
 
-function Comm.RegisterHandler(command, fn)
-	handlers[command] = fn
+Comm.RATE = { window = 10, limit = 40 }
+local GROUP_CHANNELS = { "PARTY", "RAID", "INSTANCE_CHAT" }
+local rates = {} -- "sender|command" -> { start, count }
+local ratesPurged = 0
+
+-- channels: "GUILD", "WHISPER" and "GROUP" (party, raid, instance), several separated by spaces.
+function Comm.RegisterHandler(command, fn, channels)
+	local allowed = {}
+	for name in (channels or ""):gmatch("%S+") do
+		if name == "GROUP" then
+			for _, channel in ipairs(GROUP_CHANNELS) do
+				allowed[channel] = true
+			end
+		else
+			allowed[name] = true
+		end
+	end
+	handlers[command] = { fn = fn, channels = allowed }
+end
+
+local function WithinRate(sender, command)
+	local now = GetTime()
+	if now - ratesPurged >= Comm.RATE.window then
+		for key, rate in pairs(rates) do
+			if now - rate.start >= Comm.RATE.window then
+				rates[key] = nil
+			end
+		end
+		ratesPurged = now
+	end
+	local key = sender .. "|" .. command
+	local rate = rates[key]
+	if not rate or now - rate.start >= Comm.RATE.window then
+		rates[key] = { start = now, count = 1 }
+		return true
+	end
+	rate.count = rate.count + 1
+	return rate.count <= Comm.RATE.limit
+end
+
+local function Accepted(handler, command, channel, sender)
+	if not handler.channels[channel] then
+		return false
+	end
+	if channel == "WHISPER" and ns.Guild.IsRosterReady() and not ns.Guild.IsMemberName(sender) then
+		return false
+	end
+	return WithinRate(sender, command)
 end
 
 if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
@@ -284,8 +333,8 @@ ns.On("CHAT_MSG_ADDON", function(_, prefix, message, channel, sender)
 	end
 	local command, payload = strsplit("\t", message, 2)
 	local handler = handlers[command]
-	if handler then
-		handler(sender, channel, payload)
+	if handler and Accepted(handler, command, channel, sender) then
+		handler.fn(sender, channel, payload)
 	end
 end)
 
@@ -393,13 +442,13 @@ Comm.RegisterHandler("HELLO", function(sender, _, payload)
 	C_Timer.After(math.random(1, 20), function()
 		Comm.Send("HI\t" .. ns.version .. "\t" .. Comm.CAPABILITIES, "WHISPER", sender, "alert")
 	end)
-end)
+end, "GUILD")
 
 Comm.RegisterHandler("HI", function(sender, _, payload)
 	local version, caps = strsplit("\t", payload or "")
 	NotePeer(sender, version, caps)
 	ns.Fire("PEER_SEEN", sender, caps or "")
-end)
+end, "WHISPER")
 
 ns.RegisterCallback("LOGIN", function()
 	wasInGuild = IsInGuild() and true or false
@@ -433,7 +482,7 @@ end)
 
 Comm.RegisterHandler("PING", function(sender)
 	Comm.Send("PONG\t" .. ns.version, "WHISPER", sender, "alert")
-end)
+end, "GUILD")
 
 Comm.RegisterHandler("PONG", function(sender, _, version)
 	NoteVersion(version)
@@ -443,7 +492,7 @@ Comm.RegisterHandler("PONG", function(sender, _, version)
 			checkResults[key] = { name = Ambiguate(sender, "guild"), version = version or "?" }
 		end
 	end
-end)
+end, "WHISPER")
 
 local function FinishCheck()
 	local results = checkResults

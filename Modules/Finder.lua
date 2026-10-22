@@ -609,8 +609,8 @@ local function DecodeMembers(text, sender)
 	return members
 end
 
-ns.Comm.RegisterHandler("LFG", function(sender, channel, payload)
-	if not Enabled() or (channel ~= "GUILD" and channel ~= "WHISPER") or not payload or not ns.Guild.IsMemberName(sender) then
+ns.Comm.RegisterHandler("LFG", function(sender, _, payload)
+	if not Enabled() or not payload or not ns.Guild.IsMemberName(sender) then
 		return
 	end
 	local key = ns.Guild.NormalizeName(sender)
@@ -642,7 +642,7 @@ ns.Comm.RegisterHandler("LFG", function(sender, channel, payload)
 	end
 	listings[key] = listing
 	ns.Fire("FINDER_UPDATED")
-end)
+end, "GUILD WHISPER")
 
 ns.Comm.RegisterHandler("LFGEND", function(sender)
 	local key = ns.Guild.NormalizeName(sender)
@@ -651,11 +651,11 @@ ns.Comm.RegisterHandler("LFGEND", function(sender)
 		requestsSent[key] = nil
 		ns.Fire("FINDER_UPDATED")
 	end
-end)
+end, "GUILD")
 
 -- A member who logs in asks for the current listings.
-ns.Comm.RegisterHandler("LFGREQ", function(sender, channel)
-	if channel ~= "GUILD" or not own or not Enabled() then
+ns.Comm.RegisterHandler("LFGREQ", function(sender)
+	if not own or not Enabled() then
 		return
 	end
 	C_Timer.After(math.random() * SYNC_REPLY_SPREAD, function()
@@ -663,12 +663,9 @@ ns.Comm.RegisterHandler("LFGREQ", function(sender, channel)
 			ns.Comm.Send(BuildListingMessage(), "WHISPER", sender)
 		end
 	end)
-end)
+end, "GUILD")
 
-ns.Comm.RegisterHandler("GRPME", function(sender, channel, payload)
-	if channel ~= "PARTY" and channel ~= "RAID" then
-		return
-	end
+ns.Comm.RegisterHandler("GRPME", function(sender, _, payload)
 	local key = PartyKey(sender)
 	if not key then
 		return
@@ -680,13 +677,11 @@ ns.Comm.RegisterHandler("GRPME", function(sender, channel, payload)
 		ScheduleBroadcast()
 	end
 	ns.Fire("FINDER_UPDATED")
-end)
+end, "GROUP")
 
-ns.Comm.RegisterHandler("GRPASK", function(_, channel)
-	if channel == "PARTY" or channel == "RAID" then
-		SendOwnRole()
-	end
-end)
+ns.Comm.RegisterHandler("GRPASK", function()
+	SendOwnRole()
+end, "GROUP")
 
 -- Listings of members who logged out or lost their connection run out after a while; the guild
 -- roster is not used for that, it may lag behind a member who just logged in.
@@ -849,8 +844,8 @@ if StaticPopupDialogs then
 	}
 end
 
-ns.Comm.RegisterHandler("LFGJOIN", function(sender, channel, payload)
-	if channel ~= "WHISPER" or not ns.Guild.IsMemberName(sender) then
+ns.Comm.RegisterHandler("LFGJOIN", function(sender, _, payload)
+	if not ns.Guild.IsMemberName(sender) then
 		return
 	end
 	if not own or not Enabled() then
@@ -867,26 +862,26 @@ ns.Comm.RegisterHandler("LFGJOIN", function(sender, channel, payload)
 	if StaticPopupDialogs and StaticPopup_Show then
 		StaticPopup_Show(POPUP, name, details, sender)
 	end
-end)
+end, "WHISPER")
 
-ns.Comm.RegisterHandler("LFGDECL", function(sender, channel)
+ns.Comm.RegisterHandler("LFGDECL", function(sender)
 	local key = ns.Guild.NormalizeName(sender)
-	if channel == "WHISPER" and key and requestsSent[key] then
+	if key and requestsSent[key] then
 		requestsSent[key] = nil
 		ns.Notify("finder", L.FINDER_REQUEST_DECLINED:format(Ambiguate(sender, "guild")), { important = true })
 		ns.Fire("FINDER_UPDATED")
 	end
-end)
+end, "WHISPER")
 
-ns.Comm.RegisterHandler("LFGGONE", function(sender, channel)
+ns.Comm.RegisterHandler("LFGGONE", function(sender)
 	local key = ns.Guild.NormalizeName(sender)
-	if channel == "WHISPER" and key and requestsSent[key] then
+	if key and requestsSent[key] then
 		requestsSent[key] = nil
 		listings[key] = nil
 		ns.Print("finder", L.FINDER_REQUEST_GONE, Ambiguate(sender, "guild"))
 		ns.Fire("FINDER_UPDATED")
 	end
-end)
+end, "WHISPER")
 
 ---------------------------------------------------------------------------
 -- Timers and events

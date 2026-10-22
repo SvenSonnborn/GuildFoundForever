@@ -653,9 +653,9 @@ ns.RegisterCallback("AUDIT_RECORDED", function(raw)
 end)
 
 for _, command in ipairs({ "AUDX", "AUDS", "AUDE", "AUDM", "AUDQ" }) do
-	ns.Comm.RegisterHandler(command, function(sender, channel, payload)
-		if channel == "WHISPER" and ns.char then
+	ns.Comm.RegisterHandler(command, function(sender, _, payload)
+		if ns.char then
 			engine:Handle(sender, command, payload)
 		end
-	end)
+	end, "WHISPER")
 end

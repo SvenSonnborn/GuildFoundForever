@@ -649,10 +649,7 @@ local function MayRequest(sender)
 	return ns.IsActive() and Audit.IsOfficer(sender)
 end
 
-ns.Comm.RegisterHandler("AUDREQ", function(sender, channel, payload)
-	if channel ~= "WHISPER" then
-		return
-	end
+ns.Comm.RegisterHandler("AUDREQ", function(sender, _, payload)
 	if not MayRequest(sender) then
 		ns.Comm.Send("AUDNO", "WHISPER", sender, "alert")
 		return
@@ -662,7 +659,7 @@ ns.Comm.RegisterHandler("AUDREQ", function(sender, channel, payload)
 	messages[#messages + 1] = ("AUDEND\t%d\t%d"):format(#records, GetServerTime())
 	ns.Comm.SendPaced(messages, "WHISPER", sender)
 	ns.Notify("audit", L.AUDIT_SHARED:format(Ambiguate(sender, "guild")), { important = true })
-end)
+end, "WHISPER")
 
 ---------------------------------------------------------------------------
 -- Officers: requests ("Request data"); the answers go into the guild's store (AuditAuto.lua)
@@ -715,10 +712,7 @@ function Audit.GetRequestState(key)
 	return nil, 0
 end
 
-local function ActiveRequest(sender, channel)
-	if channel ~= "WHISPER" then
-		return nil
-	end
+local function ActiveRequest(sender)
 	local key = ns.Guild.NormalizeName(sender)
 	local request = key and requests[key]
 	if request and not request.finished then
@@ -728,8 +722,8 @@ local function ActiveRequest(sender, channel)
 end
 
 -- Records already stored (requests overlap by one second) do not count again.
-ns.Comm.RegisterHandler("AUD", function(sender, channel, payload)
-	local key, request = ActiveRequest(sender, channel)
+ns.Comm.RegisterHandler("AUD", function(sender, _, payload)
+	local key, request = ActiveRequest(sender)
 	if not key or not payload then
 		return
 	end
@@ -739,24 +733,24 @@ ns.Comm.RegisterHandler("AUD", function(sender, channel, payload)
 		end
 	end
 	ns.Fire("AUDIT_UPDATED", key)
-end)
+end, "WHISPER")
 
-ns.Comm.RegisterHandler("AUDEND", function(sender, channel)
-	local key, request = ActiveRequest(sender, channel)
+ns.Comm.RegisterHandler("AUDEND", function(sender)
+	local key, request = ActiveRequest(sender)
 	if not key then
 		return
 	end
 	ns.Print("audit", L.AUDIT_RECEIVED, Ambiguate(sender, "guild"), request.records)
 	FinishRequest(key, "done")
-end)
+end, "WHISPER")
 
-ns.Comm.RegisterHandler("AUDNO", function(sender, channel)
-	local key = ActiveRequest(sender, channel)
+ns.Comm.RegisterHandler("AUDNO", function(sender)
+	local key = ActiveRequest(sender)
 	if key then
 		ns.Warn("audit", L.AUDIT_DENIED, Ambiguate(sender, "guild"))
 		FinishRequest(key, "denied")
 	end
-end)
+end, "WHISPER")
 
 -- The data shown for a member: our own records for ourselves, otherwise what the guild's store
 -- holds (or nil).

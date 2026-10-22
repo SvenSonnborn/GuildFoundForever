@@ -31,6 +31,9 @@ check(ns.db ~= nil and ns.db.rules.groupLockLevel == 50 and ns.db.rules.transpor
 -- The shared sending budget has its own section at the end; elsewhere it must not get in the way.
 local REAL_BUDGET = { rate = ns.Comm.BUDGET.rate, burst = ns.Comm.BUDGET.burst }
 ns.Comm.SetBudget(1e12, 1e12)
+-- The same goes for the limit on incoming messages: time hardly moves in these tests.
+local REAL_RATE = { window = ns.Comm.RATE.window, limit = ns.Comm.RATE.limit }
+ns.Comm.RATE.limit = math.huge
 check(CallCount("RegisterAddOnCategory") == 1, "settings category registered")
 FireEvent("PLAYER_LOGIN")
 local loadedMessage
@@ -2671,7 +2674,7 @@ end
 check(#recipeAnswer == 2 and recipeAnswer[1] == "PROFR\t197\t2386,3915" and recipeAnswer[2]:find("^PROFEND\t197\t2\t%d+$"), "recipes sent on request")
 ResetCalls()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "PROFREQ\t197", "WHISPER", "Fremder-ClassicBetaPvE2")
-check(LastAddonMessage() == "PROFNO\t197", "requests from non-members refused")
+check(CallCount("SendAddonMessage") == 0, "requests from non-members are ignored: whispers only count from guild members")
 local savedRecipes = ownProfs[197].recipes
 ownProfs[197].recipes = {}
 for i = 1, 200 do ownProfs[197].recipes[i] = 10000 + i end
@@ -3509,6 +3512,46 @@ do
 	RunTickers()
 	check(keptInFight and not Stored(), "combat: the audit store is tidied up after the fight, not during it")
 	RunTimers()
+end
+
+-- Incoming: channels per command, whispers only from members, a limit per player and command ----
+do
+	local C = ns.Comm
+	local function Receive(command, channel, sender) FireEvent("CHAT_MSG_ADDON", "GFForever", command .. "\tx", channel, sender) end
+	local guildCalls, whisperCalls, groupCalls = 0, 0, 0
+	C.RegisterHandler("TESTGUILD", function() guildCalls = guildCalls + 1 end, "GUILD")
+	C.RegisterHandler("TESTWHISPER", function() whisperCalls = whisperCalls + 1 end, "WHISPER")
+	C.RegisterHandler("TESTGROUP", function() groupCalls = groupCalls + 1 end, "GROUP")
+	Receive("TESTGUILD", "WHISPER", "Freund-ClassicBetaPvE2")
+	Receive("TESTGUILD", "GUILD", "Freund-ClassicBetaPvE2")
+	check(guildCalls == 1, "incoming: a command only over its channels")
+	Receive("TESTWHISPER", "WHISPER", "Fremder-ClassicBetaPvE2")
+	Receive("TESTWHISPER", "WHISPER", "Freund-ClassicBetaPvE2")
+	check(whisperCalls == 1, "incoming: whispers only from guild members")
+	for _, channel in ipairs({ "PARTY", "RAID", "INSTANCE_CHAT", "GUILD" }) do
+		Receive("TESTGROUP", channel, "Fremder-ClassicBetaPvE2")
+	end
+	check(groupCalls == 3, "incoming: GROUP means party, raid and instance chat")
+	ResetCalls()
+	Receive("PING", "WHISPER", "Freund-ClassicBetaPvE2")
+	local whisperedPongs = #SentMessages("PONG")
+	Receive("PING", "GUILD", "Freund-ClassicBetaPvE2")
+	check(whisperedPongs == 0 and #SentMessages("PONG") == 1, "incoming: PING only over the guild channel")
+
+	C.RATE.window, C.RATE.limit = REAL_RATE.window, REAL_RATE.limit
+	Advance(REAL_RATE.window + 1) -- a fresh window: Freund sent TESTGUILD above
+	guildCalls = 0
+	for _ = 1, REAL_RATE.limit + 5 do
+		Receive("TESTGUILD", "GUILD", "Freund-ClassicBetaPvE2")
+	end
+	local burst = guildCalls
+	Receive("TESTGUILD", "GUILD", "Crossy-OtherRealm")
+	local others = guildCalls - burst
+	Advance(REAL_RATE.window + 1)
+	Receive("TESTGUILD", "GUILD", "Freund-ClassicBetaPvE2")
+	check(REAL_RATE.limit == 40 and REAL_RATE.window == 10 and burst == 40 and others == 1 and guildCalls == 42,
+		"incoming: at most 40 of one command from one player in 10 seconds, others not affected")
+	C.RATE.limit = math.huge
 end
 
 check(CHAT_TOTAL == 0, "nothing went to the chat")

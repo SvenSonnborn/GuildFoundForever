@@ -317,9 +317,9 @@ local function Publish(kind, data)
 	Notify(playerName, kind, data)
 end
 
-ns.Comm.RegisterHandler("ANN", function(sender, channel, payload)
-	-- Only the guild channel: whispers could come from anyone.
-	if channel ~= "GUILD" or not payload or not ns.db then
+-- Only the guild channel: whispers could come from anyone.
+ns.Comm.RegisterHandler("ANN", function(sender, _, payload)
+	if not payload or not ns.db then
 		return
 	end
 	local kind, t, level, class, zone, extra = strsplit("\t", payload, 6)
@@ -350,7 +350,7 @@ ns.Comm.RegisterHandler("ANN", function(sender, channel, payload)
 	-- Whatever the personal settings show: the dashboard's chronicle records it.
 	ns.Fire("ANNOUNCED", sender, kind, data)
 	Notify(sender, kind, data)
-end)
+end, "GUILD")
 
 function Announce.SendTest()
 	if not IsInGuild() then

@@ -410,7 +410,7 @@ UI.lua                   Fenster mit Tabs, Einstellungs-Eintrag, Addon-Menü an 
   | `PROFREQ <id>` | Flüstern | Rezepte eines Berufs anfragen |
   | `PROFR <id> <rezept,…>` | Flüstern | Rezept-IDs (= Zauber-IDs), mehrere Nachrichten |
   | `PROFEND <id> <anzahl> <erfasst>` | Flüstern | Ende der Rezeptliste; `erfasst` = 0, wenn der Beruf noch nie geöffnet wurde |
-  | `PROFNO <id>` | Flüstern | Anfrage abgelehnt (Berufe aus oder kein Gildenmitglied) |
+  | `PROFNO <id>` | Flüstern | Anfrage abgelehnt (Berufe aus). Flüstern von Nicht-Mitgliedern bleibt seit 0.9.0 ganz unbeantwortet. |
   | `LFG <alter> <id,…> <T,H,S,?> <mitglieder>` | Gilde oder Flüstern | Anmeldung: Aktivitäts-IDs, Anzahl je Rolle, Mitglieder als `name,klasse,stufe,rolle,spec` mit `;` getrennt (der erste ist der Absender, Name leer). Schlachtzüge nur mit Anzahl. Bei langen Namen fallen erst die Specs weg, dann die Namen. |
   | `LFGEND` | Gilde | Anmeldung beendet |
   | `LFGREQ` | Gilde | beim Einloggen: laufende Anmeldungen per Flüstern schicken |
@@ -427,6 +427,7 @@ UI.lua                   Fenster mit Tabs, Einstellungs-Eintrag, Addon-Menü an 
   - „Wichtig“ geht immer sofort raus, notfalls auf Pump: `HELLO`, `HI`, `PING`/`PONG`, Ankündigungen, Anfragen und Antworten der Dungeonsuche, Berufe-Anfragen, „Daten anfordern“.
   - „Normal“ geht sofort, solange das Budget reicht und nichts wartet, sonst in einer Warteschlange (alle 0,2 Sekunden geleert). Eine neue Position der Gildenkarte und eine neue Anmeldung der Dungeonsuche ersetzen die noch wartende. Wer die Gilde verlässt, verwirft, was noch wartet.
   - „Masse“ geht nur, solange das Budget reicht; sonst wartet der Absender selbst: der Audit (ohne Fehlversuch) und die langen Antworten (Rezepte, alte Audit-Antworten).
+  - **Eingehend** (seit 0.9.0): Jeder Befehl nennt bei der Anmeldung seine Kanäle (Gilde, Flüstern oder Gruppe für Party, Schlachtzug und Instanz); über andere Kanäle wird er ignoriert. Flüstern zählt nur von Gildenmitgliedern, sobald die Mitgliederliste geladen ist. Ein Spieler kann denselben Befehl höchstens 40-mal in 10 Sekunden schicken, der Rest wird still verworfen.
   - **Im Kampf** und bis 5 Sekunden danach wartet alle „Masse“; „Wichtig“ und „Normal“ (z. B. die eigene Position) gehen weiter raus. Auch das Aufräumen des Audit-Speichers wartet bis nach dem Kampf.
 - Der Client basiert auf **Retail** (`WOW_PROJECT_ID` = 1), nicht auf Classic. Interface-Nummer 16001, Lua 5.1.
 - Alte Classic-Funktionen fehlen und müssen über die neuen Namespaces aufgerufen werden:
