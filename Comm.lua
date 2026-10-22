@@ -14,6 +14,10 @@ local QUEUE_MAX_ENTRIES = 30
 local PACE_SECONDS = 0.3
 local PACE_RETRY_SECONDS = 1.5
 local PACE_MAX_RETRIES = 20
+-- A HELLO or HI keeps the presence this long even if the roster does not show the sender online:
+-- a recruit or a player who just logged in may be missing from the next roster (it refreshes every
+-- 60 s).
+local PEER_GRACE_SECONDS = 120
 
 Comm.CAPABILITIES = "A" -- "A": automatic audit
 
@@ -27,7 +31,7 @@ local handlers = {}      -- command -> fn(sender, channel, payload)
 local queue = {}         -- messages waiting for a chat lockdown to end
 local checkResults       -- normalized name -> { name, version } while a check is running
 local newerVersionSeen = false
-local peers = {}         -- normalized name -> { caps, version } of players running the addon
+local peers = {}         -- normalized name -> { caps, version, seen } of players running the addon
 local helloDue = false   -- the HELLO of the login went out (or was due without a guild)
 local wasInGuild = false
 local joinHello = false  -- joined a guild during the session: HELLO once the roster is there
@@ -216,7 +220,7 @@ local function NotePeer(sender, version, caps)
 	end
 	caps = caps or ""
 	local before = peers[key]
-	peers[key] = { caps = caps, version = version }
+	peers[key] = { caps = caps, version = version, seen = GetTime() }
 	if (before and before.caps or "") ~= caps then
 		ns.Fire("PEERS_CHANGED")
 	end
@@ -241,8 +245,9 @@ function Comm.GetCapablePeers(cap)
 	return result
 end
 
--- Players who went offline lose their presence. A roster that is not loaded (yet) says nothing
--- about who is online, so it would drop every peer until their next login.
+-- Players who went offline lose their presence, unless they announced themselves within
+-- PEER_GRACE_SECONDS. A roster that is not loaded (yet) says nothing about who is online, so it
+-- would drop every peer until their next login.
 ns.RegisterCallback("ROSTER_UPDATED", function()
 	if not ns.Guild.IsRosterReady() then
 		return
@@ -257,8 +262,9 @@ ns.RegisterCallback("ROSTER_UPDATED", function()
 	end
 	local online = ns.Guild.GetOnlineMembers()
 	local changed = false
+	local now = GetTime()
 	for key, peer in pairs(peers) do
-		if not online[key] then
+		if not online[key] and now - peer.seen >= PEER_GRACE_SECONDS then
 			peers[key] = nil
 			changed = changed or peer.caps ~= ""
 		end

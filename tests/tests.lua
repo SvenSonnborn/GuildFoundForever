@@ -1029,8 +1029,9 @@ local S = ns.AuditSync
 do
 	-- retry[targetKey] = n: the next n sends to that target report throttling ("retry"); every send
 	-- to such a target is noted in attempts. lose[targetKey]: messages to that target are sent but
-	-- never handled (lost on the way or dropped by the receiver).
-	local net = { now = 0, seq = 0, timers = {}, players = {}, log = {}, relay = false, retry = {}, attempts = {}, lose = {} }
+	-- never handled (lost on the way or dropped by the receiver). unseen[key]: online, but the others'
+	-- rosters do not show it yet (it just logged in), so nobody counts it as online or capable.
+	local net = { now = 0, seq = 0, timers = {}, players = {}, log = {}, relay = false, retry = {}, attempts = {}, lose = {}, unseen = {} }
 	local function NetAfter(at, fn) net.seq = net.seq + 1 net.timers[#net.timers + 1] = { at = at, seq = net.seq, fn = fn } end
 	-- p.session counts the logins: every login (and /reload) runs a fresh engine, as in the game; the
 	-- saved data (p.store, p.sent, p.own) stays. p.ready = false: no store (yet, or during a /reload).
@@ -1061,19 +1062,19 @@ do
 				holders = function()
 					local list = {}
 					for key, other in pairs(net.players) do
-						if other ~= p and other.online and isHolder(other) then list[#list + 1] = { key = key, name = other.name, officer = other.holder and true or false } end
+						if other ~= p and other.online and not net.unseen[key] and isHolder(other) then list[#list + 1] = { key = key, name = other.name, officer = other.holder and true or false } end
 					end
 					return list
 				end,
 				peers = function()
 					local list = {}
 					for key, other in pairs(net.players) do
-						if other ~= p and other.online then list[#list + 1] = { key = key, name = other.name } end
+						if other ~= p and other.online and not net.unseen[key] then list[#list + 1] = { key = key, name = other.name } end
 					end
 					return list
 				end,
 				isHolder = function(key) local o = net.players[key] return o ~= nil and isHolder(o) end,
-				capable = function(key) local o = net.players[key] return o ~= nil and o.online end,
+				capable = function(key) local o = net.players[key] return o ~= nil and o.online and not net.unseen[key] end,
 				isMember = function() return true end, -- everybody in the test net is in the guild
 				amHolder = function() return isHolder(p) end,
 				amOfficer = function() return p.holder and true or false end,
@@ -1151,7 +1152,7 @@ do
 	local function Has(p, memberKey, raw) local m = p.store and p.store.members[memberKey] return m ~= nil and m.recs[raw] ~= nil end
 	local function NetReset(relay)
 		net.now, net.timers, net.players, net.log, net.relay = 0, {}, {}, {}, relay or false
-		net.retry, net.attempts, net.offlineOk, net.lose = {}, {}, false, {}
+		net.retry, net.attempts, net.offlineOk, net.lose, net.unseen = {}, {}, false, {}, {}
 	end
 	-- Messages from one player to another from the log entry `from` on.
 	local function Between(fromKey, toKey, first, pattern)
@@ -1700,6 +1701,132 @@ do
 	m.engine:Start()
 	NetRun(10)
 	check(#Between("mitglied", "offia", 1, "^AUDE\t4\t") == 1, "an answer queued before the start still goes out")
+
+	-- An entry that only a catch-up brings: the member never pushes it (older than its push watermarks
+	-- or added without Record).
+	local function Unpushed(p, at, label)
+		local raw = R.Encode("H", { t = at, hk = "mail", sev = "o", a = label, b = "s" })
+		p.own[#p.own + 1] = raw
+		return raw
+	end
+	-- A catch-up ask lost on the way (no AUDE 4): asked again at the first tick CATCH_UP_SECONDS after
+	-- it went out, without a new HELLO of the member.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(a, true) NetOnline(m, true)
+	NetRun(60)
+	local quietHint = Unpushed(m, net.now, "Still")
+	net.lose.mitglied = true
+	a.engine:MemberSeen("mitglied")
+	NetRun(10)
+	net.lose.mitglied = nil
+	local lostAsks = #Between("offia", "mitglied", 1, "^AUDQ\t")
+	NetRun(S.CATCH_UP_SECONDS + S.INTERVAL_SECONDS)
+	check(lostAsks == 2 and Has(a, "mitglied", quietHint), "a lost catch-up ask is made again once it is CATCH_UP_SECONDS old")
+	-- An ask dropped because the member went offline before it went out: the member is asked at once
+	-- when it is back, also within CATCH_UP_SECONDS.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(a, true)
+	net.retry.mitglied = 1000
+	NetOnline(m, true)
+	NetRun(5)
+	local stuckAsk = #Between("offia", "mitglied", 1, "^AUDQ\t") == 0 and a.engine:Queued() > 0
+	NetOnline(m, false)
+	net.retry.mitglied = nil
+	NetRun(5)
+	local backHint = Unpushed(m, 1, "Zurueck")
+	m.sent.offia = net.now
+	NetOnline(m, true)
+	NetRun(60)
+	check(stuckAsk and Has(a, "mitglied", backHint), "an ask dropped while the member was away: asked at once when it is back")
+	-- An ask whose send failed for good: the member is asked again at the next tick.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(a, true)
+	net.retry.mitglied = S.RETRIES + 1
+	NetOnline(m, true)
+	NetRun(60)
+	local failedHint = Unpushed(m, 1, "Fehlschlag")
+	local failed = not Has(a, "mitglied", failedHint) and net.retry.mitglied == 0
+	NetRun(S.INTERVAL_SECONDS)
+	check(failed and Has(a, "mitglied", failedHint), "an ask that could not be sent: asked again at the next tick")
+	-- An ask still waiting in a busy queue (here A's first push to B) is not lost: one AUDQ, also when
+	-- a tick comes CATCH_UP_SECONDS after it was queued.
+	NetReset()
+	m, a, b = NetPlayer("Mitglied", false), NetPlayer("OffiA", true), NetPlayer("OffiB", true)
+	for i = 1, 2500 do a.own[i] = R.Encode("T", { t = i, n = "X", k = "e", gm = 0, rm = i, gi = "", ri = "" }) end
+	-- Off the full second: NetRun skips a tick that falls on the time of a timer, and the busy
+	-- queue has one every second.
+	NetRun(14 * S.INTERVAL_SECONDS - 9.5)
+	NetOnline(b, true) NetOnline(a, true)
+	NetRun(8.5)
+	NetOnline(m, true) -- one second before a tick
+	NetRun(S.CATCH_UP_SECONDS + 5)
+	local busy = a.engine:Queued() > 0 and #Between("offia", "mitglied", 1, "^AUDQ\t") == 0
+	NetRun(600)
+	check(busy and #Between("offia", "mitglied", 1, "^AUDQ\t") == 1, "an ask waiting in a busy queue is not made twice")
+
+	-- AUDQ again while the answer to the first one still waits: one answer. Once it went out, a new
+	-- AUDQ is answered again.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(a, true) NetOnline(m, true)
+	NetRun(60)
+	local twiceAt = #net.log + 1
+	m.engine:Handle("OffiA", "AUDQ", "0")
+	m.engine:Handle("OffiA", "AUDQ", "0")
+	NetRun(30)
+	local answers = #Between("mitglied", "offia", twiceAt, "^AUDE\t4\t")
+	m.engine:Handle("OffiA", "AUDQ", "0")
+	NetRun(30)
+	check(answers == 1 and #Between("mitglied", "offia", twiceAt, "^AUDE\t4\t") == 2, "AUDQ twice before the answer went out: answered once")
+
+	-- A push queued before our start (an entry recorded while the HI answers came in) is not queued a
+	-- second time by the start.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(a, true)
+	m.online = true
+	m.own[#m.own + 1] = ahHint
+	m.engine:PeersChanged()
+	m.engine:Start()
+	NetRun(10)
+	local copies = 0
+	for _, entry in ipairs(Between("mitglied", "offia", 1, "^AUDX")) do if entry.message:find(ahHint, 1, true) then copies = copies + 1 end end
+	check(copies == 1, "a push queued before the start goes out once")
+
+	-- The answer to a holder that went offline is dropped, even where a whisper to an offline player
+	-- reports success: at the next change of the peers, or else when it is its turn.
+	for _, quiet in ipairs({ false, true }) do
+		NetReset()
+		m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+		for i = 1, 3000 do m.own[i] = R.Encode("T", { t = i, n = "X", k = "e", gm = 0, rm = i, gi = "", ri = "" }) end
+		NetRun(3100)
+		m.sent.offia = net.now -- only the catch-up carries them
+		net.offlineOk = true
+		NetOnline(m, true) NetOnline(a, true)
+		NetRun(S.ANSWER_GRACE_SECONDS + 30)
+		local answering = #Between("mitglied", "offia", 1, "^AUDX") > 0 and m.engine:Queued() > 0
+		if quiet then a.online = false else NetOnline(a, false) end
+		local away = #net.log + 1
+		NetRun(600)
+		check(answering and #Between("mitglied", "offia", away) == 0 and m.engine:Queued() == 0,
+			"a holder gone offline: the rest of the answer to its catch-up is dropped" .. (quiet and " (no change of the peers)" or ""))
+	end
+	-- A holder that asks right after its login, before our roster shows it online: the answer still
+	-- goes out, its ask is recent.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(m, true)
+	NetRun(60)
+	local earlyHint = Unpushed(m, net.now, "Frueh")
+	net.unseen.offia = true
+	NetOnline(a, true)
+	NetRun(0.5) -- the AUDQ is in, the end of the answer still waits
+	m.engine:PeersChanged()
+	NetRun(30)
+	check(Has(a, "mitglied", earlyHint) and #Between("mitglied", "offia", 1, "^AUDE\t4\t") == 1, "a holder not in our roster yet still gets the answer to its ask")
 end
 
 -- Audit: recording --------------------------------------------------------------
@@ -2058,9 +2185,12 @@ do
 	RANK_FLAGS = { [1] = { [11] = true }, [2] = { [11] = true }, [4] = { [11] = true }, [5] = { [11] = false } }
 	-- HELLOs here carry versions no newer than our own (0.7.0): the notice about a newer version
 	-- comes once per session, and the section "Addon messages" tests it.
+	ResetCalls()
 	FireEvent("CHAT_MSG_ADDON", "GFForever", "HELLO\t0.7.0\tA", "GUILD", "Freund-ClassicBetaPvE2")
 	FireEvent("CHAT_MSG_ADDON", "GFForever", "HI\t1.0.0\tA", "WHISPER", "Crossy-OtherRealm")
 	RunTimers()
+	-- The engine runs since the login: a new recipient gets the own data right away.
+	local pushes = SentMessages("AUDX\t")
 	-- R23: Freund counts us among his recipients: we catch up with him, on first contact 10 days back.
 	local function AudqTo(name)
 		local list = {}
@@ -2078,10 +2208,6 @@ do
 	local nextAsk = AudqTo("Freund-ClassicBetaPvE2")
 	check(#nextAsk == 2 and nextAsk[2] == "AUDQ\t" .. answeredAt, "Freund announces himself again: caught up from the watermark on")
 	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDE\t4\t" .. GetServerTime(), "WHISPER", "Freund-ClassicBetaPvE2")
-	ResetCalls()
-	AA.Start()
-	RunTimers()
-	local pushes = SentMessages("AUDX\t")
 	check(#pushes > 0 and pushes[1].args[4] == "Freund-ClassicBetaPvE2", "own data goes to the officer running the new version")
 	local toCrossy = false
 	for _, c in ipairs(pushes) do if c.args[4] == "Crossy-OtherRealm" then toCrossy = true end end
@@ -2996,6 +3122,25 @@ do
 	ROSTER = fullRoster
 	FireEvent("GUILD_ROSTER_UPDATE")
 	check(ns.Comm.HasCapability("Freund-ClassicBetaPvE2", "A") and ns.Comm.HasCapability("Crossy-OtherRealm", "A"), "an empty roster keeps the presence")
+end
+do
+	-- A recruit's HELLO can come before the roster lists it: its presence survives that roster, so
+	-- the next one shows it with the capability. Gone from the roster for long, the presence goes.
+	local recruit = "Neuling-ClassicBetaPvE2"
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "HELLO\t1.0.0\tA", "GUILD", recruit)
+	FireEvent("GUILD_ROSTER_UPDATE")
+	ROSTER[#ROSTER + 1] = { recruit, true, 4, "WARRIOR" }
+	FireEvent("GUILD_ROSTER_UPDATE")
+	local kept = ns.Comm.HasCapability(recruit, "A")
+	ROSTER[#ROSTER][2] = false
+	Advance(121)
+	FireEvent("GUILD_ROSTER_UPDATE")
+	ROSTER[#ROSTER][2] = true
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(kept and not ns.Comm.HasCapability(recruit, "A"), "a recruit not in the roster yet keeps its presence for a while")
+	table.remove(ROSTER)
+	FireEvent("GUILD_ROSTER_UPDATE")
+	RunTimers()
 end
 ResetCalls()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "PING", "GUILD", "Magus-ClassicBetaPvE2")

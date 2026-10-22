@@ -59,6 +59,9 @@ Sync.FIRST_CONTACT_SECONDS = 864000
 -- A catch-up ask without its AUDE 4 counts as under way this long; a new announcement of the
 -- member asks again after that.
 Sync.CATCH_UP_SECONDS = 300
+-- An answer to a holder our roster does not show online goes out only this long after its ask: the
+-- roster refreshes every 60 s, so a holder that just logged in shows up within that time.
+Sync.ANSWER_GRACE_SECONDS = 120
 Sync.MESSAGE_LIMIT = 240
 -- A throttled message stays at the head and is tried again RETRY_SECONDS later, RETRIES times at most.
 Sync.RETRIES = 10
@@ -177,7 +180,8 @@ local Pump
 
 -- A failed send (any failure but a "retry" within RETRIES) drops every message still waiting for
 -- that target. A recipient that missed
--- messages gets a full push next time; we stop waiting for the answer of a peer we asked.
+-- messages gets a full push next time; we stop waiting for the answer of a peer we asked, and a
+-- member we wanted to catch up with is asked again.
 local function Drop(self, key)
 	for prio = 0, LAST_PRIORITY do
 		local kept = {}
@@ -191,10 +195,21 @@ local function Drop(self, key)
 	self.pushed[key] = nil
 	self.asked[key] = nil
 	self.catching[key] = nil
+	self.checked[key] = nil
 end
 
 local function IsAnswer(prio)
 	return prio == MEMBER_ANSWER or prio == TIER1_ANSWER or prio == TIER2_ANSWER
+end
+
+-- Answers go only to holders. A member answer also needs the holder online in our roster, or its
+-- ask recent (ANSWER_GRACE_SECONDS): our roster may not show a holder that just logged in yet.
+local function Answerable(self, item)
+	local env = self.env
+	if not env.isHolder(item.key) then
+		return false
+	end
+	return item.prio ~= MEMBER_ANSWER or env.capable(item.key) or env.now() - item.at < Sync.ANSWER_GRACE_SECONDS
 end
 
 local function NextItem(self)
@@ -208,12 +223,12 @@ local function NextItem(self)
 end
 
 -- Sends the head message: a throttled one ("retry") waits in self.head ahead of everything else.
--- Answers go only to holders: one that lost the role since gets nothing more.
+-- An answer that cannot go any more (Answerable) is skipped.
 function Pump(self)
 	local env = self.env
 	local item = self.head or NextItem(self)
 	self.head = nil
-	while item and IsAnswer(item.prio) and not env.isHolder(item.key) do
+	while item and IsAnswer(item.prio) and not Answerable(self, item) do
 		item = NextItem(self)
 	end
 	if not item then
@@ -239,8 +254,9 @@ function Pump(self)
 end
 
 -- Drops what waits for targets that are gone: pushes and sync answers only go to online holders,
--- asks to players online with the new version, member answers to anyone still a holder (its
--- presence may just not be known yet). A whisper to an offline player may well report success.
+-- asks to players online with the new version, member answers as Answerable says (the presence of
+-- a holder that just logged in may not be known yet). A whisper to an offline player may well
+-- report success. A member whose catch-up ask is dropped is asked again once it is back.
 local function DropGone(self)
 	local env = self.env
 	local online = {}
@@ -248,14 +264,19 @@ local function DropGone(self)
 		online[holder.key] = true
 	end
 	local function Keep(item)
+		local keep = false
 		if online[item.key] then
-			return true
+			keep = true
 		elseif item.prio == ASK or item.prio == CATCH_UP then
-			return env.capable(item.key) and true or false
+			keep = env.capable(item.key) and true or false
 		elseif item.prio == MEMBER_ANSWER then
-			return env.isHolder(item.key) and true or false
+			keep = Answerable(self, item)
 		end
-		return false
+		if not keep and item.prio == CATCH_UP then
+			self.catching[item.key] = nil
+			self.checked[item.key] = nil
+		end
+		return keep
 	end
 	for prio = 0, LAST_PRIORITY do
 		local kept = {}
@@ -274,7 +295,7 @@ end
 -- done runs once the message went out successfully.
 local function Queue(self, prio, target, message, done)
 	local list = self.queues[prio]
-	list[#list + 1] = { prio = prio, target = target, key = self.env.key(target), message = message, done = done, tries = 0 }
+	list[#list + 1] = { prio = prio, target = target, key = self.env.key(target), message = message, done = done, tries = 0, at = self.env.now() }
 	if not self.pumping then
 		self.pumping = true
 		self.env.after(0, function()
@@ -283,13 +304,16 @@ local function Queue(self, prio, target, message, done)
 	end
 end
 
-local function Waiting(self, prio, key)
-	local head = self.head
-	if head and head.prio == prio and head.key == key then
+-- Whether a message of that priority for that key still waits; with prefix, only one starting so.
+local function Waiting(self, prio, key, prefix)
+	local function Match(item)
+		return item.prio == prio and item.key == key and (not prefix or item.message:sub(1, #prefix) == prefix)
+	end
+	if self.head and Match(self.head) then
 		return true
 	end
 	for _, item in ipairs(self.queues[prio]) do
-		if item.key == key then
+		if Match(item) then
 			return true
 		end
 	end
@@ -467,9 +491,16 @@ local function AskMember(self, peer)
 	Queue(self, CATCH_UP, peer.name, "AUDQ\t" .. since)
 end
 
+-- An ask made CATCH_UP_SECONDS ago that no longer waits in the queue and has no AUDE 4 yet (lost on
+-- the way, or the member could not answer) counts as lost.
+local function AskLost(self, key)
+	local asked = self.catching[key]
+	return asked ~= nil and self.env.now() - asked >= Sync.CATCH_UP_SECONDS and not Waiting(self, CATCH_UP, key)
+end
+
 -- Once we can store (after the start, also after a /reload): every online member not looked at
--- this session (or announced again since) that counts us among its recipients is asked once.
--- Without the role, the members are looked at again once we have it.
+-- this session (or announced again since, or whose ask got lost) that counts us among its
+-- recipients is asked once. Without the role, the members are looked at again once we have it.
 local function CatchUp(self)
 	local env = self.env
 	if not IsHolder(self) then
@@ -481,7 +512,7 @@ local function CatchUp(self)
 	end
 	local holders = nil
 	for _, peer in ipairs(env.peers() or {}) do
-		if peer.key ~= env.self and not self.checked[peer.key] then
+		if peer.key ~= env.self and (not self.checked[peer.key] or AskLost(self, peer.key)) then
 			self.checked[peer.key] = true
 			holders = holders or env.holders() or {}
 			if AmRecipientOf(self, peer.key, holders) then
@@ -638,10 +669,11 @@ end
 
 -- A holder catches up with us: all our own entries since then (every tier, also the last, join and
 -- first state), then AUDE 4 with the time the answer was taken, so entries of that same second
--- come again next time. Only holders, as we read the roster, get an answer.
+-- come again next time. Only holders, as we read the roster, get an answer. While an answer to that
+-- holder still waits, it alone goes on: its AUDE 4 ends the holder's ask.
 function HANDLERS.AUDQ(self, sender, senderKey, payload)
 	local env = self.env
-	if senderKey == env.self or not env.isHolder(senderKey) then
+	if senderKey == env.self or not env.isHolder(senderKey) or Waiting(self, MEMBER_ANSWER, senderKey, "AUDE\t4\t") then
 		return
 	end
 	local now = env.now()
@@ -673,10 +705,11 @@ end
 
 -- Sends the own data to the recipients and, as a holder, syncs with our successor in the ring and
 -- catches up with the members. What is queued already (e.g. answers to holders that asked before
--- the start) stays.
+-- the start, or a push for an entry recorded since the HI answers came in) stays, and a recipient
+-- with a push gets no second one.
 function Engine:Start()
 	self.started = true
-	self.pushed, self.asked, self.lastAsked, self.round = {}, {}, nil, 0
+	self.asked, self.lastAsked, self.round = {}, nil, 0
 	local extra = self.bundle
 	self.bundle = nil
 	Distribute(self, extra)
@@ -699,15 +732,14 @@ function Engine:PeersChanged()
 end
 
 -- A member announced itself (HELLO or HI): it may have lost pushes to us since our last catch-up,
--- so it is asked again, unless an ask is under way. One that is not online in our roster yet is
--- asked once it is there (the next PeersChanged).
+-- so it is asked again, unless an ask is under way (and not lost). One that is not online in our
+-- roster yet is asked once it is there (the next PeersChanged).
 function Engine:MemberSeen(key)
 	local env = self.env
 	if not key or key == env.self then
 		return
 	end
-	local asked = self.catching[key]
-	if asked and env.now() - asked < Sync.CATCH_UP_SECONDS then
+	if self.catching[key] and not AskLost(self, key) then
 		return
 	end
 	self.catching[key] = nil
