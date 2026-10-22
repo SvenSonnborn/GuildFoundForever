@@ -406,7 +406,7 @@ local function SendOwnRole()
 		return
 	end
 	local role, spec = Finder.GetOwnRole()
-	ns.Comm.Send(("GRPME\t%s\t%d"):format(ROLE_CODES[role] or "N", spec or 0), GroupChannel())
+	ns.Comm.Send(("GRPME\t%s\t%d"):format(ROLE_CODES[role] or "N", spec or 0), GroupChannel(), nil, "alert")
 end
 
 ---------------------------------------------------------------------------
@@ -461,7 +461,7 @@ local function Broadcast()
 		return
 	end
 	own.lastSent = GetTime()
-	ns.Comm.Send(BuildListingMessage(), "GUILD")
+	ns.Comm.Send(BuildListingMessage(), "GUILD", nil, "normal", "LFG")
 end
 
 local function ScheduleBroadcast()
@@ -512,7 +512,7 @@ function Finder.Post(activityIDs)
 	local now = GetTime()
 	own = { activities = ids, created = own and own.created or now, touched = now, signature = GroupSignature(true) }
 	if IsInGroup() then
-		ns.Comm.Send("GRPASK", GroupChannel())
+		ns.Comm.Send("GRPASK", GroupChannel(), nil, "alert")
 	end
 	Broadcast()
 	ns.Fire("FINDER_UPDATED")
@@ -524,7 +524,7 @@ function Finder.Cancel(reason)
 		return
 	end
 	own = nil
-	ns.Comm.Send("LFGEND", "GUILD")
+	ns.Comm.Send("LFGEND", "GUILD", nil, "alert")
 	if reason then
 		ns.Print("finder", reason)
 	end
@@ -792,7 +792,7 @@ function Finder.RequestJoin(listing)
 	end
 	local role, spec = Finder.GetOwnRole()
 	local message = ("LFGJOIN\t%s\t%d\t%s\t%d"):format(UnitClassBase("player") or "", UnitLevel("player"), ROLE_CODES[role] or "N", spec or 0)
-	local sent, code = ns.Comm.Send(message, "WHISPER", listing.name)
+	local sent, code = ns.Comm.Send(message, "WHISPER", listing.name, "alert")
 	if not sent then
 		ns.Warn("finder", ns.Comm.FailureText(code))
 		return
@@ -823,7 +823,7 @@ function Finder.DescribeMember(class, level, role, specID)
 end
 
 local function DeclineRequest(name)
-	ns.Comm.Send("LFGDECL", "WHISPER", name)
+	ns.Comm.Send("LFGDECL", "WHISPER", name, "alert")
 end
 
 local POPUP = "GUILDFOUNDFOREVER_JOIN_REQUEST"
@@ -854,7 +854,7 @@ ns.Comm.RegisterHandler("LFGJOIN", function(sender, channel, payload)
 		return
 	end
 	if not own or not Enabled() then
-		ns.Comm.Send("LFGGONE", "WHISPER", sender)
+		ns.Comm.Send("LFGGONE", "WHISPER", sender, "alert")
 		return
 	end
 	local class, level, role, spec = strsplit("\t", payload or "")

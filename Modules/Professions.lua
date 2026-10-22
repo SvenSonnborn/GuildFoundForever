@@ -279,7 +279,7 @@ ns.Comm.RegisterHandler("PROFREQ", function(sender, channel, payload)
 		return
 	end
 	if not Enabled() or not ns.Guild.IsMemberName(sender) then
-		ns.Comm.Send("PROFNO\t" .. (payload or ""), "WHISPER", sender)
+		ns.Comm.Send("PROFNO\t" .. (payload or ""), "WHISPER", sender, "alert")
 		return
 	end
 	local skillLineID = tonumber(payload)
@@ -358,7 +358,7 @@ function Professions.RequestRecipes(fullName, skillLineID)
 	if not key or not Enabled() or ns.Guild.IsSelf(fullName) then
 		return
 	end
-	local sent, code = ns.Comm.Send("PROFREQ\t" .. skillLineID, "WHISPER", fullName)
+	local sent, code = ns.Comm.Send("PROFREQ\t" .. skillLineID, "WHISPER", fullName, "alert")
 	if not sent then
 		ns.Warn("system", ns.Comm.FailureText(code))
 		return

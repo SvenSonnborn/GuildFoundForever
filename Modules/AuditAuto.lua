@@ -128,11 +128,15 @@ local function Peers()
 	return list
 end
 
--- A throttled message is tried again by the engine; every other failure drops it.
+-- Audit messages are bulk in the shared budget: "wait" keeps them first in the engine's queue. A
+-- throttled message is tried again by the engine; every other failure drops it.
 local function Send(message, target)
-	local ok, code = ns.Comm.Send(message, "WHISPER", target)
+	local ok, code = ns.Comm.Send(message, "WHISPER", target, "bulk")
 	if ok then
 		return true
+	end
+	if code == "wait" then
+		return false, "wait"
 	end
 	if ns.Comm.IsThrottled(code) then
 		return false, "retry"

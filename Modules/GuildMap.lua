@@ -49,7 +49,7 @@ end
 
 local function Hide()
 	if lastSent then
-		ns.Comm.Send("POSHIDE", "GUILD")
+		ns.Comm.Send("POSHIDE", "GUILD", nil, "normal", "POS")
 		lastSent = nil
 	end
 end
@@ -73,7 +73,7 @@ local function SendPosition()
 	end
 	local message = ("POS\t%d\t%d\t%d\t%d\t%s"):format(mapID, math.floor(x * 10000), math.floor(y * 10000),
 		UnitLevel("player"), UnitClassBase("player") or "")
-	if ns.Comm.Send(message, "GUILD") then
+	if ns.Comm.Send(message, "GUILD", nil, "normal", "POS") then
 		lastSent = { mapID = mapID, x = x, y = y, time = now }
 	end
 end

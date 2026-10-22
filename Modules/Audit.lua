@@ -654,7 +654,7 @@ ns.Comm.RegisterHandler("AUDREQ", function(sender, channel, payload)
 		return
 	end
 	if not MayRequest(sender) then
-		ns.Comm.Send("AUDNO", "WHISPER", sender)
+		ns.Comm.Send("AUDNO", "WHISPER", sender, "alert")
 		return
 	end
 	local records = EncodeRecords(tonumber(payload) or 0)
@@ -691,7 +691,7 @@ function Audit.Request(name)
 		return
 	end
 	local since = ns.AuditAuto.LatestTime(key)
-	local sent, code = ns.Comm.Send("AUDREQ\t" .. since, "WHISPER", name)
+	local sent, code = ns.Comm.Send("AUDREQ\t" .. since, "WHISPER", name, "alert")
 	if not sent then
 		ns.Warn("audit", ns.Comm.FailureText(code))
 		return

@@ -28,6 +28,9 @@ ns.Banner.Show = function(info)
 end
 FireEvent("ADDON_LOADED", "GuildFoundForever")
 check(ns.db ~= nil and ns.db.rules.groupLockLevel == 50 and ns.db.rules.transportSummon == false, "saved variables initialised with defaults")
+-- The shared sending budget has its own section at the end; elsewhere it must not get in the way.
+local REAL_BUDGET = { rate = ns.Comm.BUDGET.rate, burst = ns.Comm.BUDGET.burst }
+ns.Comm.SetBudget(1e12, 1e12)
 check(CallCount("RegisterAddOnCategory") == 1, "settings category registered")
 FireEvent("PLAYER_LOGIN")
 local loadedMessage
@@ -1063,7 +1066,8 @@ do
 	-- to such a target is noted in attempts. lose[targetKey]: messages to that target are sent but
 	-- never handled (lost on the way or dropped by the receiver). unseen[key]: online, but the others'
 	-- rosters do not show it yet (it just logged in), so nobody counts it as online or capable.
-	local net = { now = 0, seq = 0, timers = {}, players = {}, log = {}, relay = false, retry = {}, attempts = {}, lose = {}, unseen = {} }
+	-- wait[targetKey] = n: the next n sends to that target hear "wait" from the shared budget.
+	local net = { now = 0, seq = 0, timers = {}, players = {}, log = {}, relay = false, retry = {}, attempts = {}, lose = {}, unseen = {}, wait = {} }
 	local function NetAfter(at, fn) net.seq = net.seq + 1 net.timers[#net.timers + 1] = { at = at, seq = net.seq, fn = fn } end
 	-- p.session counts the logins: every login (and /reload) runs a fresh engine, as in the game; the
 	-- saved data (p.store, p.sent, p.own) stays. p.ready = false: no store (yet, or during a /reload).
@@ -1080,6 +1084,10 @@ do
 					local to = net.players[target:lower()]
 					-- net.offlineOk: a whisper to an offline player reports success (not known for Forever)
 					if not p.online or session ~= p.session or not to or not (to.online or net.offlineOk) then return false, 12 end
+					if (net.wait[to.key] or 0) > 0 then
+						net.wait[to.key] = net.wait[to.key] - 1
+						return false, "wait"
+					end
 					local retry = net.retry[to.key]
 					if retry then
 						net.attempts[#net.attempts + 1] = { from = p.key, to = to.key, at = net.now, retry = retry > 0 }
@@ -1184,7 +1192,7 @@ do
 	local function Has(p, memberKey, raw) local m = p.store and p.store.members[memberKey] return m ~= nil and m.recs[raw] ~= nil end
 	local function NetReset(relay)
 		net.now, net.timers, net.players, net.log, net.relay = 0, {}, {}, {}, relay or false
-		net.retry, net.attempts, net.offlineOk, net.lose, net.unseen = {}, {}, false, {}, {}
+		net.retry, net.attempts, net.offlineOk, net.lose, net.unseen, net.wait = {}, {}, false, {}, {}, {}
 	end
 	-- Messages from one player to another from the log entry `from` on.
 	local function Between(fromKey, toKey, first, pattern)
@@ -1859,6 +1867,18 @@ do
 	m.engine:PeersChanged()
 	NetRun(30)
 	check(Has(a, "mitglied", earlyHint) and #Between("mitglied", "offia", 1, "^AUDE\t4\t") == 1, "a holder not in our roster yet still gets the answer to its ask")
+
+	-- The shared sending budget says "wait": the message keeps its place and does not count as a
+	-- retry, however long it takes.
+	NetReset()
+	m, a = NetPlayer("Mitglied", false), NetPlayer("OffiA", true)
+	NetOnline(a, true) NetOnline(m, true)
+	NetRun(60)
+	net.wait.offia = S.RETRIES * 3
+	local waitHint = R.Encode("H", { t = net.now, hk = "mail", sev = "o", a = "Warten", b = "s" })
+	NetRecord(m, waitHint)
+	NetRun(120)
+	check(Has(a, "mitglied", waitHint) and net.wait.offia == 0, "a send told to wait keeps its place and goes out later")
 
 	-- Done marks are officer state: a member cannot mark its own notices done (a modified client
 	-- could hide them from every officer), its other entries still count.
@@ -3426,6 +3446,42 @@ do
 	check(not open:GetParent():IsShown() and FindWidgetContaining("FontString", "Tode diese Woche"):GetParent():IsShown(), "dashboard: members see the week in numbers instead")
 	ns.UI.Toggle()
 	ROSTER[2][5], LAST_ONLINE[3] = nil, nil
+	FireEvent("GUILD_ROSTER_UPDATE")
+	RunTimers()
+end
+
+-- Sending: one budget for every addon message ---------------------------------------------------
+do
+	local C = ns.Comm
+	C.SetBudget(100, 300) -- 100 characters per second, 300 saved up; 40 more per message
+	local message = string.rep("x", 60) -- costs 100
+	ResetCalls()
+	local sent = { C.Send(message, "GUILD", nil, "bulk"), C.Send(message, "GUILD", nil, "bulk"), C.Send(message, "GUILD", nil, "bulk") }
+	local fourth, code = C.Send(message, "GUILD", nil, "bulk")
+	check(sent[1] and sent[2] and sent[3] and not fourth and code == "wait" and CallCount("SendAddonMessage") == 3, "budget: bulk messages go out while it lasts, then they wait")
+	check(C.Send("PING", "GUILD", nil, "alert") and CallCount("SendAddonMessage") == 4, "budget: an alert goes out even without budget")
+	local queued, queuedCode = C.Send("POS\t1", "GUILD", nil, "normal", "POS")
+	C.Send("POS\t2", "GUILD", nil, "normal", "POS")
+	check(queued and queuedCode == "queued" and CallCount("SendAddonMessage") == 4, "budget: a normal message waits in the queue")
+	RunTickers()
+	check(#SentMessages("POS\t") == 0, "budget: without new budget nothing more goes out")
+	Advance(3)
+	RunTickers()
+	local positions = SentMessages("POS\t")
+	check(#positions == 1 and positions[1].args[2] == "POS\t2", "budget: the newest position replaced the waiting one and goes out with new budget")
+	check(C.Send("POS\t3", "GUILD", nil, "bulk"), "budget: refilled over time")
+	check(REAL_BUDGET.rate == 800 and REAL_BUDGET.burst == 4000 and C.BUDGET.overhead == 40, "budget: as ChatThrottleLib, 800 characters a second, 4000 saved up")
+	-- Leaving the guild drops what still waits.
+	while C.Send("x", "GUILD", nil, "bulk") do end -- less than 41 left
+	local _, waitingCode = C.Send("LFG\tweg", "GUILD")
+	IN_GUILD = false
+	FireEvent("PLAYER_GUILD_UPDATE")
+	IN_GUILD = true
+	FireEvent("PLAYER_GUILD_UPDATE")
+	Advance(10)
+	RunTickers()
+	check(waitingCode == "queued" and #SentMessages("LFG\tweg") == 0, "budget: what waits is dropped when we leave the guild")
+	C.SetBudget(1e12, 1e12)
 	FireEvent("GUILD_ROSTER_UPDATE")
 	RunTimers()
 end

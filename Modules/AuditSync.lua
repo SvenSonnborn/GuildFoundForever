@@ -28,7 +28,8 @@ local _, ns = ...
 --   now()                        server time
 --   after(seconds, fn)           timer
 --   send(message, target)        whisper to a full name, returns ok, code; code "retry" (throttled)
---                                means the same message is tried again
+--                                means the same message is tried again, "wait" (the shared budget
+--                                is used up) that it stays first without counting as a try
 --   holders()                    { { key, name, officer }, ... }: online officers and relays with
 --                                capability A, not self; officer is false for relays
 --   peers()                      { { key, name }, ... }: everyone online with capability A, not self
@@ -241,6 +242,10 @@ function Pump(self)
 		if item.done then
 			item.done()
 		end
+	elseif code == "wait" then
+		-- The shared budget is used up for now: no failure, the message stays first.
+		self.head = item
+		wait = Sync.PACE_SECONDS
 	elseif code == "retry" and item.tries < Sync.RETRIES then
 		item.tries = item.tries + 1
 		self.head = item
