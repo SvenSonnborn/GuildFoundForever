@@ -427,6 +427,7 @@ UI.lua                   Fenster mit Tabs, Einstellungs-Eintrag, Addon-Menü an 
   - „Wichtig“ geht immer sofort raus, notfalls auf Pump: `HELLO`, `HI`, `PING`/`PONG`, Ankündigungen, Anfragen und Antworten der Dungeonsuche, Berufe-Anfragen, „Daten anfordern“.
   - „Normal“ geht sofort, solange das Budget reicht und nichts wartet, sonst in einer Warteschlange (alle 0,2 Sekunden geleert). Eine neue Position der Gildenkarte und eine neue Anmeldung der Dungeonsuche ersetzen die noch wartende. Wer die Gilde verlässt, verwirft, was noch wartet.
   - „Masse“ geht nur, solange das Budget reicht; sonst wartet der Absender selbst: der Audit (ohne Fehlversuch) und die langen Antworten (Rezepte, alte Audit-Antworten).
+  - **Im Kampf** und bis 5 Sekunden danach wartet alle „Masse“; „Wichtig“ und „Normal“ (z. B. die eigene Position) gehen weiter raus. Auch das Aufräumen des Audit-Speichers wartet bis nach dem Kampf.
 - Der Client basiert auf **Retail** (`WOW_PROJECT_ID` = 1), nicht auf Classic. Interface-Nummer 16001, Lua 5.1.
 - Alte Classic-Funktionen fehlen und müssen über die neuen Namespaces aufgerufen werden:
 

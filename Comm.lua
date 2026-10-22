@@ -80,14 +80,30 @@ end
 --             answers someone waits for)
 --   "normal": goes out at once while the budget lasts and nothing else waits, otherwise it waits
 --             in this queue; with a key, a newer message replaces the waiting one (map position)
---   "bulk":   goes out only while the budget lasts; otherwise Send returns false, "wait" and the
---             caller tries again later (audit sync, recipe lists)
+--   "bulk":   goes out only while the budget lasts and not in combat (nor COMBAT_GRACE_SECONDS
+--             after it); otherwise Send returns false, "wait" and the caller tries again later
+--             (audit sync, recipe lists)
 ---------------------------------------------------------------------------
 
 Comm.BUDGET = { rate = 800, burst = 4000, overhead = 40 }
 local DRAIN_SECONDS = 0.2
+local COMBAT_GRACE_SECONDS = 5
 local budget = { tokens = Comm.BUDGET.burst, at = 0 }
 local waiting = {} -- normal messages: { message, channel, target, key }
+local combatUntil = 0 -- GetTime() until which bulk traffic and tidying up wait
+
+-- In combat, or less than COMBAT_GRACE_SECONDS after it.
+function Comm.InCombat()
+	return GetTime() < combatUntil
+end
+
+ns.On("PLAYER_REGEN_DISABLED", function()
+	combatUntil = math.huge
+end)
+
+ns.On("PLAYER_REGEN_ENABLED", function()
+	combatUntil = GetTime() + COMBAT_GRACE_SECONDS
+end)
 
 local function Refill()
 	local now = GetTime()
@@ -133,7 +149,7 @@ function Comm.Send(message, channel, target, priority, key)
 	priority = priority or "normal"
 	local cost = Cost(message)
 	if priority == "bulk" then
-		if budget.tokens < cost then
+		if budget.tokens < cost or Comm.InCombat() then
 			return false, "wait"
 		end
 	elseif priority == "normal" and (waiting[1] or budget.tokens < cost) then

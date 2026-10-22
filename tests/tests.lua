@@ -3484,6 +3484,31 @@ do
 	C.SetBudget(1e12, 1e12)
 	FireEvent("GUILD_ROSTER_UPDATE")
 	RunTimers()
+
+	-- In combat bulk messages wait (and still 5 s after it); presence and announcements do not.
+	FireEvent("PLAYER_REGEN_DISABLED")
+	local inFight, fightCode = C.Send("x", "GUILD", nil, "bulk")
+	check(not inFight and fightCode == "wait" and C.Send("PING", "GUILD", nil, "alert") and C.Send("POS\t9", "GUILD", nil, "normal", "POS"),
+		"combat: bulk messages wait, alerts and positions go out")
+	FireEvent("PLAYER_REGEN_ENABLED")
+	local justAfter = C.Send("x", "GUILD", nil, "bulk")
+	Advance(6)
+	check(not justAfter and C.Send("x", "GUILD", nil, "bulk"), "combat: bulk messages go out again 5 seconds after the fight")
+	-- Tidying up the audit store waits for the end of the fight too.
+	CAN_VIEW_OFFICER = true
+	local gs = ns.AuditAuto.GetStore()
+	local key = "freund-classicbetapve2"
+	local old = ns.AuditRecords.Encode("H", { t = GetServerTime() - 11 * 86400, hk = "mail", sev = "o", a = "Alt im Kampf", b = "s" })
+	ns.AuditStore.Add(gs, key, "Freund-ClassicBetaPvE2", old, GetServerTime())
+	FireEvent("PLAYER_REGEN_DISABLED")
+	RunTickers()
+	local function Stored() local member = gs.members[key] return member ~= nil and member.recs[old] ~= nil end
+	local keptInFight = Stored()
+	FireEvent("PLAYER_REGEN_ENABLED")
+	Advance(6)
+	RunTickers()
+	check(keptInFight and not Stored(), "combat: the audit store is tidied up after the fight, not during it")
+	RunTimers()
 end
 
 check(CHAT_TOTAL == 0, "nothing went to the chat")

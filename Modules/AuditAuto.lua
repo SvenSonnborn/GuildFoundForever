@@ -563,8 +563,9 @@ local function Tick()
 		return
 	end
 	engine:Tick()
+	-- Tidying up a large store waits for the end of a fight; the next tick does it.
 	local gs = AA.GetStore()
-	if gs then
+	if gs and not ns.Comm.InCombat() then
 		St.Prune(gs, GetServerTime())
 		TimelineChanged()
 	end
