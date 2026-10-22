@@ -18,10 +18,11 @@ local KINDS = {
 	E = { tier = 1, fields = { "s", "by", "id" }, numbers = { s = true } },
 }
 
--- Strips colour codes and links, replaces tab and character 30, cuts to 180 characters.
+-- Strips colour codes and links, replaces tab and characters 29 and 30 (the AUDX separators), cuts
+-- to 180 characters.
 function R.Plain(text)
 	text = tostring(text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|H.-|h(.-)|h", "%1")
-	return (text:gsub("[\t\030]", " "):sub(1, 180))
+	return (text:gsub("[\t\029\030]", " "):sub(1, 180))
 end
 
 function R.Tier(rt)

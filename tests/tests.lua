@@ -915,6 +915,9 @@ do
 	check(R.Tier("H") == 1 and R.Tier("C") == 1 and R.Tier("E") == 1 and R.Tier("T") == 2 and R.Tier("L") == 2, "tiers")
 	local logRaw = R.Encode("L", { t = 1, k = "ah", m = "a\tb\030c " .. ("x"):rep(300) })
 	check(not logRaw:find("\030", 1, true) and select(2, logRaw:gsub("\t", "")) == 3 and #logRaw <= 190, "free text cleaned and cut")
+	-- Character 29 joins member groups in AUDX: free text must not carry a forged group.
+	local groupRaw = R.Encode("L", { t = 1, k = "ah", m = "a\029Fremder\tH\t1\tmail" })
+	check(not groupRaw:find("\029", 1, true) and select(2, groupRaw:gsub("\t", "")) == 3, "free text: character 29 replaced")
 	check(R.Decode("Q\t1\tx") == nil and R.Decode("S\tabc") == nil and R.Time("E\t77\t1\tMagus\t5:blocked:ah") == 77, "unknown kinds and broken times rejected")
 end
 
