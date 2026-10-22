@@ -240,6 +240,25 @@ end
 
 local MIGRATE_LISTS = { { "snapshots", "S" }, { "trades", "T" }, { "mail", "M" }, { "log", "L" } }
 
+-- What officers fetched before 1.0 more than 10 days ago goes from the account-wide cache: the
+-- store would prune it anyway, and characters that never log in again would keep it for good.
+function AA.PruneOldCache(now)
+	local cache = ns.db and ns.db.auditCache
+	if not cache then
+		return
+	end
+	local cutoff = now - St.KEEP_SECONDS
+	for key, data in pairs(cache) do
+		if type(data) ~= "table" or (tonumber(data.fetched) or 0) < cutoff then
+			cache[key] = nil
+		end
+	end
+end
+
+ns.RegisterCallback("INIT", function()
+	AA.PruneOldCache(GetServerTime())
+end)
+
 -- Moves what officers fetched before 1.0 (ns.db.auditCache, account-wide) into this character's
 -- store: the entries of members of this guild, with their fetch time as arrival time. The rest
 -- stays for the guilds of other characters. True if there was a store to move into.
@@ -416,7 +435,11 @@ function AA.SetDone(key, id, state)
 		return
 	end
 	local s = (state == true or state == 1) and 1 or 0
-	St.SetDone(gs, key, id, s, SelfName(), GetServerTime())
+	-- The member's name as the roster spells it, also for our own notices: it names the member
+	-- in the other officers' stores.
+	local entry, member = RosterByKey()[key], gs.members[key]
+	local name = key == ns.Guild.GetPlayerKey() and SelfName() or entry and entry.fullName or member and member.name or key
+	St.SetDone(gs, key, id, s, SelfName(), GetServerTime(), name)
 	ns.Fire("AUDIT_UPDATED", key)
 end
 

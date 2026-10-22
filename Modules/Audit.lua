@@ -38,10 +38,12 @@ local joinUnknown = false         -- first run with the addon: a guild the chara
 --           gi/ri (items given/received as "itemID:count,...")
 -- mail:     t, d (s sent / r received), n (other player), k, m (copper), c (COD), i (items)
 -- hint:     t, hk (kind), sev (r red / o orange / y yellow / g grey), a, b, c, d (details as text)
--- join:     t (0: joined before 1.0, time unknown), l, p, g (guild name)
+-- join:     t (0: unknown, the character was already in the guild at the addon's first run), l, p,
+--           g (guild name)
 -- first:    t, l, p of the first snapshot with the addon
 -- guild:    the guild the character was last seen in, or nil
--- sent:     recipient -> time up to which the own records went out (AuditSync)
+-- sent:     recipient -> time up to which the own records went out (AuditSync's push watermark;
+--           it moves on sending, the holders' catch-up covers what got lost); cleared on a join
 -- The log of blocked actions (ns.char.log) is part of the audit as well. Every new own record
 -- except interval snapshots fires AUDIT_RECORDED with its encoded line; every snapshot also goes
 -- out as C, the last state.
@@ -315,6 +317,9 @@ ns.RegisterCallback("ROSTER_UPDATED", function()
 		data.join = { t = 0, l = 0, g = name }
 		Recorded("J", data.join)
 	else
+		-- A real join: the officers there have none of our data (they dropped it if we were in this
+		-- guild before), so the push watermarks start over.
+		data.sent = {}
 		local played = CurrentPlayed()
 		data.join = { t = GetServerTime(), l = UnitLevel("player"), p = played, g = name }
 		Recorded("J", data.join)
@@ -549,7 +554,10 @@ end
 -- Officer -> member (whisper): "AUDREQ <since>"
 -- Member -> officer:           "AUD <record>\030<record>..." (paced), then "AUDEND <count> <time>",
 --                              or "AUDNO" if the officer may not see the data.
--- Records: "S t l x m p r", "T t n k gm rm gi ri", "M t d n k m c i", "L t kind text" (tab separated)
+-- Records as in AuditRecords.lua; "Request data" answers carry only the kinds versions up to 0.8
+-- know: "S t l x m p r", "T t n k gm rm gi ri", "M t d n k m c i", "L t kind text" (tab
+-- separated). Notices and the last, join and first state (H, C, J, F) come with the automatic
+-- audit (AuditSync.lua).
 ---------------------------------------------------------------------------
 
 local function EncodeRecords(since)

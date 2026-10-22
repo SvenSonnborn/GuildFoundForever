@@ -158,10 +158,17 @@ function St.Prune(gs, now)
 	end
 end
 
+-- Former members go with their direct watermark (AuditSync), so a member who rejoins is caught
+-- up with from the start again.
 function St.RemoveMembers(gs, keep)
 	for key in pairs(gs.members) do
 		if not keep(key) then
 			gs.members[key] = nil
+		end
+	end
+	for key in pairs(gs.direct or {}) do
+		if not keep(key) then
+			gs.direct[key] = nil
 		end
 	end
 end
@@ -290,10 +297,12 @@ function St.Timeline(gs)
 	return result
 end
 
--- Stores a done (1) or open (0) mark for a hint and returns its raw line.
-function St.SetDone(gs, key, id, state, by, now)
+-- Stores a done (1) or open (0) mark for a hint and returns its raw line. name is the member's
+-- full name (it travels with the mark and names the member in other stores); without it the
+-- stored name stays.
+function St.SetDone(gs, key, id, state, by, now, name)
 	local raw = R.Encode("E", { t = now, s = state, by = by, id = id })
 	local member = gs.members[key]
-	St.Add(gs, key, member and member.name or key, raw, now)
+	St.Add(gs, key, name or member and member.name or key, raw, now)
 	return raw
 end

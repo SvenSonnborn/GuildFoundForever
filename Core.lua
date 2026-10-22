@@ -63,7 +63,7 @@ ns.charDefaults = {
 	log = {},
 	audit = { snapshots = {}, trades = {}, mail = {}, hints = {}, sent = {} }, -- also join, first, guild (Audit.lua)
 	auditStore = {}, -- officers and relays: the guild's audit data, per guild name (AuditAuto.lua)
-	auditSeen = { prev = 0, this = 0 }, -- the last two real login times (not /reload), reported: login of the last login report (AuditAuto.lua)
+	auditSeen = { prev = 0, this = 0 }, -- this: the real login (not /reload), last: last seen online, prev: end of the session before, reported: login of the last login report (AuditAuto.lua)
 	professions = {},
 	finder = { selected = {}, onlyFitting = false }, -- dungeon finder: picked activities (ID -> true)
 	messages = {}, -- message window, newest last (Messages.lua)

@@ -952,8 +952,9 @@ do
 		end
 	end
 	check(not leftover, "pruning: done marks of a pruned notice leave recs")
+	gs.direct = { ["x-r"] = 5 }
 	St.RemoveMembers(gs, function(key) return key ~= "x-r" end)
-	check(gs.members["x-r"] == nil, "former members removed")
+	check(gs.members["x-r"] == nil and gs.direct["x-r"] == nil, "former members removed, with their direct watermark")
 	-- The id time decides, not the mark's own time (cutoff here is 1001).
 	local ps = St.New()
 	local oldMark = R.Encode("E", { t = 5000, s = 1, by = "A", id = "500:blocked:ah" })
@@ -1919,6 +1920,12 @@ do
 	CAN_VIEW_OFFICER = false
 	ns.UI.ShowAudit()
 	check(not FindWidgetByText("Button", "Hinweise"):IsShown() and FindWidgetByText("FontString", "Deine Audit-Daten gehen automatisch an die Offiziere deiner Gilde."), "members: own data with the note")
+	-- M2: a join the addon did not see (first run already in the guild) has no time.
+	local savedJoin = ns.char.audit.join
+	ns.char.audit.join = { t = 0, l = 0, g = "Testgilde" }
+	ns.UI.RefreshAudit()
+	check(FindWidgetByText("FontString", "Beitrittszeit unbekannt") ~= nil, "join time unknown: said so in the member view")
+	ns.char.audit.join = savedJoin
 	ns.UI.Toggle()
 end
 ns.db.lastTab = "rules"
@@ -1987,10 +1994,14 @@ do
 	TakeInboxMoney(1)
 	check(lastHint().hk == "mail" and lastHint().a == "Fremder" and lastHint().b == "r", "mail from anyone without a guild: notice")
 	Advance(10)
+	own.sent = own.sent or {}
+	own.sent["freund-classicbetapve2"] = GetServerTime() - 5
 	IN_GUILD = true
 	FireEvent("PLAYER_GUILD_UPDATE")
 	FireEvent("GUILD_ROSTER_UPDATE")
 	check(lastHint().hk == "join" and lastHint().sev == "g" and own.join.t == GetServerTime(), "joining again: join notice and new join state")
+	-- M3: the officers dropped our data when we left, so the push watermarks start over.
+	check(next(ns.char.audit.sent) == nil, "joining again: the push watermarks start over")
 	local raws = A.OwnRaws(0)
 	local kinds, hasInterval = {}, false
 	for _, raw in ipairs(raws) do
@@ -2193,6 +2204,18 @@ do
 		if e.key == ns.Guild.GetPlayerKey() and e.hint.a == "Fremd" then foreignAboutUs = true end
 	end
 	check(markedDone and not foreignAboutUs, "an officer's done mark on our own notice shows in our timeline, nothing else about us is kept")
+	-- M4: ticking one of our own notices keeps our real name, as the other officers show it.
+	local ownKey = ns.Guild.GetPlayerKey()
+	AA.GetStore().members[ownKey] = nil
+	AA.SetDone(ownKey, ownEntry.id, true)
+	local ownMember = AA.GetStore().members[ownKey]
+	check(ownMember and ownMember.name == "Magus-ClassicBetaPvE2", "a done mark on our own notice carries our real name")
+	-- M8: old account-wide audit data fetched more than 10 days ago goes at load.
+	ns.db.auditCache["alt-classicbetapve2"] = { name = "Alt-ClassicBetaPvE2", fetched = GetServerTime() - 864001, snapshots = {}, trades = {}, mail = {}, log = {} }
+	ns.db.auditCache["frisch-classicbetapve2"] = { name = "Frisch-ClassicBetaPvE2", fetched = GetServerTime() - 10, snapshots = {}, trades = {}, mail = {}, log = {} }
+	ns.Fire("INIT")
+	check(ns.db.auditCache["alt-classicbetapve2"] == nil and ns.db.auditCache["frisch-classicbetapve2"] ~= nil, "old audit cache: entries fetched more than 10 days ago go at load")
+	ns.db.auditCache["frisch-classicbetapve2"] = nil
 	-- Prüfschwerpunkt 3: an officer with an old version is no recipient.
 	ROSTER[3][2] = true
 	FireEvent("GUILD_ROSTER_UPDATE")

@@ -324,7 +324,7 @@ L.AUDIT_OPEN_COUNT = "%d open notices"
 L.AUDIT_NO_HINTS = "No notices in the last 10 days."
 L.AUDIT_AUTO_NOTE = "Your audit data goes to your guild's officers automatically."
 L.AUDIT_JOIN_STATE = "Joined %s at level %d, %s played · addon since level %d (%s played)"
-L.AUDIT_JOIN_UNKNOWN = "Joined before version 1.0"
+L.AUDIT_JOIN_UNKNOWN = "Join time unknown"
 L.AUDIT_STATUS_DATA = "Data as of %s"
 L.AUDIT_STATUS_PARTIAL = "· details incomplete"
 
@@ -759,7 +759,7 @@ if GetLocale() == "deDE" then
 	L.AUDIT_NO_HINTS = "Keine Hinweise in den letzten 10 Tagen."
 	L.AUDIT_AUTO_NOTE = "Deine Audit-Daten gehen automatisch an die Offiziere deiner Gilde."
 	L.AUDIT_JOIN_STATE = "Beigetreten %s mit Level %d, %s gespielt · Addon seit Level %d (%s gespielt)"
-	L.AUDIT_JOIN_UNKNOWN = "Beigetreten vor Version 1.0"
+	L.AUDIT_JOIN_UNKNOWN = "Beitrittszeit unbekannt"
 	L.AUDIT_STATUS_DATA = "Stand der Daten: %s"
 	L.AUDIT_STATUS_PARTIAL = "· Einzelheiten unvollständig"
 
