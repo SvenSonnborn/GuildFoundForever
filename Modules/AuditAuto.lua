@@ -383,8 +383,9 @@ function AA.GetTimeline()
 	end
 	local seen = Seen().prev or 0
 	local gs = AA.GetStore()
+	local revision = ns.Guild.GetRosterRevision()
 	local cached = timeline
-	if cached and cached.gs == gs and cached.seen == seen then
+	if cached and cached.gs == gs and cached.seen == seen and cached.revision == revision then
 		return cached.list
 	end
 	local roster = RosterByKey()
@@ -422,7 +423,7 @@ function AA.GetTimeline()
 		end
 		return a.id < b.id
 	end)
-	timeline = { gs = gs, seen = seen, list = result }
+	timeline = { gs = gs, seen = seen, revision = revision, list = result }
 	return result
 end
 
@@ -605,9 +606,9 @@ ns.On("PLAYER_LOGOUT", NoteSeen)
 
 ns.RegisterCallback("AUDIT_UPDATED", TimelineChanged)
 
--- A roster that is not loaded says nothing about members or ranks.
+-- A roster that is not loaded says nothing about members or ranks. The timeline follows the
+-- roster's revision by itself (AA.GetTimeline).
 ns.RegisterCallback("ROSTER_UPDATED", function()
-	TimelineChanged()
 	if not ns.char or not ns.Guild.IsRosterReady() then
 		return
 	end

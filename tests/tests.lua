@@ -112,6 +112,38 @@ check(not G.IsMemberName("Fremder"), "stranger")
 check(not G.IsMemberName(SECRET), "secret name is not a member")
 check(G.NormalizeName("Foo-Azjol-Nerub") == "foo-azjolnerub", "realm containing a dash")
 check(G.IsSelf("Magus"), "self detection")
+do
+	-- Days since last online from the roster (0 while online), and a revision that moves only when
+	-- members, ranks, levels, classes, the online state or the full days offline change.
+	local function Entry(key) for _, e in ipairs(G.GetRosterEntries()) do if e.key == key then return e end end end
+	LAST_ONLINE[3] = { 0, 1, 2, 6 }
+	FireEvent("GUILD_ROSTER_UPDATE")
+	local offline, online = Entry("offline-classicbetapve2"), Entry("freund-classicbetapve2")
+	check(offline and offline.lastOnline and math.abs(offline.lastOnline - 32.25) < 0.001 and online.lastOnline == 0, "roster: days since last online, 0 while online")
+	local revision = G.GetRosterRevision and G.GetRosterRevision() or -1
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(G.GetRosterRevision() == revision, "roster: an unchanged roster keeps its revision")
+	ROSTER[4][2] = false
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(G.GetRosterRevision() == revision + 1, "roster: someone going offline is a change")
+	ROSTER[4][2] = true
+	ROSTER[2][5] = 21
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(G.GetRosterRevision() == revision + 2, "roster: a level up is a change")
+	ROSTER[2][5] = nil
+	FireEvent("GUILD_ROSTER_UPDATE")
+	revision = G.GetRosterRevision()
+	LAST_ONLINE[3] = { 0, 1, 2, 20 }
+	FireEvent("GUILD_ROSTER_UPDATE")
+	local sameDay = G.GetRosterRevision() == revision
+	LAST_ONLINE[3] = { 0, 1, 3, 0 }
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(sameDay and G.GetRosterRevision() == revision + 1, "roster: hours offline alone are no change, another full day is")
+	LAST_ONLINE[3] = nil
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(Entry("offline-classicbetapve2").lastOnline == nil, "roster: offline without a last-online time: unknown")
+	RunTimers()
+end
 
 -- Tags ---------------------------------------------------------------------
 local rules, tag = G.ParseRulesTag("Hallo\n[GuildFoundForever A=1 M=0 C=1 H=0 G=1 L=40]\nTschüss")
@@ -2316,7 +2348,13 @@ do
 	ns.char.auditSeen.prev = savedPrev
 	cachedAgain = AA.GetTimeline()
 	FireEvent("GUILD_ROSTER_UPDATE")
-	check(AA.GetTimeline() ~= cachedAgain, "a roster update (names, online state): the timeline is built again")
+	check(AA.GetTimeline() == cachedAgain, "an unchanged roster update keeps the cached timeline")
+	ROSTER[4][2] = false
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(AA.GetTimeline() ~= cachedAgain, "a roster change (names, online state): the timeline is built again")
+	ROSTER[4][2] = true
+	FireEvent("GUILD_ROSTER_UPDATE")
+	RunTimers()
 	cachedAgain = AA.GetTimeline()
 	ns.Log("ah", "Eigener Hinweis im Cache")
 	local ownInLine = false

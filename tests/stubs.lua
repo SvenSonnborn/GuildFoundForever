@@ -371,9 +371,15 @@ GUILD_INFO_TEXT = "Willkommen"
 CAN_EDIT = true
 function IsInGuild() return IN_GUILD end
 function GetNumGuildMembers() return #ROSTER, 0, 0 end
+-- ROSTER[i][5]: level (default 20)
 function GetGuildRosterInfo(i)
 	local r = ROSTER[i]
-	return r[1], "Rank", r[3], 20, "Klasse", "Zone", "", "", r[2], 0, r[4], 0, 0, false, false, 0, "Player-" .. i
+	return r[1], "Rank", r[3], r[5] or 20, "Klasse", "Zone", "", "", r[2], 0, r[4], 0, 0, false, false, 0, "Player-" .. i
+end
+LAST_ONLINE = {} -- roster index -> { years, months, days, hours } of offline members
+function GetGuildRosterLastOnline(i)
+	local t = LAST_ONLINE[i]
+	if t then return t[1], t[2], t[3], t[4] end
 end
 function UnitGUID(unit) if unit == "player" then return "Player-1" end end
 function GetGuildInfo(unit)

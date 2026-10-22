@@ -10,8 +10,12 @@ local PARTNER_SEEN_SECONDS = 30 * 24 * 60 * 60
 
 local members = {}       -- normalized "name-realm" -> rank index (0 = guild master)
 local onlineMembers = {} -- normalized "name-realm" -> display name
-local rosterEntries = {} -- list for the window: { key, fullName, level, class, online }
+local rosterEntries = {} -- list for the window: { key, fullName, level, class, online, lastOnline }
 local memberCount = 0
+-- Moves only when the roster really changed (see RosterChanged), so expensive readers rebuild
+-- only then; the roster itself is re-read every ROSTER_REFRESH_SECONDS.
+local rosterRevision = 0
+local rosterSignature = {} -- normalized name -> what counts for the revision
 local playerRealm
 local appliedTags        -- tags currently taken from the guild info
 
@@ -210,6 +214,10 @@ function Guild.GetRosterEntries()
 	return rosterEntries
 end
 
+function Guild.GetRosterRevision()
+	return rosterRevision
+end
+
 function Guild.RequestRoster()
 	if not IsInGuild() then
 		return
@@ -229,9 +237,45 @@ local function ClearRoster()
 	selfKey = nil
 end
 
+-- Days since the member was last online: 0 while online, nil if the roster does not say.
+local function LastOnline(index, isOnline)
+	if isOnline then
+		return 0
+	end
+	local years, months, days, hours = nil, nil, nil, nil
+	if GetGuildRosterLastOnline then
+		years, months, days, hours = GetGuildRosterLastOnline(index)
+	end
+	if not years then
+		return nil
+	end
+	return years * 365 + (months or 0) * 30 + (days or 0) + (hours or 0) / 24
+end
+
+-- Moves the revision if members, ranks, levels, classes, the online state or the full days
+-- offline differ from the last roster.
+local function RosterChanged(signature)
+	local changed = false
+	for key, value in pairs(signature) do
+		if rosterSignature[key] ~= value then
+			changed = true
+		end
+	end
+	for key in pairs(rosterSignature) do
+		if signature[key] == nil then
+			changed = true
+		end
+	end
+	rosterSignature = signature
+	if changed then
+		rosterRevision = rosterRevision + 1
+	end
+end
+
 local function RebuildRoster()
 	ClearRoster()
 	local playerGUID = UnitGUID("player")
+	local signature = {}
 	for i = 1, GetNumGuildMembers() or 0 do
 		local name, _, rankIndex, level, _, _, _, _, isOnline, _, classFile, _, _, _, _, _, guid = GetGuildRosterInfo(i)
 		local key = Guild.NormalizeName(name)
@@ -244,9 +288,12 @@ local function RebuildRoster()
 			if isOnline then
 				onlineMembers[key] = Ambiguate(name, "guild")
 			end
-			rosterEntries[#rosterEntries + 1] = { key = key, fullName = name, level = level, class = classFile, online = isOnline and true or false }
+			local lastOnline = LastOnline(i, isOnline)
+			rosterEntries[#rosterEntries + 1] = { key = key, fullName = name, level = level, class = classFile, online = isOnline and true or false, lastOnline = lastOnline }
+			signature[key] = table.concat({ rankIndex or 99, level or 0, classFile or "", isOnline and 1 or 0, lastOnline and math.floor(lastOnline) or "-" }, ":")
 		end
 	end
+	RosterChanged(signature)
 	table.sort(rosterEntries, function(a, b)
 		if a.online ~= b.online then
 			return a.online
@@ -520,6 +567,7 @@ ns.On("PLAYER_GUILD_UPDATE", function()
 		Guild.RequestRoster()
 	else
 		ClearRoster()
+		RosterChanged({})
 		UpdateGuildRules()
 		ns.Fire("ROSTER_UPDATED")
 	end

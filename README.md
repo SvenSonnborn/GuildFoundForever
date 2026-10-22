@@ -376,7 +376,8 @@ MinimapButton.lua        Minimap-Icon: Klicks, Zähler, Leuchten, Ziehen am Kart
 UI.lua                   Fenster mit Tabs, Einstellungs-Eintrag, Addon-Menü an der Minimap
 ```
 
-- Interne Nachrichten zwischen den Modulen: `INIT`, `LOGIN`, `RULES_CHANGED`, `ROSTER_UPDATED`, `DEATHLOG_UPDATED`, `AUDIT_UPDATED`, `AUDIT_RECORDED` (ein neuer eigener Audit-Eintrag, außer Zwischenständen), `LOGGED` (ein Eintrag im Log der blockierten Aktionen), `PEERS_CHANGED` (die Fähigkeiten der Spieler online haben sich geändert), `PEER_SEEN` (ein `HELLO` oder `HI` kam an, auch mit unveränderten Fähigkeiten), `PROFESSIONS_UPDATED`, `FINDER_UPDATED`, `MESSAGES_UPDATED`, `SETTINGS_CHANGED` (siehe `ns.RegisterCallback` / `ns.Fire`).
+- Interne Nachrichten zwischen den Modulen: `INIT`, `LOGIN`, `RULES_CHANGED`, `ROSTER_UPDATED`, `DEATHLOG_UPDATED`, `AUDIT_UPDATED`, `AUDIT_RECORDED` (ein neuer eigener Audit-Eintrag, außer Zwischenständen), `LOGGED` (ein Eintrag im Log der blockierten Aktionen), `PEERS_CHANGED` (die Fähigkeiten der Spieler online haben sich geändert), `PEER_SEEN` (ein `HELLO` oder `HI` kam an, auch mit unveränderten Fähigkeiten), `PROFESSIONS_UPDATED`, `FINDER_UPDATED`, `MESSAGES_UPDATED`, `SETTINGS_CHANGED`, `STYLE_CHANGED` (der Look wurde umgeschaltet) (siehe `ns.RegisterCallback` / `ns.Fire`).
+- Mitgliederliste: `ROSTER_UPDATED` kommt bei jedem Neuladen (mindestens jede Minute), auch ohne Änderung. `Guild.GetRosterRevision()` steigt nur, wenn sich Mitglieder, Ränge, Level, Klassen, online/offline oder die vollen Tage seit „zuletzt online“ geändert haben; teure Auswertungen (Audit-Zeitleiste, Dashboard) bauen nur dann neu. Jeder Eintrag von `Guild.GetRosterEntries()` hat `lastOnline` (Tage seit zuletzt online aus `GetGuildRosterLastOnline`, 0 während online, `nil` wenn unbekannt).
 - Addon-Nachrichten (Präfix `GFForever`, Felder mit Tab getrennt):
 
   | Nachricht | Kanal | Inhalt |
