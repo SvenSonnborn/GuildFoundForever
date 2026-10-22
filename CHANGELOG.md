@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.0
+
+### New
+- **Automatic audit:** members send their audit data (level, XP, gold and played time, trades, mail, blocked actions and notices) to the officers by themselves. Nobody has to request it one member at a time, and data from times when no officer was online is caught up later. There is no switch for it.
+- **Recording from character creation:** the audit starts with the first login with the addon, not with the guild join. Notices from before the join say "before joining". A join record keeps the join state (level, played time) for good, so officers see who joined at level 1. New notices: "Played before installation" and "Joined".
+- **Sync between officers:** officers (and relays) form a ring and sync with up to three partners every 5 minutes, so an entry reaches everyone without the traffic growing with the square of the officers. With many officers this takes a while (about 45 minutes for 20, about 90 minutes for 30). A member sends each new entry directly to at most three holders. Throttled messages are retried.
+- **Guild rule `V`:** "Members store audit data for officers" (off by default). When on, members also keep audit data and pass it on to officers, which closes the gap when no officer was online. The data then also lies on the members' PCs.
+- **Guild rule `U` removed:** the audit is always on. The code is ignored in older guild info tags. `K` stays unused as well.
+- **Timeline in the Audit tab:** all notices of the guild by day, newest first, up to 10 days back, with filters (All, No addon, Trade, Mail, Offline, Blocked, Joined), "Hide done" and "new since your last login". The old view is now "Members", with the join state and a note when details are incomplete.
+- **Done marks:** an officer ticks a notice off for all officers. Members never see the marks.
+- **Messages:** after a login one important audit message ("5 new audit notices") opens the timeline; during the session new notices are reported together, at most every 10 minutes.
+- **Storage:** officers keep the data per character and guild for 10 days (the last state, the join state and the first state stay), with caps per member. Data of other guilds and former members is deleted, and losing the officer rank deletes the foreign data.
+- `HELLO` and `HI` carry capabilities; new addon messages `AUDX`, `AUDS`, `AUDE`, `AUDM`. "Request data" still works with older versions.
+
 ## 0.8.0-beta
 
 ### New

@@ -2,7 +2,7 @@
 
 Gilden-Found-Regeln für **World of Warcraft: Forever**: kein Auktionshaus, Post und Handel nur innerhalb der Gilde und ihrer Partnergilden, Sperre für Gruppen mit Externen ab einem festgelegten Level. Dazu Ankündigungen in der Gilde, ein Deathlog, eine Gildenkarte, ein Audit für Offiziere, ein Berufe-Verzeichnis und eine Dungeonsuche innerhalb der Gilde.
 
-> Stand: 26.09.2026 · Version 0.7.0
+> Stand: 22.10.2026 · Version 1.0.0 (in Arbeit)
 > Im Spiel geprüft:
 > - 0.1.0 teilweise (siehe [Phase 0](#phase-0--beta-test))
 > - die Banner aus 0.3.0, per Vorschau
@@ -86,34 +86,74 @@ Das Konzept ist von [GuildFound](https://www.curseforge.com/wow/addons/guildfoun
 
 ### Audit
 
-Festgelegt am 26.09.2026: Erfasst werden Verlauf, Handel, Post und blockierte Aktionen. Einsehen dürfen es Offiziere, und die Daten werden auf Anfrage geholt.
+Festgelegt am 26.09.2026: Erfasst werden Verlauf, Handel, Post und blockierte Aktionen. Neu gefasst am 22.10.2026 (Version 1.0.0, Spezifikation: `docs/specs/2026-10-22-automatischer-audit.md`): Die Daten kommen automatisch bei den Offizieren an, niemand muss mehr einzeln abfragen.
 
-- **Was das Addon beim Mitglied festhält** (lokal, pro Charakter):
-  - Verlauf: Level, XP, Gold und Spielzeit beim Einloggen, bei jedem Levelaufstieg, beim Ausloggen und alle 10 Minuten (nur wenn sich etwas geändert hat)
+- **Automatischer Versand, immer an:** Es gibt keinen Schalter und keine Gildenregel dafür. Die Regel `U` ist weggefallen.
+- **Was das Addon beim Mitglied festhält** (lokal, pro Charakter, **ab der Charaktererstellung**, nicht erst ab dem Beitritt):
+  - Verlauf: Level, XP, Gold und Spielzeit beim Einloggen, bei jedem Levelaufstieg und beim Ausloggen. Alle 10 Minuten kommt ein Zwischenstand dazu (nur wenn sich etwas geändert hat).
   - jeder abgeschlossene Handel: Partner, ob Gilde, Partnergilde oder extern, Items und Gold in beide Richtungen
   - jede gesendete Post und alles, was aus der Post von Spielern genommen wird; NPC- und Auktionshaus-Post nicht
   - das Log der blockierten Aktionen
+  - die Hinweise (siehe unten), die das Addon des Mitglieds selbst berechnet
 
   Die Spielzeit fragt das Addon beim Einloggen still per `/played` ab, ohne Chatausgabe, und zählt danach selbst weiter.
-- **Wer die Daten sieht:**
-  - Offiziere, also Ränge, die im Spiel die Offiziersnotiz sehen dürfen (`C_GuildInfo.CanViewOfficerNote`).
-  - Das Addon des Mitglieds prüft das beim Anfragenden anhand der Rang-Rechte (`C_GuildInfo.GuildControlGetRankFlags`, Recht Nr. 11 „Offiziersnotiz ansehen“). Sind die Rechte nicht lesbar, antwortet es nur Gildenmeister und dem Rang darunter.
-  - Die Gildenregel „Offiziere dürfen Audit-Daten abrufen“ (`U`, Standard an) schaltet das Ganze aus.
-  - Jedes Mitglied sieht im Tab „Audit“ seine eigenen Daten, also genau das, was Offiziere abrufen können.
-- **Abruf auf Anfrage:**
-  - Der Offizier fragt ein Mitglied an, das online ist. Dessen Addon schickt die Daten per Flüster-Addon-Nachricht, gedrosselt und mehrere Einträge pro Nachricht.
-  - Das Mitglied bekommt einen Hinweis „X (Offizier) hat deine Audit-Daten abgerufen“.
-  - Beim Offizier bleibt der zuletzt geholte Stand gespeichert. Der nächste Abruf holt nur neue Einträge.
-- **Hinweise (automatisch markiert):**
-  - **Ohne Addon gespielt:** Die Spielzeit ist zwischen Ausloggen und nächstem Einloggen um mehr als 2 Minuten gestiegen. Nach einem Absturz gelten bis zu 12 Minuten, weil der letzte Eintrag dann bis zu 10 Minuten alt sein kann.
-  - **Offline verändert:** Level oder Gold haben sich zwischen Ausloggen und Einloggen verändert.
-  - **Externer Handel:** Gold in eine der beiden Richtungen, oder erhaltene Items, die nicht Essen/Wasser, Gesundheitsstein oder Quest-Item sind.
-  - **Externe Post:** Post an Externe gesendet oder von Externen genommen.
-- **Tab „Audit“:**
-  - links die Mitgliederliste: online in Klassenfarbe, offline grau, `*` bei schon abgerufenen Daten
-  - rechts Status, der Knopf „Daten anfordern“, eine Zusammenfassung (Level, Gold, Spielzeit), die Hinweise und die Ansichten Verlauf, Handel, Post und Blockiert
-  - Lange Zeilen zeigen beim Überfahren den vollen Text. Beide Listen lassen sich mit dem Mausrad blättern.
-- **Grenzen des Speichers:** 500 Verlaufs-Einträge (Levelaufstiege werden zuletzt gelöscht), je 300 Handel und Post, 200 blockierte Aktionen.
+- **Wer die Daten bekommt und sieht:**
+  - **Offiziere:** Ränge, die im Spiel die Offiziersnotiz sehen dürfen (`C_GuildInfo.CanViewOfficerNote`, Rang-Recht Nr. 11 „Offiziersnotiz ansehen“ aus `C_GuildInfo.GuildControlGetRankFlags`). Sind die Rechte nicht lesbar, gelten nur Gildenmeister und der Rang darunter. Offiziere speichern die Daten, gleichen untereinander ab und sehen die Zeitleiste.
+  - **Zwischenspeicher:** normale Mitglieder, aber nur, wenn die Gildenregel „Mitglieder speichern Audit-Daten für Offiziere zwischen“ (`V`, **Standard aus**) an ist. Sie nehmen Daten an, speichern sie und geben sie an Offiziere weiter, sehen aber nichts davon. Das schließt die Lücke, wenn kein Offizier online war. Dafür liegen die Daten dann auch auf den PCs der Mitglieder; das entscheidet jede Gilde selbst.
+  - **Normale Mitglieder** sehen im Tab „Audit“ nur ihre eigenen Daten und den Satz „Deine Audit-Daten gehen automatisch an die Offiziere deiner Gilde.“ Erledigt-Marken sehen sie nie.
+- **Versand vom Mitglied:**
+  - Jeder neue Eintrag geht per Flüstern **direkt an höchstens drei Empfänger**: Offiziere und, mit `V`, Zwischenspeicher, die online sind. Jedes Mitglied wählt sie nach einer festen Rangfolge, sodass sich die Last verteilt. Mehrere Einträge kurz hintereinander gehen gebündelt in einer Nachricht raus.
+  - Beim Einloggen gehen zuerst der Abmelde-Stand der letzten Sitzung und die neuen Hinweise raus. Beim ersten Kontakt zu einem Empfänger kommen die letzten 10 Tage dazu.
+  - Zwischenstände (alle 10 Minuten) werden nie weitergegeben. Jeder Stand, auch ein Zwischenstand, aktualisiert aber den „letzten Stand“ des Mitglieds bei den Offizieren (Zeit, Level, XP, Gold, Spielzeit, ein-/ausgeloggt).
+  - Das Addon startet den Versand 45 Sekunden nach dem Einloggen, nach `HELLO` und den `HI`-Antworten.
+  - Alle Audit-Nachrichten zusammen gehen höchstens einmal pro Sekunde raus, damit Gildenkarte, Dungeonsuche und Ankündigungen nicht verdrängt werden. Drosselt der Server eine Nachricht, versucht das Addon sie alle 3 Sekunden erneut, bis zu 10-mal.
+- **Abgleich zwischen Offizieren und Zwischenspeichern:**
+  - Wer einloggt, fragt die Gegenstellen, die online sind, nach allem, was sie seit dem letzten Abgleich bekommen haben. Das gilt auch für Mitglieder, die gerade offline sind.
+  - Während der Sitzung bilden alle, die Daten halten und online sind, einen Ring (nach Namen sortiert). Alle 5 Minuten gleicht jeder mit einem Partner ab, reihum mit seinem Nachfolger, seinem Vorgänger und dem Halter auf der anderen Seite des Rings. Das sind höchstens 3 Partner, und der Verkehr wächst nicht quadratisch mit der Zahl der Offiziere.
+  - **Folge bei vielen Offizieren:** Es kann dauern, bis alle einen Eintrag haben. Gemessen in den Tests: bei 20 Haltern etwa 45 Minuten, bei 30 Haltern etwa 90 Minuten.
+  - Zuerst kommt, was klein und wichtig ist: Hinweise, Erledigt-Marken und der letzte Stand je Mitglied. Die Einzelheiten (Stände, Handel, Post, Blockiert) folgen danach im Hintergrund. Ein Klick auf ein Mitglied zieht dessen Einzelheiten vor.
+  - Was zweimal ankommt, wird nur einmal gespeichert. Eine Nachricht kann mehrere Mitglieder tragen. Freitext in Einträgen ist auf 180 Zeichen begrenzt und enthält weder Tab noch die Trennzeichen 29 und 30.
+  - Wer Daten annehmen oder senden darf, liest jedes Addon selbst aus Mitgliederliste und Rang-Rechten ab. Es gibt keine Nachricht, der man dafür glauben müsste.
+- **Aufbewahrung:** Es bleiben die letzten **10 Tage**, beim Mitglied für die eigenen Einträge, bei Offizieren und Zwischenspeichern für die fremden. Ausnahmen, die bleiben: der letzte Stand je Mitglied (sonst ließe sich „ohne Addon gespielt“ nach einer langen Pause nicht mehr erkennen), der Beitrittsstand und der erste Stand mit Addon. Zusätzlich gelten je Mitglied Höchstzahlen im Speicher: 500 Verlaufs-Einträge, je 300 Handel und Post, 200 blockierte Aktionen und 500 Hinweise.
+- **Speicher pro Charakter und Gilde:**
+  - Offiziere und Zwischenspeicher halten die fremden Daten pro Charakter (`SavedVariablesPerCharacter`) und darin pro Gilde. Ein Twink ohne Offiziersrang auf demselben Konto hält und sieht sie nicht.
+  - Daten anderer Gilden löscht das Addon. Ehemalige Mitglieder verschwinden, sobald die Mitgliederliste geladen ist und sie nicht mehr enthält.
+  - **Rangverlust:** Kann ein Charakter die Offiziersnotiz nicht mehr sehen und ist auch kein Zwischenspeicher, löscht das Addon die fremden Daten der Gilde. Sind die Rang-Rechte nicht lesbar, geschieht das erst nach zwei Aktualisierungen der Mitgliederliste im Abstand von mindestens 60 Sekunden, bei denen die Rolle fehlte.
+  - Die alten kontoweiten Audit-Daten (`auditCache`) werden übernommen.
+- **Aufzeichnung vor dem Beitritt:** Ohne Gilde greifen die Regeln nicht, aufgezeichnet wird trotzdem.
+  - Handel und Post ohne Gilde: Jeder Partner gilt als extern. Das Auktionshaus bleibt offen, das Addon hält aber fest, dass es geöffnet wurde (gelber Hinweis „Auktionshaus geöffnet“).
+  - Jeder Hinweis aus der Zeit vor dem Beitritt zu dieser Gilde trägt den Zusatz „vor Beitritt“. Das gilt auch für die Zeit in einer anderen Gilde.
+  - **Beitrittsstand:** Beim Beitritt merkt sich das Addon einen festen Stand (Zeit, Level, Spielzeit) und den Stand beim ersten Einloggen mit Addon. Beides bleibt dauerhaft. So sieht ein Offizier, ob jemand mit Level 1 und von Anfang an mit Addon beigetreten ist. Er steht in der Ansicht „Mitglieder“ oben.
+  - **Erster Start in einer Gilde:** Findet das Addon den Charakter beim allerersten Start schon in einer Gilde, ist der Beitrittszeitpunkt unbekannt. Die Ansicht zeigt dann „Beigetreten vor Version 1.0“, und es gibt keinen Hinweis „Beigetreten“.
+  - Ein kurzes „keine Gilde“ beim Einloggen ignoriert das Addon. Es vergisst die Gilde erst, wenn der Charakter 10 Sekunden später immer noch ohne Gilde ist.
+- **Hinweise** (das Addon des Mitglieds berechnet sie selbst und sendet sie als eigene Einträge, damit alle Offiziere dieselben sehen):
+
+  | Art | Filter | Farbe | Wann |
+  |---|---|---|---|
+  | Ohne Addon gespielt | Ohne Addon | rot | beim Einloggen: Spielzeit seit dem Ausloggen um mehr als 2 Minuten gestiegen. Nach einem Absturz gelten bis zu 12 Minuten, weil der letzte Eintrag dann bis zu 10 Minuten alt sein kann. |
+  | Vor der Installation gespielt | Ohne Addon | rot | beim ersten Einloggen mit dem Addon, wenn die Spielzeit schon über 2 Minuten liegt |
+  | Offline verändert | Offline | orange | Level oder Gold haben sich zwischen Ausloggen und Einloggen verändert |
+  | Externer Handel | Handel | rot mit Gold, sonst orange | Gold in eine Richtung, oder erhaltene Items, die nicht Essen/Wasser, Gesundheitsstein oder Quest-Item sind |
+  | Externe Post | Post | orange | Post an Externe gesendet oder von Externen genommen |
+  | Blockiert | Blockiert | gelb | das Addon blockiert eine Aktion, **die das Mitglied selbst ausgelöst hat** |
+  | Beigetreten | Beitritt | grau | das Mitglied tritt der Gilde bei, mit Level und Spielzeit |
+
+  Abgelehnte Einladungen und Beschwörungen Externer sind kein Hinweis, weil das Mitglied dabei nichts getan hat. Jeder Hinweis hat eine feste Kennung aus Mitglied, Art, Zeit und Kurztext; darüber erkennen alle denselben Hinweis wieder, auch wenn er auf zwei Wegen ankommt.
+- **Tab „Audit“ für Offiziere:** zwei Ansichten, oben umschaltbar.
+  - **Hinweise** (Standard): die Zeitleiste aller Hinweise der Gilde, neueste oben, mit Tages-Überschriften („Heute“, „Gestern“, dann das Datum), bis 10 Tage zurück.
+    - Zeile: Uhrzeit, Name in Klassenfarbe (offline grau), Art als farbiges Schild, Kurztext, Haken für „erledigt“. Maus über der Zeile zeigt den vollen Text.
+    - **Neu seit dem letzten Login:** Was seit dem letzten echten Einloggen angekommen ist, ist hervorgehoben; die Überschrift „Heute“ zeigt die Zahl. Maßgeblich ist die Ankunftszeit, ein alter Hinweis, der heute erst eintrifft, zählt als neu. Ein `/reload` ist kein Login.
+    - Filter: Alle, Ohne Addon, Handel, Post, Offline, Blockiert, Beitritt, dazu „Erledigte ausblenden“.
+    - Klick auf den Namen öffnet die Ansicht „Mitglieder“ bei diesem Mitglied.
+    - Fuß: „Zuletzt abgeglichen: <Zeit>, über <Name>“, die Zahl offener Hinweise und während eines Abgleichs sein Fortschritt.
+  - **Mitglieder:** Liste nach offenen Hinweisen sortiert (mit Anzahl), `*` bei schon vorhandenen Daten. Rechts stehen der Status (wie alt die Daten sind, ob die Einzelheiten vollständig sind), der Beitrittsstand, der Knopf „Daten anfordern“, die Zusammenfassung (Level, Gold, Spielzeit), die Hinweise und die Ansichten Verlauf, Handel, Post und Blockiert. Lange Zeilen zeigen beim Überfahren den vollen Text; die Listen lassen sich mit dem Mausrad blättern.
+- **Erledigt-Marken:** Der Haken in der Zeitleiste gilt für alle Offiziere. Die spätere Marke gewinnt. Maus über dem Haken zeigt, wer abgehakt hat und wann. Die Marken gehen an alle Offiziere (auch an den, um dessen Eintrag es geht) und an Zwischenspeicher, aber nie an normale Mitglieder.
+- **Meldungen:**
+  - Nach dem Einloggen kommt eine wichtige Meldung der Art „Audit“, z. B. „5 neue Audit-Hinweise“, sobald der erste Abgleich fertig ist (spätestens nach 2 Minuten). Ein Klick darauf öffnet den Tab „Audit“ in der Ansicht „Hinweise“. Das gilt nur für echte Logins, nicht für `/reload`.
+  - Während der Sitzung meldet das Addon neue Hinweise gesammelt, höchstens alle 10 Minuten. Diese Meldung ist nicht wichtig, das Icon leuchtet also nicht.
+  - Einzelne Nachrichten, Einträge der Einzelheiten und Erledigt-Marken erzeugen keine Meldung.
+  - Beim Mitglied gibt es für den automatischen Versand keine Meldung. Nur bei „Daten anfordern“ steht dort „X (Offizier) hat deine Audit-Daten abgerufen“.
+- **Daten anfordern:** Der Knopf bleibt als Notlösung. Er fragt ein Mitglied an, das online ist (`AUDREQ`), und holt nur neue Einträge. Das geht auch mit Addon-Versionen bis 0.8.0, die nichts automatisch senden.
 
 ### Berufe
 
@@ -239,7 +279,7 @@ Die lokalen Tests (`/gff test loot|level|tod`) laufen durch dieselben persönlic
 Beispiel:
 
 ```
-[GuildFoundForever A=1 M=1 C=1 H=1 G=0 Q=1 O=1 I=0 S=0 P=0 L=50 X=1 D=0 E=1 R=0 B=1 U=1 T=0 F=0]
+[GuildFoundForever A=1 M=1 C=1 H=1 G=0 Q=1 O=1 I=0 S=0 P=0 L=50 X=1 D=0 E=1 R=0 B=1 T=0 F=0 V=0]
 [GuildFoundForever-Partner: Bruderschaft, Die Nachbarn]
 ```
 
@@ -261,12 +301,12 @@ Beispiel:
 | `E` | Epische Beute im Gildenchat posten | 1 |
 | `R` | Seltene (blaue) Beute im Gildenchat posten | 0 |
 | `B` | Rezepte im Gildenchat posten | 1 |
-| `U` | Offiziere dürfen Audit-Daten abrufen | 1 |
 | `T` | Berufe-Tab anzeigen und Berufe teilen | 0 |
 | `F` | Dungeonsuche-Tab anzeigen und Anmeldungen teilen | 0 |
+| `V` | Mitglieder speichern Audit-Daten für Offiziere zwischen | 0 |
 
 - Steht ein Tag in der Gildeninfo, überschreibt es die lokalen Einstellungen, auch die Partnergilden: Ohne Partner-Tag gibt es dann keine Partnergilden.
-- Fehlt im Tag ein Code, gilt dafür die lokale Einstellung. Das betrifft vor allem Tags älterer Versionen: aus 0.1.0 ohne `Q`, `O`, `I`, `S` und `P`, aus 0.2.0 ohne `X`, `D`, `E`, `R` und `B`, bis 0.6.0 ohne `F`.
+- Fehlt im Tag ein Code, gilt dafür die lokale Einstellung. Das betrifft vor allem Tags älterer Versionen: aus 0.1.0 ohne `Q`, `O`, `I`, `S` und `P`, aus 0.2.0 ohne `X`, `D`, `E`, `R` und `B`, bis 0.6.0 ohne `F`, bis 0.8.0 ohne `V`. Der Code `U` aus älteren Tags („Offiziere dürfen Audit-Daten abrufen“) wird beim Lesen ignoriert; der automatische Versand gilt trotzdem. Die Codes `K` (Gildenkarte, entfernt) und `U` werden nicht wiederverwendet.
 - Das Addon übernimmt die Gildenregeln auch in die lokalen Einstellungen:
   - Offiziere bearbeiten so die aktuellen Regeln als Entwurf und veröffentlichen sie neu.
   - Normale Mitglieder sehen die Regeln ausgegraut.
@@ -304,7 +344,11 @@ Modules/Travel.lua       Beschwörungen und Portale
 Modules/Group.lua        Gruppensperre
 Modules/Announce.lua     Ankündigungen (Höchstlevel, Tod, Beute, Rezepte) und Deathlog
 Modules/GuildMap.lua     Gildenkarte: Position senden/empfangen, Umrechnung, Datenquelle und Pins der Weltkarte
-Modules/Audit.lua        Audit: Verlauf, Handel und Post festhalten, Anfragen beantworten/stellen, Hinweise, Formatierung
+Modules/AuditRecords.lua Audit: ein Format für alle Einträge (kodieren, dekodieren, Freitext säubern); reine Funktionen
+Modules/AuditStore.lua   Audit: Speicher der Offiziere pro Mitglied (Einträge, letzter Stand, Beitrittsstand, Erledigt-Marken, 10 Tage, Höchstzahlen); reine Funktionen
+Modules/AuditSync.lua    Audit: Protokoll zwischen den Spielern (Senden an höchstens 3, Ring-Abgleich, Warteschlange, Wiederholung); ohne WoW-API, damit die Tests mehrere Spieler nachbilden
+Modules/Audit.lua        Audit: Verlauf, Handel und Post festhalten, eigene Hinweise berechnen, `AUDREQ` beantworten/stellen, Formatierung
+Modules/AuditAuto.lua    Audit im Spiel: verbindet die Abgleich-Engine mit Comm, Gilde, Regeln und SavedVariables; Rollen, Speicher pro Gilde, Meldungen
 Modules/Professions.lua  Berufe: eigene Skills und Rezepte lesen, Verzeichnis der Gilde, Rezepte auf Anfrage
 Modules/Finder.lua       Dungeonsuche: Dungeons und Stufen aus dem Spiel, Gruppe und Rollen lesen, Anmeldungen, Beitrittsanfragen
 MapPin.xml               Vorlage für die Pins der Gildenkarte (Verhalten in GuildMap.lua)
@@ -314,12 +358,13 @@ MinimapButton.lua        Minimap-Icon: Klicks, Zähler, Leuchten, Ziehen am Kart
 UI.lua                   Fenster mit Tabs, Einstellungs-Eintrag, Addon-Menü an der Minimap
 ```
 
-- Interne Nachrichten zwischen den Modulen: `INIT`, `LOGIN`, `RULES_CHANGED`, `ROSTER_UPDATED`, `DEATHLOG_UPDATED`, `AUDIT_UPDATED`, `PROFESSIONS_UPDATED`, `FINDER_UPDATED`, `MESSAGES_UPDATED`, `SETTINGS_CHANGED` (siehe `ns.RegisterCallback` / `ns.Fire`).
+- Interne Nachrichten zwischen den Modulen: `INIT`, `LOGIN`, `RULES_CHANGED`, `ROSTER_UPDATED`, `DEATHLOG_UPDATED`, `AUDIT_UPDATED`, `AUDIT_RECORDED` (ein neuer eigener Audit-Eintrag, außer Zwischenständen), `LOGGED` (ein Eintrag im Log der blockierten Aktionen), `PEERS_CHANGED` (die Fähigkeiten der Spieler online haben sich geändert), `PROFESSIONS_UPDATED`, `FINDER_UPDATED`, `MESSAGES_UPDATED`, `SETTINGS_CHANGED` (siehe `ns.RegisterCallback` / `ns.Fire`).
 - Addon-Nachrichten (Präfix `GFForever`, Felder mit Tab getrennt):
 
   | Nachricht | Kanal | Inhalt |
   |---|---|---|
-  | `HELLO <version>` | Gilde | beim Login |
+  | `HELLO <version> <fähigkeiten>` | Gilde | beim Login; Fähigkeit `A` = automatischer Audit. Ältere Versionen senden nur `HELLO <version>`. |
+  | `HI <version> <fähigkeiten>` | Flüstern | Antwort auf `HELLO` (nach 1 bis 20 Sekunden), damit der neue Spieler weiß, wer online ist und was kann |
   | `PING` | Gilde | Anfrage von „Gilde prüfen“ |
   | `PONG <version>` | Flüstern | Antwort darauf |
   | `ANN <typ> <zeit> <level> <klasse> <zone> <extra>` | Gilde | Ankündigung; `extra` ist der Item-Link oder die Todesursache |
@@ -329,6 +374,10 @@ UI.lua                   Fenster mit Tabs, Einstellungs-Eintrag, Addon-Menü an 
   | `AUD <eintrag>␞<eintrag>…` | Flüstern | Audit-Einträge, getrennt durch Zeichen 30: `S` Verlauf, `T` Handel, `M` Post, `L` blockiert |
   | `AUDEND <anzahl> <zeit>` | Flüstern | Ende der Antwort |
   | `AUDNO` | Flüstern | Anfrage abgelehnt |
+  | `AUDX <mitglied>␉<eintrag>␞<eintrag>…` | Flüstern | automatischer Audit: Einträge über ein Mitglied; mehrere Mitglieder in einer Nachricht, getrennt durch Zeichen 29. Über den Empfänger selbst zählen nur Erledigt-Marken (`E`). Arten: `S` Stand, `C` letzter Stand, `T` Handel, `M` Post, `L` blockiert, `H` Hinweis, `J` Beitrittsstand, `F` erster Stand, `E` Erledigt-Marke |
+  | `AUDS <seit1>␉<seit2>` | Flüstern | „schick mir, was du seit diesen Zeiten gespeichert hast“ (Stufe 1, Stufe 2) |
+  | `AUDE <stufe>␉<zeit>` | Flüstern | Ende von Stufe 1 oder 2 einer `AUDS`-Antwort, oder einer `AUDM`-Antwort (3) |
+  | `AUDM <mitglied>␉<seit>` | Flüstern | Einzelheiten (Stufe 2) eines Mitglieds anfordern |
   | `PROF <klasse> <id:skill:max,…>` | Gilde oder Flüstern | eigene Berufe und Skills (`id` = Skill-Line, z. B. 197 Schneiderei) |
   | `PROFSYNC` | Gilde | beim Einloggen: alle online schicken ihre Skills per Flüstern |
   | `PROFREQ <id>` | Flüstern | Rezepte eines Berufs anfragen |
@@ -411,6 +460,23 @@ Neu in 0.2.0 (in der Beta bis Level 20/30 testbar):
   - Handel und Gruppe mit deren Mitgliedern ohne Einschränkung
   - nach einmaligem Anvisieren ist auch Post erlaubt
 - [ ] Portale: erst ab Level 40, in der Beta nicht testbar
+
+Neu in 1.0.0 (automatischer Audit; mit zwei bis drei Spielern, ein Offizier dabei):
+
+- [ ] Das Beispiel aus der Spezifikation nachspielen: Spieler 1 versucht, das Auktionshaus zu öffnen, und loggt aus. Ein Offizier, der später einloggt, sieht den gelben Hinweis „Auktionshaus geöffnet“ in der Zeitleiste. Dann mit zwei Offizieren, die nie gleichzeitig online sind: Der zweite sieht den Hinweis nur, solange die Gilde `V` an hat oder das Mitglied wieder online kommt.
+- [ ] Gildenregel `V` ein- und ausschalten: Das Mitglied speichert die Daten nur mit `V` an, der Tab „Audit“ zeigt ihm trotzdem nur seine eigenen Daten.- [ ] Zeitleiste: Tages-Überschriften, Zeilen, Farben, Filter, „Erledigte ausblenden“, „neu seit deinem letzten Login“, Klick auf den Namen öffnet die Ansicht „Mitglieder“
+- [ ] Layout von Zeitleiste und Ansicht „Mitglieder“ im Fenster mit 780 × 540: nichts wird abgeschnitten, die deutschen Texte passen, das Mausrad blättert
+- [ ] Erledigt bei zwei Offizieren: Der Haken eines Offiziers erscheint beim anderen (auch bei dem, um dessen Eintrag es geht), mit Name und Zeit im Tooltip. Ein normales Mitglied sieht ihn nicht.
+- [ ] Meldung nach dem Einloggen („N neue Audit-Hinweise“) erscheint einmal, leuchtet das Icon und öffnet per Klick die Zeitleiste. Nach `/reload` kommt sie nicht noch einmal, und „neu seit deinem letzten Login“ ändert sich nicht.
+- [ ] Rangverlust: Dem Offizier das Recht „Offiziersnotiz ansehen“ nehmen. Seine fremden Audit-Daten sind gelöscht, der Tab zeigt nur noch die eigenen. Dabei prüfen, dass nichts gelöscht wird, solange die Mitgliederliste beim Login noch lädt.
+- [ ] `IsInGuild()` beim Login: Ein Einloggen mit Gilde erzeugt keinen falschen Hinweis „Beigetreten“. Ein kurzes „keine Gilde“ beim Login löscht nichts.
+- [ ] Sind `CanViewOfficerNote` und die Rang-Rechte (`GuildControlGetRankFlags`) beim Login gleichzeitig lesbar, oder kommen die Rechte später? Das entscheidet, ob der Offizier gleich beim Login erkannt wird.
+- [ ] Listet die Mitgliederliste auch Offline-Mitglieder? Das Aufräumen ehemaliger Mitglieder verlässt sich darauf.
+- [ ] `PLAYER_ENTERING_WORLD` mit `isInitialLogin` in Forever: Ein `/reload` zählt nicht als Login, ein echtes Einloggen schon.
+- [ ] Beim ersten Einloggen mit dem Addon auf einem Charakter mit schon vorhandener Spielzeit erscheint „Vor der Installation gespielt“; in einer Gilde, in der der Charakter schon war, steht „Beigetreten vor Version 1.0“.
+- [ ] Ein Mitglied mit Version 0.8.0 beantwortet „Daten anfordern“ weiterhin (`AUDREQ`/`AUD` kommen an).
+- [ ] Texte: „->“ und alle neuen Texte werden richtig dargestellt, auf Deutsch und Englisch.
+- [ ] Mit einer größeren Gilde: Ruckelt das Spiel? Verdrängt der Audit Gildenkarte oder Dungeonsuche? Wie lange dauert es, bis ein Eintrag bei allen Offizieren ist?
 
 Neu in 0.8.0 (Meldungsfenster und Minimap-Icon):
 
@@ -533,8 +599,8 @@ Das größte Paket. Ziel: Offiziere sehen, ob sich Mitglieder an die Regeln halt
 - [x] Festgelegt am 26.09.2026: Verlauf (Level, XP, Gold, Spielzeit), Handel und Post, blockierte Aktionen; Tode und Beute nicht
 - [x] Übertragung auf Anfrage per Flüster-Addon-Nachricht, gedrosselt (`Comm.SendPaced`), inkrementell
 - [x] Offiziersansicht mit Mitgliederliste, Zusammenfassung, Hinweisen und vier Ansichten
-- [x] Berechtigung: Ränge mit dem Recht „Offiziersnotiz ansehen“; Gildenregel `U`; Mitglieder sehen ihre eigenen Daten
-- [ ] Später, optional: Offline-Mitglieder über andere Offiziere abrufen (Offiziere teilen ihren Stand untereinander)
+- [x] Berechtigung: Ränge mit dem Recht „Offiziersnotiz ansehen“; Mitglieder sehen ihre eigenen Daten (Gildenregel `U` seit 1.0.0 entfernt)
+- [x] Festgelegt am 22.10.2026: automatischer Audit, Abgleich zwischen Offizieren, Zwischenspeicher per Gildenregel `V`, Zeitleiste, Aufzeichnung ab Charaktererstellung (siehe [Audit](#audit))
 - [ ] Später, optional: Gold-Sprünge ohne erkennbare Quelle markieren (braucht Erfahrungswerte aus dem echten Spiel)
 - [ ] Die Grenze bleibt: Ein Addon kann Manipulation nie ganz verhindern (siehe Bekannte Grenzen)
 
@@ -617,7 +683,12 @@ Offen:
 
 - Audit:
   - Die Daten liegen in den SavedVariables des Mitglieds und lassen sich dort von Hand verändern. Die Hinweise erkennen Spielen ohne Addon, aber keine gezielt bearbeiteten Dateien.
-  - Nur Mitglieder, die online sind, können abgefragt werden; für alle anderen gilt der zuletzt geholte Stand.
+  - Eine Information erreicht die Offiziere nur, wenn das Mitglied und mindestens ein Halter der Daten (Offizier, oder Mitglied bei eingeschalteter Regel `V`) irgendwann gleichzeitig online sind. Gibt es diesen Moment innerhalb von 10 Tagen nicht, kommt sie nie an.
+  - Die Erledigt-Marken sieht nur, wer Daten hält und abgleicht (Offiziere und Zwischenspeicher). Normale Mitglieder sehen sie nie.
+  - Bei vielen Offizieren dauert es, bis jeder einen Eintrag hat (20 Halter etwa 45 Minuten, 30 Halter etwa 90 Minuten).
+  - Mitglieder mit Version 0.8.0 oder älter senden nichts automatisch und beantworten nur `AUDREQ` („Daten anfordern“).
+  - Zwischenstände alle 10 Minuten gehen nicht an die Offiziere, nur der jeweils letzte Stand.
+  - Bei einem Charakter, der beim ersten Start des Addons schon in der Gilde war, ist der Beitrittszeitpunkt unbekannt.
   - Die Position des Rechts „Offiziersnotiz ansehen“ (Nr. 11) stammt aus der Classic-API und muss in Forever bestätigt werden (siehe Testliste).
 - Dungeonsuche:
   - Es erscheinen nur Anmeldungen von Mitgliedern mit Addon; Partnergilden sehen sie nicht.
