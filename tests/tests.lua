@@ -981,6 +981,25 @@ do
 	St.Add(gs, "y-r", "Y-R", j1, 1)
 	St.Add(gs, "y-r", "Y-R", j2, 1)
 	check(gs.members["y-r"].j == j2 and gs.members["y-r"].recs[j1] == nil, "a replaced join state leaves recs")
+	-- R15: per member and kind at most St.CAPS entries, the newest stay (all within the 10 days here).
+	local cs = St.New()
+	for i = 1, 301 do
+		St.Add(cs, "c-r", "C-R", R.Encode("T", { t = 5000 + i, n = "X", k = "e", gm = 0, rm = i, gi = "", ri = "" }), 1)
+	end
+	St.Add(cs, "c-r", "C-R", R.Encode("C", { t = 4000, l = 10, x = 0, m = 5, p = 100, r = "out" }), 1)
+	St.Prune(cs, 6000)
+	local capped = St.GetMember(cs, "c-r")
+	check(#capped.trades == 300 and capped.trades[1].t == 5002 and capped.trades[300].t == 5301 and capped.last, "pruning: a member keeps the newest 300 trades")
+	local hs = St.New()
+	for i = 1, 501 do
+		St.Add(hs, "h-r", "H-R", R.Encode("H", { t = 5000 + i, hk = "mail", sev = "o", a = "X", b = "s" }), 1)
+	end
+	St.SetDone(hs, "h-r", R.HintId({ t = 5001, hk = "mail", a = "X" }), 1, "Offi", 5600)
+	St.SetDone(hs, "h-r", R.HintId({ t = 5501, hk = "mail", a = "X" }), 1, "Offi", 5600)
+	St.Prune(hs, 6000)
+	local hintLine, marksLeft = St.Timeline(hs), 0
+	for raw in pairs(hs.members["h-r"].recs) do if raw:find("^E\t") then marksLeft = marksLeft + 1 end end
+	check(#hintLine == 500 and hintLine[500].hint.t == 5002 and hintLine[1].done and marksLeft == 1, "pruning: at most 500 notices, the marks of dropped ones go with them")
 end
 
 -- Audit: sync between players ---------------------------------------------------------
@@ -1819,6 +1838,29 @@ do
 	RunTickers()
 	local sessionReport = ns.Messages.GetList("audit")[1]
 	check(sessionReport ~= loginReport and sessionReport.m:find("weitere Audit%-Hinweise") and not sessionReport.i, "during the session: collected, not important")
+	-- R17: a /reload is no login: the login times stay and no second login report comes.
+	CloseMessages()
+	ClearMessages()
+	local seen = ns.char.auditSeen
+	local prevBefore, thisBefore = seen.prev, seen.this
+	Advance(5)
+	FireEvent("PLAYER_ENTERING_WORLD", false, true)
+	RunTimers()
+	check(seen.prev == prevBefore and seen.this == thisBefore, "a reload is no login: the login times stay")
+	AA.Start()
+	RunTimers()
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDE\t1\t" .. GetServerTime(), "WHISPER", "Freund-ClassicBetaPvE2")
+	RunTimers()
+	check(not Said("neue Audit-Hinweise"), "after a reload the first sync brings no second login report")
+	FireEvent("PLAYER_ENTERING_WORLD", true, false)
+	RunTimers()
+	check(seen.prev == thisBefore and seen.this == GetServerTime(), "a real login moves the login times")
+	AA.Start()
+	RunTimers()
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDE\t1\t" .. GetServerTime(), "WHISPER", "Freund-ClassicBetaPvE2")
+	RunTimers()
+	check(Said("neue Audit-Hinweise"), "after a real login the first sync brings the login report")
+	CloseMessages()
 	-- Prüfschwerpunkt 5: no guild name yet.
 	local savedGetGuildInfo, errorsBefore = GetGuildInfo, #ERRORS
 	GetGuildInfo = function() return nil end
@@ -1837,13 +1879,32 @@ do
 	FireEvent("GUILD_ROSTER_UPDATE")
 	check(ns.char.auditStore.Testgilde ~= nil, "empty roster: nothing deleted")
 	ROSTER = savedRoster
+	-- R16: rank permissions unreadable: deleted only without the officer view on two ready rosters
+	-- at least 60 s apart; the officer view in between starts the count again.
 	local savedFlags = RANK_FLAGS
 	RANK_FLAGS = {}
 	FireEvent("GUILD_ROSTER_UPDATE")
 	check(ns.char.auditStore.Testgilde ~= nil, "rank permissions not readable yet: nothing deleted")
+	Advance(30)
+	CAN_VIEW_OFFICER = true
+	FireEvent("GUILD_ROSTER_UPDATE")
+	CAN_VIEW_OFFICER = false
+	Advance(40)
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde ~= nil, "unreadable permissions: the officer view in between starts the count again")
+	Advance(30)
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde ~= nil, "unreadable permissions: less than 60 s without the officer view keeps the data")
+	Advance(30)
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde == nil, "unreadable permissions: no officer view twice, 60 s apart: deleted")
+	-- Readable permissions: at once.
+	CAN_VIEW_OFFICER = true
+	local again = AA.GetStore()
+	CAN_VIEW_OFFICER = false
 	RANK_FLAGS = savedFlags
 	FireEvent("GUILD_ROSTER_UPDATE")
-	check(ns.char.auditStore.Testgilde == nil and AA.GetStore() == nil, "rank lost: foreign data deleted")
+	check(again ~= nil and ns.char.auditStore.Testgilde == nil and AA.GetStore() == nil, "rank lost: foreign data deleted")
 	CAN_VIEW_OFFICER = true
 	-- Migration of the old account-wide cache.
 	ns.db.auditCache["freund-classicbetapve2"] = { name = "Freund-ClassicBetaPvE2", fetched = 123, latest = 50,

@@ -89,10 +89,23 @@ function St.Since(gs, since, tier, onlyKey)
 	return result
 end
 
--- Drops entries older than the keep time, except the last, join and first state.
+-- At most this many entries per member and kind; the last, join and first state are single anyway.
+St.CAPS = { S = 500, T = 300, M = 300, L = 200, H = 500 }
+
+local function OldestFirst(a, b)
+	if a.t ~= b.t then
+		return a.t < b.t
+	end
+	return a.raw < b.raw
+end
+
+-- Drops entries older than the keep time, except the last, join and first state, then the oldest
+-- entries beyond St.CAPS. Done marks go with their notice: by the time in their id, or when the
+-- notice was dropped for the cap.
 function St.Prune(gs, now)
 	local cutoff = now - St.KEEP_SECONDS
 	for key, member in pairs(gs.members) do
+		local byKind, marks = {}, {}
 		for raw in pairs(member.recs) do
 			local rt, rec = R.Decode(raw)
 			if not rt then
@@ -104,6 +117,32 @@ function St.Prune(gs, now)
 				end
 				if t < cutoff then
 					member.recs[raw] = nil
+				elseif St.CAPS[rt] then
+					local list = byKind[rt] or {}
+					byKind[rt] = list
+					list[#list + 1] = { raw = raw, t = rec.t, rec = rec }
+				elseif rt == "E" then
+					marks[#marks + 1] = { raw = raw, id = rec.id }
+				end
+			end
+		end
+		local droppedHints = {}
+		for rt, list in pairs(byKind) do
+			local excess = #list - St.CAPS[rt]
+			if excess > 0 then
+				table.sort(list, OldestFirst)
+				for i = 1, excess do
+					member.recs[list[i].raw] = nil
+					if rt == "H" then
+						droppedHints[R.HintId(list[i].rec)] = true
+					end
+				end
+			end
+		end
+		if next(droppedHints) then
+			for _, mark in ipairs(marks) do
+				if droppedHints[mark.id] then
+					member.recs[mark.raw] = nil
 				end
 			end
 		end

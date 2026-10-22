@@ -11,8 +11,8 @@ local Audit = ns.Audit
 --
 -- ns.char.auditStore[<guild name>]: the guild's audit data (AuditStore.lua), per character and per
 --   guild, only while the character is an officer or a relay (guild rule V) there.
--- ns.char.auditSeen = { prev, this }: the last two login times; notices that arrived after prev
---   are new.
+-- ns.char.auditSeen = { prev, this, reported }: the last two login times (real logins, not
+--   /reload); notices that arrived after prev are new.
 local AA = {}
 ns.AuditAuto = AA
 
@@ -20,6 +20,7 @@ local START_SECONDS = 45          -- after LOGIN: HELLO went out at 15 s, the HI
 local PEERS_SECONDS = 5           -- changes of the recipients are collected this long
 local LOGIN_REPORT_SECONDS = 120  -- the login report when no sync completed by then
 local SESSION_REPORT_SECONDS = 600
+local ROLE_LOST_SECONDS = 60      -- without readable rank permissions: no role this long before data goes
 local CAPABILITY = "A"
 
 local started = false       -- the engine ran Start this session
@@ -27,8 +28,21 @@ local startPending = false  -- Start waits for the guild roster
 local loggedIn = false
 local peersPending = false
 local migrated = false      -- the old account-wide cache was looked at this session
-local loginReported = false
+local roleLostAt            -- GetTime() of the first ready roster without a role (permissions unreadable)
 local sessionHints = 0      -- notices stored since the last report
+
+-- ns.char.auditSeen: prev and this are the last two real logins (not /reload); reported is the
+-- login (its this) whose login report was made.
+local function Seen()
+	ns.char.auditSeen = ns.char.auditSeen or { prev = 0, this = 0 }
+	return ns.char.auditSeen
+end
+
+-- The login report of the current login is still to come (a /reload does not bring another).
+local function LoginReportDue()
+	local seen = Seen()
+	return seen.reported ~= seen.this
+end
 
 ---------------------------------------------------------------------------
 -- The engine's view of the game
@@ -113,7 +127,7 @@ local function OnStored(key, raw)
 end
 
 local function OnSyncDone(_, tier)
-	if tier == 1 and not loginReported then
+	if tier == 1 and LoginReportDue() then
 		AA.ReportLoginHints()
 	end
 	ns.Fire("AUDIT_UPDATED")
@@ -227,9 +241,24 @@ function AA.Migrate()
 	return true
 end
 
+-- Whether the guild's data goes now that we hold no role. With readable rank permissions at once.
+-- Unreadable ones may still be loading: then only when a ready roster at least
+-- ROLE_LOST_SECONDS after the first one still shows no role; a role in between starts over.
+local function RoleLostForGood(selfKey)
+	if Audit.RankRightsKnown(selfKey) then
+		return true
+	end
+	local now = GetTime()
+	if not roleLostAt then
+		roleLostAt = now
+		return false
+	end
+	return now - roleLostAt >= ROLE_LOST_SECONDS
+end
+
 -- With a loaded roster and our own rank known: former members leave the store, and the data of
--- the guild goes when we are no longer an officer or relay there (not while the rank permissions
--- are still loading), as does the data of any other guild.
+-- the guild goes when we are no longer an officer or relay there, as does the data of any other
+-- guild.
 local function CheckStores()
 	local guild = GuildName()
 	local selfKey = ns.Guild.GetPlayerKey()
@@ -246,14 +275,16 @@ local function CheckStores()
 	end
 	local gs = stores[guild]
 	if AmHolder() then
+		roleLostAt = nil
 		if gs then
 			St.RemoveMembers(gs, IsMember)
 		end
 		if not migrated and Audit.CanView() then
 			migrated = AA.Migrate()
 		end
-	elseif gs and Audit.RankRightsKnown(selfKey) then
+	elseif gs and RoleLostForGood(selfKey) then
 		stores[guild] = nil
+		roleLostAt = nil
 		changed = true
 	end
 	if changed then
@@ -287,7 +318,7 @@ function AA.GetTimeline()
 	if not ns.char then
 		return result
 	end
-	local seen = ns.char.auditSeen and ns.char.auditSeen.prev or 0
+	local seen = Seen().prev or 0
 	local roster = RosterByKey()
 	local function Add(key, name, hint, id, at, done, join)
 		local entry = roster[key]
@@ -373,7 +404,8 @@ end
 -- One important message after the login with the notices that are new since the last login and
 -- not done. The notices counted for the session report start again from here.
 function AA.ReportLoginHints()
-	loginReported = true
+	local seen = Seen()
+	seen.reported = seen.this
 	sessionHints = 0
 	if not Audit.CanView() then
 		return
@@ -391,7 +423,7 @@ end
 
 local function ReportSession()
 	local count = sessionHints
-	if not loginReported or count == 0 then
+	if LoginReportDue() or count == 0 then
 		return
 	end
 	sessionHints = 0
@@ -423,7 +455,7 @@ function AA.Start()
 	engine:Start()
 	if first then
 		C_Timer.After(LOGIN_REPORT_SECONDS, function()
-			if not loginReported then
+			if LoginReportDue() then
 				AA.ReportLoginHints()
 			end
 		end)
@@ -459,12 +491,17 @@ ns.RegisterCallback("LOGIN", function()
 		return
 	end
 	loggedIn = true
-	ns.char.auditSeen = ns.char.auditSeen or {}
-	local seen = ns.char.auditSeen
-	seen.prev, seen.this = seen.this or 0, GetServerTime()
 	C_Timer.After(START_SECONDS, AA.Start)
 	C_Timer.NewTicker(S.INTERVAL_SECONDS, Tick)
 	C_Timer.NewTicker(SESSION_REPORT_SECONDS, ReportSession)
+end)
+
+-- PLAYER_LOGIN comes after a /reload as well; only a real login moves the login times.
+ns.On("PLAYER_ENTERING_WORLD", function(_, isInitialLogin)
+	if isInitialLogin and ns.char then
+		local seen = Seen()
+		seen.prev, seen.this = seen.this or 0, GetServerTime()
+	end
 end)
 
 -- A roster that is not loaded says nothing about members or ranks.
