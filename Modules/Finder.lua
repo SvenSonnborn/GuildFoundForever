@@ -660,7 +660,8 @@ ns.Comm.RegisterHandler("LFGREQ", function(sender)
 	end
 	C_Timer.After(math.random() * SYNC_REPLY_SPREAD, function()
 		if own and Enabled() then
-			ns.Comm.Send(BuildListingMessage(), "WHISPER", sender)
+			-- Below the key of the listing: ending it takes this answer out if it still waits.
+			ns.Comm.Send(BuildListingMessage(), "WHISPER", sender, "normal", "LFG:" .. sender)
 		end
 	end)
 end, "GUILD")

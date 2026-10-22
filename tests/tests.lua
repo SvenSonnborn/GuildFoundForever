@@ -3504,6 +3504,13 @@ do
 	Advance(10)
 	RunTickers()
 	check(#SentMessages("LFG\talt") == 0 and #SentMessages("LFGEND") >= 1, "budget: an alert with the same key takes the waiting message out")
+	-- Also the whispered answers below that key ("LFG:<name>", the answer to an LFGREQ).
+	while C.Send("x", "GUILD", nil, "bulk") do end
+	C.Send("LFG\tantwort", "WHISPER", "Freund-ClassicBetaPvE2", "normal", "LFG:Freund-ClassicBetaPvE2")
+	C.Send("LFGEND", "GUILD", nil, "alert", "LFG")
+	Advance(10)
+	RunTickers()
+	check(#SentMessages("LFG\tantwort") == 0, "budget: the alert also takes out waiting messages below its key")
 	C.SetBudget(1e12, 1e12)
 	FireEvent("GUILD_ROSTER_UPDATE")
 	RunTimers()

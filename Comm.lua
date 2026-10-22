@@ -149,11 +149,13 @@ function Comm.Send(message, channel, target, priority, key)
 	Refill()
 	priority = priority or "normal"
 	local cost = Cost(message)
-	-- An alert or bulk message with a key takes a waiting one with that key out (LFGEND ends the
-	-- listing that still waits).
+	-- An alert or bulk message with a key takes the waiting ones with that key or below it
+	-- ("<key>:...") out: LFGEND ends the listing that still waits and the whispered answers to it.
 	if key and priority ~= "normal" then
+		local below = key .. ":"
 		for i = #waiting, 1, -1 do
-			if waiting[i].key == key then
+			local waitingKey = waiting[i].key
+			if waitingKey and (waitingKey == key or waitingKey:sub(1, #below) == below) then
 				table.remove(waiting, i)
 			end
 		end
