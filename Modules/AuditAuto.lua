@@ -62,10 +62,9 @@ local function IsMember(key)
 	return ns.Guild.GetRankIndex(key) ~= nil
 end
 
--- The relay rule counts only when it comes from the guild info: a local setting or an officer's
--- draft must not make members hold the guild's data.
+-- Only from the guild info (Rules.AuditRelay).
 local function RelayRule()
-	return ns.Rules.IsGuildSetting("auditRelay") and ns.Rules.Get("auditRelay") and true or false
+	return ns.Rules.AuditRelay()
 end
 
 -- Officer or relay, read from the roster and the rank permissions.

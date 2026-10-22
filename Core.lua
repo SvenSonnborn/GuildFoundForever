@@ -301,7 +301,7 @@ function ns.ShowStatus()
 	lines[#lines + 1] = L.STATUS_PARTNERS:format(#partners > 0 and table.concat(partners, ", ") or L.NONE)
 	lines[#lines + 1] = L.STATUS_CHAT:format(YesNo(Rules.Get("chatLevelCap")), YesNo(Rules.Get("chatDeath")), YesNo(Rules.Get("chatEpic")),
 		YesNo(Rules.Get("chatRare")), YesNo(Rules.Get("chatRecipe")))
-	lines[#lines + 1] = L.STATUS_RELAY:format(YesNo(Rules.Get("auditRelay")))
+	lines[#lines + 1] = L.STATUS_RELAY:format(YesNo(Rules.AuditRelay()))
 	lines[#lines + 1] = L.STATUS_PROFESSIONS:format(YesNo(Rules.Get("professions")))
 	lines[#lines + 1] = L.STATUS_FINDER:format(YesNo(Rules.Get("dungeonFinder")))
 	local lockLevel = Rules.GetGroupLockLevel()
