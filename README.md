@@ -464,7 +464,8 @@ Neu in 0.2.0 (in der Beta bis Level 20/30 testbar):
 Neu in 1.0.0 (automatischer Audit; mit zwei bis drei Spielern, ein Offizier dabei):
 
 - [ ] Das Beispiel aus der Spezifikation nachspielen: Spieler 1 versucht, das Auktionshaus zu öffnen, und loggt aus. Ein Offizier, der später einloggt, sieht den gelben Hinweis „Auktionshaus geöffnet“ in der Zeitleiste. Dann mit zwei Offizieren, die nie gleichzeitig online sind: Der zweite sieht den Hinweis nur, solange die Gilde `V` an hat oder das Mitglied wieder online kommt.
-- [ ] Gildenregel `V` ein- und ausschalten: Das Mitglied speichert die Daten nur mit `V` an, der Tab „Audit“ zeigt ihm trotzdem nur seine eigenen Daten.- [ ] Zeitleiste: Tages-Überschriften, Zeilen, Farben, Filter, „Erledigte ausblenden“, „neu seit deinem letzten Login“, Klick auf den Namen öffnet die Ansicht „Mitglieder“
+- [ ] Gildenregel `V` ein- und ausschalten: Das Mitglied speichert die Daten nur mit `V` an, der Tab „Audit“ zeigt ihm trotzdem nur seine eigenen Daten.
+- [ ] Zeitleiste: Tages-Überschriften, Zeilen, Farben, Filter, „Erledigte ausblenden“, „neu seit deinem letzten Login“, Klick auf den Namen öffnet die Ansicht „Mitglieder“
 - [ ] Layout von Zeitleiste und Ansicht „Mitglieder“ im Fenster mit 780 × 540: nichts wird abgeschnitten, die deutschen Texte passen, das Mausrad blättert
 - [ ] Erledigt bei zwei Offizieren: Der Haken eines Offiziers erscheint beim anderen (auch bei dem, um dessen Eintrag es geht), mit Name und Zeit im Tooltip. Ein normales Mitglied sieht ihn nicht.
 - [ ] Meldung nach dem Einloggen („N neue Audit-Hinweise“) erscheint einmal, leuchtet das Icon und öffnet per Klick die Zeitleiste. Nach `/reload` kommt sie nicht noch einmal, und „neu seit deinem letzten Login“ ändert sich nicht.
