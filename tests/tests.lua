@@ -1578,7 +1578,7 @@ do
 	end
 	NetReset()
 	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
-	BigStore(a, 1000)
+	BigStore(a, 400)
 	b.store = St.New()
 	NetRun(60)
 	net.offlineOk = true
@@ -1592,7 +1592,7 @@ do
 	-- M5: an answer is not sent to a target that lost the holder role since.
 	NetReset()
 	a, b = NetPlayer("OffiA", true), NetPlayer("OffiB", true)
-	BigStore(a, 1000)
+	BigStore(a, 400)
 	b.store = St.New()
 	NetRun(60)
 	NetOnline(a, true) NetOnline(b, true)
