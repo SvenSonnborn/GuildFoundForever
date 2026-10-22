@@ -460,6 +460,15 @@ function Guild.GetPublishedTags()
 	return appliedTags
 end
 
+-- Whether the guild info was read: tags were found, or the text is there. The text arrives after
+-- the roster, so until then the guild rules are not known.
+function Guild.IsInfoRead()
+	if not IsInGuild() then
+		return false
+	end
+	return appliedTags ~= nil or GetInfoText() ~= ""
+end
+
 -- Reads the guild info again; officers paste the tags there themselves.
 function Guild.CheckInfoText()
 	if IsInGuild() then

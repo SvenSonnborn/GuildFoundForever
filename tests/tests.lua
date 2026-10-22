@@ -1843,9 +1843,16 @@ do
 	check(#St.Timeline(AA.GetStore()) == 1, "audit messages over the guild channel are ignored")
 	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. R.Encode("H", { t = 5, hk = "mail", sev = "o", a = "X", b = "s" }), "WHISPER", "Crossy-OtherRealm")
 	check(#St.Timeline(AA.GetStore()) == 1, "forwarding by a normal member is refused")
+	-- R22: the relay role comes from the guild info only; a local setting (or an officer's draft) does not count.
 	ns.Rules.Set("auditRelay", true)
 	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. R.Encode("H", { t = 5, hk = "mail", sev = "o", a = "X", b = "s" }), "WHISPER", "Crossy-OtherRealm")
-	check(#St.Timeline(AA.GetStore()) == 2, "with the relay rule a member may forward")
+	check(#St.Timeline(AA.GetStore()) == 1, "a local relay setting without V in the guild info: forwarding by a member is still refused")
+	GUILD_INFO_TEXT = "Willkommen\n" .. DEFAULT_TAG:gsub("V=0", "V=1")
+	FireEvent("GUILD_ROSTER_UPDATE")
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. R.Encode("H", { t = 5, hk = "mail", sev = "o", a = "X", b = "s" }), "WHISPER", "Crossy-OtherRealm")
+	check(#St.Timeline(AA.GetStore()) == 2, "with V=1 in the guild info a member may forward")
+	GUILD_INFO_TEXT = "Willkommen"
+	FireEvent("GUILD_ROSTER_UPDATE")
 	ns.Rules.Set("auditRelay", false)
 	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tCrossy-OtherRealm\t" .. fHint, "WHISPER", "Crossy-OtherRealm")
 	local crossy
@@ -1936,10 +1943,21 @@ do
 	FireEvent("GUILD_ROSTER_UPDATE")
 	check(ns.char.auditStore.Testgilde ~= nil, "empty roster: nothing deleted")
 	ROSTER = savedRoster
+	-- R26: the officer view says no (e.g. not loaded yet at login) while the rank permissions say
+	-- officer: the data stays, and we still hold the guild's data as the others see us.
+	CAN_VIEW_OFFICER = true
+	St.Add(AA.GetStore(), "freund-classicbetapve2", "Freund-ClassicBetaPvE2", fHint, GetServerTime())
+	CAN_VIEW_OFFICER = false
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde ~= nil and AA.GetStore() ~= nil and AA.GetStore().members["freund-classicbetapve2"] ~= nil,
+		"no officer view, but officer by the rank permissions: the data stays and is still held")
+	CAN_VIEW_OFFICER = true
 	-- R16: rank permissions unreadable: deleted only without the officer view on two ready rosters
-	-- at least 60 s apart; the officer view in between starts the count again.
+	-- at least 60 s apart; the officer view in between starts the count again. The guild master and
+	-- the rank below count as officers without readable permissions (R26), so we are rank 3 here.
 	local savedFlags = RANK_FLAGS
 	RANK_FLAGS = {}
+	ROSTER[1][3] = 3
 	FireEvent("GUILD_ROSTER_UPDATE")
 	check(ns.char.auditStore.Testgilde ~= nil, "rank permissions not readable yet: nothing deleted")
 	Advance(30)
@@ -1955,13 +1973,41 @@ do
 	Advance(30)
 	FireEvent("GUILD_ROSTER_UPDATE")
 	check(ns.char.auditStore.Testgilde == nil, "unreadable permissions: no officer view twice, 60 s apart: deleted")
-	-- Readable permissions: at once.
+	ROSTER[1][3] = 0
+	-- Readable permissions and the guild info read: at once, once both the officer view and the rank
+	-- permissions say no.
 	CAN_VIEW_OFFICER = true
 	local again = AA.GetStore()
 	CAN_VIEW_OFFICER = false
-	RANK_FLAGS = savedFlags
+	RANK_FLAGS = { [1] = { [11] = false }, [2] = { [11] = true }, [4] = { [11] = true }, [5] = { [11] = false } }
 	FireEvent("GUILD_ROSTER_UPDATE")
 	check(again ~= nil and ns.char.auditStore.Testgilde == nil and AA.GetStore() == nil, "rank lost: foreign data deleted")
+	-- R22: a local relay setting gives us no relay role either.
+	ns.Rules.Set("auditRelay", true)
+	check(AA.GetStore() == nil, "a local relay setting without V in the guild info: no relay role, no store")
+	GUILD_INFO_TEXT = "Willkommen\n" .. DEFAULT_TAG:gsub("V=0", "V=1")
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(AA.GetStore() ~= nil, "V=1 in the guild info: a normal member holds the guild's data")
+	St.Add(AA.GetStore(), "freund-classicbetapve2", "Freund-ClassicBetaPvE2", fHint, GetServerTime())
+	-- The tags go: the relay's data goes at once, the guild info is read.
+	GUILD_INFO_TEXT = "Willkommen"
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde == nil, "V gone from the guild info: the relay's data is deleted")
+	-- A relay's data from the last session waits while the guild info is not read yet (as at login).
+	GUILD_INFO_TEXT = ""
+	FireEvent("GUILD_ROSTER_UPDATE")
+	ns.char.auditStore.Testgilde = St.New()
+	St.Add(ns.char.auditStore.Testgilde, "freund-classicbetapve2", "Freund-ClassicBetaPvE2", fHint, GetServerTime())
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde ~= nil, "guild info not read yet: the relay's data stays")
+	GUILD_INFO_TEXT = "Willkommen\n" .. DEFAULT_TAG:gsub("V=0", "V=1")
+	Advance(70)
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde ~= nil and AA.GetStore().members["freund-classicbetapve2"] ~= nil, "the guild info arrives with V=1: the relay keeps its data")
+	GUILD_INFO_TEXT = "Willkommen"
+	FireEvent("GUILD_ROSTER_UPDATE")
+	ns.Rules.Set("auditRelay", false)
+	RANK_FLAGS = savedFlags
 	CAN_VIEW_OFFICER = true
 	-- Migration of the old account-wide cache.
 	ns.db.auditCache["freund-classicbetapve2"] = { name = "Freund-ClassicBetaPvE2", fetched = 123, latest = 50,
@@ -1980,6 +2026,23 @@ do
 	FireEvent("CHAT_MSG_ADDON", "GFForever", "HI\t1.0.0\tA", "WHISPER", "Freund-ClassicBetaPvE2")
 	RunTimers()
 	check(#SentMessages("AUDX\t") > 0, "roster and officer arrive: sending catches up")
+	-- R21: out of the guild: the guild's data goes once "no guild" still holds 10 s later (the
+	-- client may say "no guild" for a moment at login).
+	St.Add(AA.GetStore(), "freund-classicbetapve2", "Freund-ClassicBetaPvE2", fHint, GetServerTime())
+	IN_GUILD = false
+	FireEvent("PLAYER_GUILD_UPDATE")
+	IN_GUILD = true
+	RunTimers()
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde ~= nil, "no guild for a moment: the guild's data stays")
+	IN_GUILD = false
+	FireEvent("PLAYER_GUILD_UPDATE")
+	RunTimers()
+	check(next(ns.char.auditStore) == nil, "still no guild 10 s later: the guild's data is deleted")
+	IN_GUILD = true
+	FireEvent("PLAYER_GUILD_UPDATE")
+	FireEvent("GUILD_ROSTER_UPDATE")
+	RunTimers()
 	-- Back to the state the later sections expect: nobody announced the automatic audit, no
 	-- officer view, rank permissions unreadable.
 	ROSTER[2][2], ROSTER[4][2] = false, false

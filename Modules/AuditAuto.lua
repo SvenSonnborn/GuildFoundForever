@@ -21,6 +21,7 @@ local PEERS_SECONDS = 5           -- changes of the recipients are collected thi
 local LOGIN_REPORT_SECONDS = 120  -- the login report when no sync completed by then
 local SESSION_REPORT_SECONDS = 600
 local ROLE_LOST_SECONDS = 60      -- without readable rank permissions: no role this long before data goes
+local GUILD_GONE_SECONDS = 10     -- "no guild" must still hold this much later before the data goes
 local CAPABILITY = "A"
 
 local started = false       -- the engine ran Start this session
@@ -52,8 +53,10 @@ local function IsMember(key)
 	return ns.Guild.GetRankIndex(key) ~= nil
 end
 
+-- The relay rule counts only when it comes from the guild info: a local setting or an officer's
+-- draft must not make members hold the guild's data.
 local function RelayRule()
-	return ns.Rules.Get("auditRelay") and true or false
+	return ns.Rules.IsGuildSetting("auditRelay") and ns.Rules.Get("auditRelay") and true or false
 end
 
 -- Officer or relay, read from the roster and the rank permissions.
@@ -61,9 +64,10 @@ local function IsHolder(key)
 	return IsMember(key) and (RelayRule() or Audit.IsOfficer(key))
 end
 
--- Whether we hold the guild's data ourselves.
+-- Whether we hold the guild's data ourselves: the officer view, or our rank as the others read it
+-- (the officer view may say no while it loads at login), or the relay rule.
 local function AmHolder()
-	return ns.IsActive() and (Audit.CanView() or RelayRule())
+	return ns.IsActive() and (Audit.CanView() or Audit.IsOfficer(ns.Guild.GetPlayerKey()) or RelayRule())
 end
 
 local function GuildName()
@@ -241,11 +245,12 @@ function AA.Migrate()
 	return true
 end
 
--- Whether the guild's data goes now that we hold no role. With readable rank permissions at once.
--- Unreadable ones may still be loading: then only when a ready roster at least
+-- Whether the guild's data goes now that we hold no role (no officer view, no officer rank, no
+-- relay rule). At once with readable rank permissions and the guild info read (the relay rule is
+-- known then). Otherwise either may still be loading: then only when a ready roster at least
 -- ROLE_LOST_SECONDS after the first one still shows no role; a role in between starts over.
 local function RoleLostForGood(selfKey)
-	if Audit.RankRightsKnown(selfKey) then
+	if Audit.RankRightsKnown(selfKey) and ns.Guild.IsInfoRead() then
 		return true
 	end
 	local now = GetTime()
@@ -290,6 +295,18 @@ local function CheckStores()
 	if changed then
 		ns.Fire("AUDIT_UPDATED")
 	end
+end
+
+-- Out of the guild, the roster stays empty and CheckStores never runs: the data of every guild
+-- goes once "no guild" still holds GUILD_GONE_SECONDS later (the client may report it for a
+-- moment at login).
+local function DropStoresIfGuildless()
+	C_Timer.After(GUILD_GONE_SECONDS, function()
+		if ns.char and not IsInGuild() and next(ns.char.auditStore or {}) then
+			ns.char.auditStore = {}
+			ns.Fire("AUDIT_UPDATED")
+		end
+	end)
 end
 
 ---------------------------------------------------------------------------
@@ -494,6 +511,15 @@ ns.RegisterCallback("LOGIN", function()
 	C_Timer.After(START_SECONDS, AA.Start)
 	C_Timer.NewTicker(S.INTERVAL_SECONDS, Tick)
 	C_Timer.NewTicker(SESSION_REPORT_SECONDS, ReportSession)
+	if not IsInGuild() then
+		DropStoresIfGuildless()
+	end
+end)
+
+ns.On("PLAYER_GUILD_UPDATE", function()
+	if not IsInGuild() then
+		DropStoresIfGuildless()
+	end
 end)
 
 -- PLAYER_LOGIN comes after a /reload as well; only a real login moves the login times.
