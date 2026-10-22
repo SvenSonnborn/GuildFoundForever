@@ -54,6 +54,7 @@ ns.defaults = {
 	groupLeaveDelay = 10,
 	debug = false,
 	window = {},
+	style = "classic", -- look of the windows: classic or modern (Theme.lua)
 	lastTab = "rules", -- page of the window: rules, professions, finder, deathlog, audit or settings
 	messages = { window = {} }, -- message window: position
 	minimap = { show = true, angle = 200 }, -- minimap icon: on/off, degrees on the minimap's edge
@@ -315,8 +316,9 @@ end
 
 local HELP_LINES = {
 	"HELP_CONFIG", "HELP_SETTINGS", "HELP_MESSAGES", "HELP_STATUS", "HELP_CHECK", "HELP_LOG", "HELP_DEATHS", "HELP_AUDIT", "HELP_DUNGEONS",
-	"HELP_TEST", "HELP_TEST_LOCAL", "HELP_PREVIEW", "HELP_BANNER_RESET", "HELP_PUBLISH", "HELP_DEBUG",
+	"HELP_TEST", "HELP_TEST_LOCAL", "HELP_PREVIEW", "HELP_BANNER_RESET", "HELP_PUBLISH", "HELP_STYLE", "HELP_DEBUG",
 }
+local STYLE_NAMES = { classic = "classic", klassisch = "classic", modern = "modern" }
 
 SLASH_GUILDFOUNDFOREVER1 = "/gff"
 SLASH_GUILDFOUNDFOREVER2 = "/guildfoundforever"
@@ -356,6 +358,13 @@ SlashCmdList.GUILDFOUNDFOREVER = function(input)
 		ns.Banner.ResetPosition()
 	elseif command == "publish" then
 		ns.Guild.PublishRules()
+	elseif command == "style" and (argument == "" or STYLE_NAMES[argument:lower()]) then
+		if argument == "" then
+			ns.Theme.Toggle()
+		else
+			ns.Theme.Set(STYLE_NAMES[argument:lower()])
+		end
+		ns.Print("system", L.STYLE_NOW:format(ns.Theme.IsModern() and L.STYLE_MODERN or L.STYLE_CLASSIC))
 	elseif command == "debug" then
 		ns.db.debug = not ns.db.debug
 		ns.Print("system", ns.db.debug and L.DEBUG_ON or L.DEBUG_OFF)

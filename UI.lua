@@ -3,6 +3,8 @@ local L = ns.L
 
 local UI = {}
 ns.UI = UI
+local Theme = ns.Theme
+local Fonts = Theme.Fonts
 
 local WIDTH, HEIGHT = 780, 540
 local LEFT, RIGHT = 16, 400 -- column offsets inside a tab
@@ -23,6 +25,7 @@ local TABS = {
 local TAB_SPACING = 146
 local SETTINGS_ICONS = { "Interface\\Icons\\INV_Misc_Gear_01", "Interface\\Icons\\Trade_Engineering" }
 local SETTINGS_BUTTON_GAP = 8 -- space between the gear and the close button
+local STYLE_SWITCH_GAP = 10 -- space between the style switch and the gear
 
 local RULE_SECTIONS = {
 	{
@@ -88,14 +91,14 @@ local function AttachTooltip(widget, title, text)
 end
 
 local function CreateHeader(parent, x, y, text)
-	local header = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	local header = parent:CreateFontString(nil, "OVERLAY", Fonts.Normal)
 	header:SetPoint("TOPLEFT", x, y)
 	header:SetText(text)
 	return header
 end
 
 local function CreateNote(parent, x, y, width)
-	local note = parent:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	local note = parent:CreateFontString(nil, "OVERLAY", Fonts.DisableSmall)
 	note:SetPoint("TOPLEFT", x, y)
 	note:SetWidth(width)
 	note:SetJustifyH("LEFT")
@@ -106,7 +109,8 @@ local function CreateCheckbox(parent, x, y, labelText, tipText, onClick)
 	local checkbox = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
 	checkbox:SetSize(24, 24)
 	checkbox:SetPoint("TOPLEFT", x - 2, y)
-	local label = checkbox:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	Theme.SkinCheckbox(checkbox)
+	local label = checkbox:CreateFontString(nil, "OVERLAY", Fonts.Highlight)
 	label:SetPoint("LEFT", checkbox, "RIGHT", 4, 1)
 	label:SetText(labelText)
 	checkbox.label = label
@@ -154,12 +158,13 @@ end
 
 -- Label with a small number box behind it; onCommit receives the number or nil.
 local function CreateNumberBox(parent, x, y, labelText, tipText, onCommit)
-	local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	local label = parent:CreateFontString(nil, "OVERLAY", Fonts.Highlight)
 	label:SetPoint("TOPLEFT", x + 4, y)
 	label:SetText(labelText)
 	local box = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
 	box:SetSize(36, 20)
 	box:SetPoint("LEFT", label, "RIGHT", 12, 0)
+	Theme.SkinEditBox(box)
 	box:SetNumeric(true)
 	box:SetMaxLetters(3)
 	box:SetJustifyH("CENTER")
@@ -169,11 +174,17 @@ local function CreateNumberBox(parent, x, y, labelText, tipText, onCommit)
 	return box
 end
 
-local function CreateButton(parent, text, width, onClick)
+-- kind: nil, "primary" (the main action, filled in the modern style) or "tab".
+local function CreateButton(parent, text, width, onClick, kind)
 	local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
 	button:SetSize(width, 22)
 	button:SetText(text)
 	button:SetScript("OnClick", onClick)
+	if kind == "tab" then
+		Theme.SkinTab(button)
+	else
+		Theme.SkinButton(button, kind)
+	end
 	return button
 end
 
@@ -211,6 +222,7 @@ local function BuildRulesPanel(panel)
 	partners:SetSize(WIDTH - RIGHT - 30, 20)
 	partners:SetPoint("TOPLEFT", RIGHT + 8, -82)
 	partners:SetMaxLetters(200)
+	Theme.SkinEditBox(partners)
 	SetupEditBox(partners, L.SECTION_PARTNERS, L.PARTNERS_HINT, function(text)
 		ns.Rules.SetPartnerGuilds(ns.Rules.ParseNameList(text))
 	end)
@@ -235,7 +247,7 @@ end
 ---------------------------------------------------------------------------
 
 local function BuildSettingsPanel(panel)
-	local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+	local title = panel:CreateFontString(nil, "OVERLAY", Fonts.NormalLarge)
 	title:SetPoint("TOPLEFT", LEFT, -2)
 	title:SetText(L.SETTINGS_TITLE)
 	CreateHeader(panel, LEFT, -30, L.SECTION_CHAT)
@@ -272,7 +284,7 @@ end
 local function BuildDeathlogPanel(panel)
 	controls.deathHeader = CreateHeader(panel, LEFT, -4, "")
 	for i = 1, DEATHLOG_ROWS do
-		local row = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		local row = panel:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
 		row:SetPoint("TOPLEFT", LEFT + 4, -24 - (i - 1) * DEATHLOG_ROW_HEIGHT)
 		row:SetPoint("RIGHT", panel, "RIGHT", -16, 0)
 		row:SetJustifyH("LEFT")
@@ -358,7 +370,7 @@ local function CreateListRow(parent, x, y, width)
 	local highlight = row:CreateTexture(nil, "HIGHLIGHT")
 	highlight:SetAllPoints()
 	highlight:SetColorTexture(1, 1, 1, 0.08)
-	row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.text = row:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
 	row.text:SetPoint("LEFT", 4, 0)
 	row.text:SetPoint("RIGHT", -4, 0)
 	row.text:SetJustifyH("LEFT")
@@ -449,18 +461,18 @@ local function CreateHintRow(panel, index)
 	local row = CreateListRow(panel, LEFT, -(AUDIT_TOP + 28) - (index - 1) * AUDIT_ROW_HEIGHT, WIDTH - 2 * LEFT)
 	row.shade = row:CreateTexture(nil, "BACKGROUND")
 	row.shade:SetAllPoints()
-	row.day = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	row.day = row:CreateFontString(nil, "OVERLAY", Fonts.NormalSmall)
 	row.day:SetPoint("LEFT", 4, 0)
-	row.time = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	row.time = row:CreateFontString(nil, "OVERLAY", Fonts.DisableSmall)
 	row.time:SetPoint("LEFT", 4, 0)
 	row.time:SetWidth(40)
 	row.time:SetJustifyH("LEFT")
-	row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.name = row:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
 	row.name:SetPoint("LEFT", 48, 0)
 	row.name:SetWidth(130)
 	row.name:SetJustifyH("LEFT")
 	row.name:SetWordWrap(false)
-	row.tag = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.tag = row:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
 	row.tag:SetPoint("LEFT", 184, 0)
 	row.tag:SetWidth(72)
 	row.tag:SetJustifyH("LEFT")
@@ -471,6 +483,7 @@ local function CreateHintRow(panel, index)
 	row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
 	row.check:SetSize(20, 20)
 	row.check:SetPoint("RIGHT", -4, 0)
+	Theme.SkinCheckbox(row.check)
 	row.check:SetScript("OnClick", function(self)
 		local entry = row.entry
 		if entry then
@@ -554,12 +567,12 @@ local function BuildAuditPanel(panel)
 	end))
 	controls.auditRequest:SetPoint("TOPRIGHT", -16, -2 - AUDIT_TOP)
 	AttachTooltip(controls.auditRequest, L.BTN_AUDIT_REQUEST, L.BTN_AUDIT_REQUEST_TIP)
-	controls.auditSummary = ForMode("members", panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight"))
+	controls.auditSummary = ForMode("members", panel:CreateFontString(nil, "OVERLAY", Fonts.Highlight))
 	controls.auditSummary:SetPoint("TOPLEFT", AUDIT_DETAIL_X, -46 - AUDIT_TOP)
 	controls.auditJoin = ForMode("members", CreateNote(panel, AUDIT_DETAIL_X, -64 - AUDIT_TOP, AUDIT_DETAIL_WIDTH))
-	controls.auditJoin:SetFontObject("GameFontHighlightSmall")
+	controls.auditJoin:SetFontObject(Fonts.HighlightSmall)
 	controls.auditFlags = ForMode("members", CreateNote(panel, AUDIT_DETAIL_X, -82 - AUDIT_TOP, AUDIT_DETAIL_WIDTH))
-	controls.auditFlags:SetFontObject("GameFontNormalSmall")
+	controls.auditFlags:SetFontObject(Fonts.NormalSmall)
 	controls.auditFlags:SetSpacing(2)
 
 	for i, view in ipairs(AUDIT_VIEWS) do
@@ -1042,7 +1055,7 @@ function UI.RefreshProfessions()
 			row.icon:SetTexture(P.GetIcon(skillLineID) or PROF_ICON_FALLBACK)
 			row.icon:SetDesaturated(count == 0)
 			row.text:SetText(("%s |cff999999(%d)|r"):format(P.GetName(skillLineID), count))
-			row.text:SetFontObject(count > 0 and "GameFontHighlightSmall" or "GameFontDisableSmall")
+			row.text:SetFontObject(count > 0 and Fonts.HighlightSmall or Fonts.DisableSmall)
 			row.selected:SetShown(skillLineID == prof.selected)
 			row:Show()
 		else
@@ -1211,7 +1224,7 @@ local function CreateActivityRow(panel, index)
 	row.check:SetSize(14, 14)
 	row.check:SetPoint("LEFT", 2, 0)
 	row.check:SetTexture(CHECK_MARK)
-	row.levels = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.levels = row:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
 	row.levels:SetPoint("RIGHT", -4, 0)
 	row.levels:SetWidth(44)
 	row.levels:SetJustifyH("RIGHT")
@@ -1254,15 +1267,15 @@ local function CreateListingRow(panel, index)
 	highlight:SetAllPoints()
 	highlight:SetColorTexture(1, 1, 1, 0.06)
 
-	row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	row.name = row:CreateFontString(nil, "OVERLAY", Fonts.Highlight)
 	row.name:SetPoint("TOPLEFT", 6, -4)
 	row.name:SetWidth(FINDER_SLOT_X - 60)
 	row.name:SetJustifyH("LEFT")
 	row.name:SetWordWrap(false)
-	row.age = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	row.age = row:CreateFontString(nil, "OVERLAY", Fonts.DisableSmall)
 	row.age:SetPoint("TOPRIGHT", row, "TOPLEFT", FINDER_SLOT_X - 6, -5)
 	row.age:SetJustifyH("RIGHT")
-	row.dungeons = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	row.dungeons = row:CreateFontString(nil, "OVERLAY", Fonts.NormalSmall)
 	row.dungeons:SetPoint("BOTTOMLEFT", 6, 5)
 	row.dungeons:SetWidth(FINDER_SLOT_X - 12)
 	row.dungeons:SetJustifyH("LEFT")
@@ -1275,7 +1288,7 @@ local function CreateListingRow(panel, index)
 		slot:SetPoint("LEFT", FINDER_SLOT_X + (i - 1) * (FINDER_SLOT_SIZE + 1), 0)
 		row.slots[i] = slot
 	end
-	row.counts = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.counts = row:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
 	row.counts:SetPoint("LEFT", FINDER_SLOT_X, 0)
 	row.counts:SetWidth(FINDER_SLOTS * (FINDER_SLOT_SIZE + 1) + 10)
 	row.counts:SetJustifyH("LEFT")
@@ -1323,11 +1336,11 @@ local function BuildFinderPanel(panel)
 	end
 
 	CreateHeader(panel, FINDER_RIGHT_X, FINDER_OWN_Y, L.FINDER_OWN)
-	controls.finderRole = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	controls.finderRole = panel:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
 	controls.finderRole:SetPoint("TOPRIGHT", panel, "TOPLEFT", FINDER_RIGHT_X + FINDER_RIGHT_WIDTH, FINDER_OWN_Y - 2)
 	controls.finderRole:SetJustifyH("RIGHT")
 	controls.finderStatus = CreateNote(panel, FINDER_RIGHT_X + 4, FINDER_OWN_Y - 18, FINDER_RIGHT_WIDTH - 8)
-	controls.finderStatus:SetFontObject("GameFontHighlightSmall")
+	controls.finderStatus:SetFontObject(Fonts.HighlightSmall)
 	controls.finderPost = CreateButton(panel, L.FINDER_BTN_POST, 150, function()
 		local ids = SelectedActivities()
 		local ok, reason = ns.Finder.Post(ids)
@@ -1365,7 +1378,7 @@ local function RefreshActivityList(level, counts)
 			row:Hide()
 		elseif entry.header then
 			row.text:SetText(entry.header)
-			row.text:SetFontObject("GameFontNormal")
+			row.text:SetFontObject(Fonts.Normal)
 			row.levels:SetText("")
 			row.check:Hide()
 			row.selected:Hide()
@@ -1374,7 +1387,7 @@ local function RefreshActivityList(level, counts)
 			local activity = entry.activity
 			local count = counts[activity.id]
 			row.text:SetText(activity.name .. (count and (" |cff66bbff(" .. count .. ")|r") or ""))
-			row.text:SetFontObject(entry.fit == "fit" and "GameFontHighlightSmall" or "GameFontDisableSmall")
+			row.text:SetFontObject(entry.fit == "fit" and Fonts.HighlightSmall or Fonts.DisableSmall)
 			row.levels:SetText((LEVEL_COLORS[entry.fit] or "|cffcccccc") .. ns.Finder.FormatLevels(activity) .. "|r")
 			row.check:SetShown(selected[activity.id] and true or false)
 			row.selected:SetShown(selected[activity.id] and true or false)
@@ -1505,10 +1518,10 @@ local function CreateCopyDialog()
 	d:Hide()
 	tinsert(UISpecialFrames, d:GetName())
 
-	local title = d:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	title:SetPoint("TOP", 0, -5)
+	local title = d:CreateFontString(nil, "OVERLAY", Fonts.Highlight)
 	title:SetText(L.PUBLISH_DIALOG_TITLE)
-	d.text = d:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	Theme.SkinWindow(d, title)
+	d.text = d:CreateFontString(nil, "OVERLAY", Fonts.Highlight)
 	d.text:SetPoint("TOPLEFT", 18, -36)
 	d.text:SetPoint("RIGHT", -18, 0)
 	d.text:SetJustifyH("LEFT")
@@ -1521,6 +1534,7 @@ local function CreateCopyDialog()
 	box:SetPoint("BOTTOMRIGHT", -20, 76)
 	box:SetAutoFocus(false)
 	box:SetMaxLetters(0)
+	Theme.SkinEditBox(box)
 	box:SetScript("OnTextChanged", function(self, userInput)
 		if userInput then
 			self:SetText(d.copyText or "")
@@ -1623,11 +1637,7 @@ local function ShowPage(key)
 		page:SetShown(pageKey == key)
 	end
 	for tabKey, button in pairs(tabButtons) do
-		if tabKey == key then
-			button:LockHighlight()
-		else
-			button:UnlockHighlight()
-		end
+		Theme.SelectTab(button, tabKey == key)
 	end
 	controls.settingsButton:SetButtonState(key == "settings" and "PUSHED" or "NORMAL", key == "settings")
 	UI.Refresh()
@@ -1713,9 +1723,9 @@ local function CreateMainFrame()
 	f:Hide()
 	tinsert(UISpecialFrames, f:GetName())
 
-	local title = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	title:SetPoint("TOP", 0, -5)
+	local title = f:CreateFontString(nil, "OVERLAY", Fonts.Highlight)
 	title:SetText(("%s |cff999999v%s|r"):format(ns.title, ns.version))
+	Theme.SkinWindow(f, title)
 
 	local function CreatePage(key)
 		local page = CreateFrame("Frame", nil, f)
@@ -1726,7 +1736,7 @@ local function CreateMainFrame()
 		return page
 	end
 	for _, tab in ipairs(TABS) do
-		tabButtons[tab.key] = CreateButton(f, L[tab.label], 140, function() ShowPage(tab.key) end)
+		tabButtons[tab.key] = CreateButton(f, L[tab.label], 140, function() ShowPage(tab.key) end, "tab")
 		CreatePage(tab.key)
 	end
 	LayoutTabs()
@@ -1737,8 +1747,10 @@ local function CreateMainFrame()
 	BuildAuditPanel(pages.audit)
 	BuildSettingsPanel(CreatePage("settings"))
 	controls.settingsButton = CreateSettingsButton(f)
+	controls.styleSwitch = Theme.CreateSwitch(f, addonName .. "StyleSwitch")
+	controls.styleSwitch:SetPoint("RIGHT", controls.settingsButton, "LEFT", -STYLE_SWITCH_GAP, 0)
 
-	local status = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	local status = f:CreateFontString(nil, "OVERLAY", Fonts.HighlightSmall)
 	status:SetPoint("TOPLEFT", LEFT + 2, -62)
 	status:SetPoint("RIGHT", -16, 0)
 	status:SetJustifyH("LEFT")
@@ -1746,14 +1758,14 @@ local function CreateMainFrame()
 	controls.status = status
 
 	-- Bottom: hint on the left, buttons on the right
-	local hint = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	local hint = f:CreateFontString(nil, "OVERLAY", Fonts.DisableSmall)
 	hint:SetPoint("BOTTOMLEFT", LEFT + 4, 18)
 	hint:SetWidth(RIGHT - LEFT - 20)
 	hint:SetJustifyH("LEFT")
 	controls.hint = hint
 
 	local buttonWidth = 186
-	controls.publish = CreateButton(f, L.BTN_PUBLISH, buttonWidth, function() ns.Guild.PublishRules() end)
+	controls.publish = CreateButton(f, L.BTN_PUBLISH, buttonWidth, function() ns.Guild.PublishRules() end, "primary")
 	controls.publish:SetPoint("BOTTOMRIGHT", -16, 42)
 	AttachTooltip(controls.publish, L.BTN_PUBLISH, L.BTN_PUBLISH_TIP)
 	local log = CreateButton(f, L.BTN_LOG, buttonWidth, function() ns.MessageWindow.Show("blocked") end)
@@ -1808,7 +1820,7 @@ function UI.Refresh()
 		end
 		checkbox:SetChecked(value and true or false)
 		checkbox:SetEnabled(editable)
-		checkbox.label:SetFontObject(editable and "GameFontHighlight" or "GameFontDisable")
+		checkbox.label:SetFontObject(editable and Fonts.Highlight or Fonts.Disable)
 	end
 	for _, checkbox in ipairs(personalCheckboxes) do
 		checkbox:SetChecked(ns.db[checkbox.group][checkbox.key] and true or false)

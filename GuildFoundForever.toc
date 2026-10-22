@@ -16,6 +16,7 @@
 
 Locales.lua
 Core.lua
+Theme.lua
 Messages.lua
 Data.lua
 Rules.lua

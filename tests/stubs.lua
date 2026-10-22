@@ -122,14 +122,50 @@ function Widget:HighlightText(start, stop)
 	end
 	self._highlighted = true
 end
-function Widget:CreateFontString() return NewWidget("FontString") end
-function Widget:CreateTexture() return NewWidget("Texture") end
+-- Textures and font strings are the frame's regions (GetRegions), in creation order.
+local function AddRegion(self, region)
+	local regions = rawget(self, "_regions") or {}
+	self._regions = regions
+	regions[#regions + 1] = region
+	region._parent = self
+	return region
+end
+function Widget:CreateFontString(_, _, font) local s = NewWidget("FontString") s._fontObject = font return AddRegion(self, s) end
+function Widget:CreateTexture() return AddRegion(self, NewWidget("Texture")) end
+function Widget:GetRegions() return (table.unpack or unpack)(rawget(self, "_regions") or {}) end
+function Widget:GetParent() return rawget(self, "_parent") end
+function Widget:GetObjectType() return self._kind end
 function Widget:CreateMaskTexture() return NewWidget("MaskTexture") end
 function Widget:SetButtonState(state) self._buttonState = state end
-function Widget:SetNormalTexture(t) self._normal = NewWidget("Texture") self._normal:SetTexture(t) end
-function Widget:GetNormalTexture() return rawget(self, "_normal") end
-function Widget:SetPushedTexture(t) self._pushed = NewWidget("Texture") self._pushed:SetTexture(t) end
-function Widget:GetPushedTexture() return rawget(self, "_pushed") end
+function Widget:SetAlpha(a) self._alpha = a end
+function Widget:GetAlpha() return rawget(self, "_alpha") or 1 end
+function Widget:SetVertexColor(r, g, b, a) self._vertex = { r, g, b, a or 1 } end
+function Widget:GetVertexColor() local c = rawget(self, "_vertex") or { 1, 1, 1, 1 } return c[1], c[2], c[3], c[4] end
+function Widget:SetColorTexture(r, g, b, a) self._texture = "color" self._vertex = { r, g, b, a or 1 } end
+function Widget:SetFontObject(font) self._fontObject = font end
+function Widget:GetFontObject() return rawget(self, "_fontObject") end
+function Widget:SetFont(file, size, flags) self._font = { file, size, flags or "" } return true end
+function Widget:GetFont() local f = rawget(self, "_font") if f then return f[1], f[2], f[3] end end
+function Widget:SetTextColor(r, g, b, a) self._textColor = { r, g, b, a or 1 } end
+function Widget:GetTextColor() local c = rawget(self, "_textColor") or { 1, 1, 1, 1 } return c[1], c[2], c[3], c[4] end
+function Widget:CopyFontObject(source)
+	source = type(source) == "string" and _G[source] or source
+	self._font = { source:GetFont() }
+	self._textColor = { source:GetTextColor() }
+end
+function Widget:SetBackdrop(backdrop) self._backdrop = backdrop end
+function Widget:SetBackdropColor(r, g, b, a) self._backdropColor = { r, g, b, a or 1 } end
+function Widget:SetBackdropBorderColor(r, g, b, a) self._backdropBorder = { r, g, b, a or 1 } end
+-- Button state textures: one texture per state, reused when the file changes (as in the game).
+for _, state in ipairs({ "Normal", "Pushed", "Highlight", "Disabled", "Checked", "DisabledChecked" }) do
+	local field = "_texture" .. state
+	Widget["Set" .. state .. "Texture"] = function(self, t)
+		local texture = rawget(self, field) or NewWidget("Texture")
+		self[field] = texture
+		texture:SetTexture(t)
+	end
+	Widget["Get" .. state .. "Texture"] = function(self) return rawget(self, field) end
+end
 function Widget:CreateAnimationGroup() return NewWidget("AnimationGroup") end
 function Widget:CreateAnimation() return NewWidget("Animation") end
 function Widget:SetTexture(t) self._texture = t self._atlas = nil end
@@ -146,7 +182,30 @@ function Widget:RegisterUnitEvent(e, ...)
 	self._units[e] = {}
 	for _, unit in ipairs({ ... }) do self._units[e][unit] = true end
 end
-function CreateFrame(kind, name) return NewWidget(kind, name) end
+-- Blizzard templates bring their own art; the stubs give each a stand-in so skinning can be checked.
+function CreateFrame(kind, name, parent, template)
+	local w = NewWidget(kind, name)
+	w._parent, w._template = parent, template
+	if template == "BasicFrameTemplateWithInset" then
+		w.Bg = w:CreateTexture()
+		w.CloseButton = CreateFrame("Button", nil, w, "UIPanelCloseButton")
+		w.Inset = CreateFrame("Frame", nil, w)
+	elseif template == "UIPanelButtonTemplate" or template == "InputBoxTemplate" then
+		w.Left, w.Middle, w.Right = w:CreateTexture(), w:CreateTexture(), w:CreateTexture()
+	elseif template == "UIPanelCloseButton" then
+		w:SetNormalTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Up")
+		w:SetPushedTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Down")
+		w:SetHighlightTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight")
+	elseif template == "UICheckButtonTemplate" then
+		w:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
+		w:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
+		w:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight")
+		w:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
+		w:SetDisabledCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check-Disabled")
+	end
+	return w
+end
+function CreateFont(name) return NewWidget("Font", name) end
 function FireEvent(event, ...)
 	local unit = ...
 	for _, f in ipairs(frames) do
@@ -222,6 +281,16 @@ function GetFileIDFromPath(path) return FILES[path] end
 C_Texture = { GetAtlasExists = function(atlas) return ATLASES[atlas] == true end }
 function CreateColor(r, g, b, a) return { r = r, g = g, b = b, a = a } end
 GameFontNormalHuge = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 20 end }
+-- Blizzard's font objects: name, size, colour
+for _, font in ipairs({
+	{ "GameFontNormal", 12, 1, 0.82, 0 }, { "GameFontHighlight", 12, 1, 1, 1 }, { "GameFontDisable", 12, 0.5, 0.5, 0.5 },
+	{ "GameFontNormalSmall", 10, 1, 0.82, 0 }, { "GameFontHighlightSmall", 10, 1, 1, 1 }, { "GameFontDisableSmall", 10, 0.5, 0.5, 0.5 },
+	{ "GameFontNormalLarge", 16, 1, 0.82, 0 },
+}) do
+	local object = CreateFont(font[1])
+	object:SetFont("Fonts\\FRIZQT__.TTF", font[2], "")
+	object:SetTextColor(font[3], font[4], font[5])
+end
 SHIFT_DOWN = false
 function IsShiftKeyDown() return SHIFT_DOWN end
 

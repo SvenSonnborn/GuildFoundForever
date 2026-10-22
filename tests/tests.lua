@@ -3243,6 +3243,71 @@ end
 RunTimers()
 check(#ns.char.log > 0, "blocked actions were logged")
 
+-- Styles: classic and modern -----------------------------------------------------------
+do
+	local T = ns.Theme
+	local WHITE8 = "Interface\\Buttons\\WHITE8X8"
+	local function near(value, expected) return math.abs(value - expected) < 0.01 end
+	local fired = 0
+	ns.RegisterCallback("STYLE_CHANGED", function() fired = fired + 1 end)
+	check(T.Get() == "classic" and ns.db.style == "classic", "styles: classic is the default")
+	local F = T.Fonts
+	check(_G[F.Highlight]:GetFont() == "Fonts\\FRIZQT__.TTF" and _G[F.Normal]:GetTextColor() == 1, "classic: the addon's fonts copy Blizzard's")
+	T.Set("modern")
+	check(T.Get() == "modern" and ns.db.style == "modern" and fired == 1, "switching to modern saves the style and fires STYLE_CHANGED")
+	local file, size = _G[F.Highlight]:GetFont()
+	check(file == "Fonts\\ARIALN.TTF" and size >= 12 and near(_G[F.Normal]:GetTextColor(), 0.886), "modern: Arial Narrow, headers in the accent colour")
+	T.Set("bogus")
+	check(T.Get() == "modern" and fired == 1, "an unknown style is ignored")
+	LOCALE = "ruRU"
+	T.Set("classic")
+	T.Set("modern")
+	check(_G[F.Highlight]:GetFont() == "Fonts\\FRIZQT__.TTF", "modern without Arial Narrow glyphs (ruRU): the client's font stays")
+	LOCALE = "deDE"
+	T.Set("classic")
+
+	ns.db.lastTab = "rules"
+	ns.UI.Show()
+	local f = GuildFoundForeverFrame
+	local switch = GuildFoundForeverStyleSwitch
+	local publish = FindWidgetByText("Button", "In Gildeninfo veröffentlichen")
+	local rulesTab, auditTab = FindWidgetByText("Button", "Regeln"), FindWidgetByText("Button", "Audit")
+	local checkbox = FindWidgetByText("FontString", "Auktionshaus sperren"):GetParent()
+	local box = FindWidgetByText("EditBox", "50")
+	check(switch ~= nil and f.Bg:GetAlpha() == 1 and publish.Left:GetAlpha() == 1, "classic: the templates' art shows, the style switch sits in the title bar")
+	switch:RunScript("OnClick")
+	check(T.Get() == "modern", "the style switch changes the style")
+	check(f.Bg:GetAlpha() == 0 and f.Inset:GetAlpha() == 0 and f.skin.bg:IsShown() and f.CloseButton:GetNormalTexture():GetAlpha() == 0,
+		"modern: the window's template art is hidden, the flat background shows")
+	check(publish.Left:GetAlpha() == 0 and publish.skin.bg:IsShown() and box.Left:GetAlpha() == 0 and box.skin.bg:IsShown(), "modern: buttons and edit boxes are flat")
+	check(rulesTab.skin.line:IsShown() and not auditTab.skin.line:IsShown() and rulesTab.Left:GetAlpha() == 0, "modern: tabs are text, the open one underlined")
+	local checked = checkbox:GetCheckedTexture()
+	check(checked._texture == WHITE8 and near(checked:GetVertexColor(), 0.886), "modern: a checked box is a square in the accent colour")
+	FindWidgetByText("Button", "Audit"):RunScript("OnClick")
+	check(auditTab.skin.line:IsShown() and not rulesTab.skin.line:IsShown(), "modern: the underline follows the open tab")
+	switch:RunScript("OnClick")
+	check(T.Get() == "classic" and f.Bg:GetAlpha() == 1 and not f.skin.bg:IsShown() and publish.Left:GetAlpha() == 1 and not rulesTab.skin.line:IsShown(),
+		"back to classic: the templates' art returns, the flat parts go")
+	check(checkbox:GetCheckedTexture()._texture == "Interface\\Buttons\\UI-CheckBox-Check" and checkbox:GetNormalTexture()._texture == "Interface\\Buttons\\UI-CheckBox-Up",
+		"back to classic: check boxes get Blizzard's textures again")
+	ns.UI.Toggle()
+
+	SlashCmdList.GUILDFOUNDFOREVER("style")
+	check(T.Get() == "modern", "/gff style switches")
+	SlashCmdList.GUILDFOUNDFOREVER("style klassisch")
+	check(T.Get() == "classic", "/gff style klassisch picks the classic style")
+	SlashCmdList.GUILDFOUNDFOREVER("style modern")
+	check(T.Get() == "modern", "/gff style modern picks the modern style")
+
+	ns.MessageWindow.Show()
+	local messages = GuildFoundForeverMessages
+	check(messages._backdrop.edgeFile == WHITE8 and near(messages._backdropColor[1], 0.071), "modern: the message window is flat with a thin border")
+	T.Set("classic")
+	check(messages._backdrop.edgeFile == "Interface\\Tooltips\\UI-Tooltip-Border" and near(messages._backdropBorder[1], 0.85),
+		"classic, switched while open: the message window has its gold banner frame again")
+	CloseMessages()
+end
+
 check(CHAT_TOTAL == 0, "nothing went to the chat")
 
 check(#ERRORS == 0, "no errors inside event handlers" .. (#ERRORS > 0 and (": " .. table.concat(ERRORS, " | ")) or ""))
