@@ -382,7 +382,19 @@ local function Toast()
 	t.text:SetPoint("RIGHT", -12, 0)
 	t.text:SetJustifyH("LEFT")
 	t.text:SetWordWrap(false)
-	t:SetScript("OnClick", function(self) MessageWindow.Show(nil, self.entry) end)
+	-- A hint with an action opens what it is about instead of the message window; that message
+	-- counts as read then.
+	t:SetScript("OnClick", function(self)
+		local entry = self.entry
+		if entry and entry.a == "audit" then
+			self:Hide()
+			entry.r = true
+			ns.Fire("MESSAGES_UPDATED")
+			ns.UI.ShowAudit()
+		else
+			MessageWindow.Show(nil, entry)
+		end
+	end)
 	t:SetScript("OnEnter", function(self)
 		self.hovered = true
 		self:SetAlpha(1)

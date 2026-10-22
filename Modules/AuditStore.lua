@@ -132,9 +132,9 @@ local function Better(new, old)
 	return new.s == 1 and old.s ~= 1
 end
 
-local function ByTime(a, b)
-	return a.t < b.t
-end
+-- Within one second a session logs in first and out last; other ties go by the raw text, so
+-- the order does not depend on the order of the table.
+local REASON_ORDER = { ["in"] = 1, lvl = 2, int = 3, out = 4 }
 
 function St.GetMember(gs, key)
 	local member = gs.members[key]
@@ -146,6 +146,17 @@ function St.GetMember(gs, key)
 		snapshots = {}, trades = {}, mail = {}, log = {}, hints = {},
 		done = {}, latest = 0, fetched = 0,
 	}
+	local rawOf = {}
+	local function ByTime(a, b)
+		if a.t ~= b.t then
+			return a.t < b.t
+		end
+		local ra, rb = REASON_ORDER[a.r] or 0, REASON_ORDER[b.r] or 0
+		if ra ~= rb then
+			return ra < rb
+		end
+		return rawOf[a] < rawOf[b]
+	end
 	for raw, at in pairs(member.recs) do
 		local rt, rec = R.Decode(raw)
 		if rt then
@@ -158,6 +169,7 @@ function St.GetMember(gs, key)
 			if LISTS[rt] then
 				local list = data[LISTS[rt]]
 				list[#list + 1] = rec
+				rawOf[rec] = raw
 			elseif rt == "E" and rec.id then
 				local mark = { s = rec.s, by = rec.by, t = rec.t }
 				if Better(mark, data.done[rec.id]) then

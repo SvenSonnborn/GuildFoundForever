@@ -301,6 +301,8 @@ L.HINT_TRADE_ITEMS = ", items that are not allowed"
 L.HINT_JOIN = "Joined %s at level %d, %s played"
 L.HINT_JOIN_UNKNOWN_PLAYED = "unknown"
 L.HINT_PRE_JOIN = "(before joining)"
+L.AUDIT_NEW_HINTS = "%d new audit notices"
+L.AUDIT_NEW_HINTS_SESSION = "%d more audit notices came in"
 
 -- Professions
 L.TAB_PROFESSIONS = "Professions"
@@ -710,6 +712,8 @@ if GetLocale() == "deDE" then
 	L.HINT_JOIN = "%s beigetreten mit Level %d, %s gespielt"
 	L.HINT_JOIN_UNKNOWN_PLAYED = "unbekannt"
 	L.HINT_PRE_JOIN = "(vor Beitritt)"
+	L.AUDIT_NEW_HINTS = "%d neue Audit-Hinweise"
+	L.AUDIT_NEW_HINTS_SESSION = "%d weitere Audit-Hinweise eingetroffen"
 
 	L.TAB_PROFESSIONS = "Berufe"
 	L.STATUS_PROFESSIONS = "Berufe-Tab: %s"

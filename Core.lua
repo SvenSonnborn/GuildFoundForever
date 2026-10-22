@@ -48,7 +48,7 @@ ns.defaults = {
 	partnerGuilds = {},
 	partnerSeen = {}, -- normalized player name -> { g = partner guild (lower case), t = last seen }
 	deathlog = {},
-	auditCache = {}, -- officers: last fetched audit data per member
+	auditCache = {}, -- officers before 1.0: fetched audit data per member; AuditAuto.Migrate moves it into auditStore
 	professionDirectory = {}, -- guild name -> member -> { n, c, t, p = { skillLineID -> { s, m } } }
 	recipeCache = {}, -- member -> skillLineID -> { ids, fetched, scanned }
 	groupLeaveDelay = 10,
@@ -62,6 +62,8 @@ ns.defaults = {
 ns.charDefaults = {
 	log = {},
 	audit = { snapshots = {}, trades = {}, mail = {}, hints = {}, sent = {} }, -- also join, first, guild (Audit.lua)
+	auditStore = {}, -- officers and relays: the guild's audit data, per guild name (AuditAuto.lua)
+	auditSeen = { prev = 0, this = 0 }, -- the last two login times; notices that arrived after prev are new
 	professions = {},
 	finder = { selected = {}, onlyFitting = false }, -- dungeon finder: picked activities (ID -> true)
 	messages = {}, -- message window, newest last (Messages.lua)
@@ -138,7 +140,7 @@ function ns.Alert(...)
 	end
 end
 
--- A message with marks: opts.important, opts.silent, opts.link (see Messages.Add). No formatting.
+-- A message with marks: opts.important, opts.silent, opts.link, opts.action (see Messages.Add). No formatting.
 function ns.Notify(category, text, opts)
 	return ns.Messages.Add(category, text, opts)
 end

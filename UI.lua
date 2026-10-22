@@ -424,7 +424,7 @@ local function RefreshAuditMembers(entries)
 		if entry then
 			local name = Ambiguate(entry.fullName, "guild")
 			name = entry.online and ns.Announce.ClassColored(name, entry.class) or ("|cff777777" .. name .. "|r")
-			local fetched = ns.db.auditCache[entry.key] and " |cff66bbff*|r" or ""
+			local fetched = ns.AuditAuto.HasData(entry.key) and " |cff66bbff*|r" or ""
 			row.key = entry.key
 			row.text:SetText(("%s |cff999999%d|r%s"):format(name, entry.level or 0, fetched))
 			row.selected:SetShown(entry.key == audit.selected)

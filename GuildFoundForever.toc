@@ -33,6 +33,7 @@ Modules\AuditRecords.lua
 Modules\AuditStore.lua
 Modules\AuditSync.lua
 Modules\Audit.lua
+Modules\AuditAuto.lua
 Modules\Professions.lua
 Modules\Finder.lua
 Banner.lua

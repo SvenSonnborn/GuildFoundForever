@@ -1536,7 +1536,7 @@ ClearMessages()
 for _, message in ipairs(answer) do
 	FireEvent("CHAT_MSG_ADDON", "GFForever", message, "WHISPER", "Freund-ClassicBetaPvE2")
 end
-local cache = ns.db.auditCache["freund-classicbetapve2"]
+local cache = A.GetData("freund-classicbetapve2")
 -- Earlier tests left two identical snapshots in the same second; the transfer keeps one of them.
 local distinctSnapshots = {}
 for _, s in ipairs(records.snapshots) do
@@ -1551,13 +1551,14 @@ check(cachedTrade.gi == "2589:20" and cachedTrade.ri == "5350:5" and cachedTrade
 check(cache.snapshots[#cache.snapshots].r == "out" and cache.snapshots[#cache.snapshots].m == 20000, "snapshot survives the transfer")
 ResetCalls()
 A.Request("Freund-ClassicBetaPvE2")
-check(LastAddonMessage() == "AUDREQ\t" .. cache.latest, "next request only asks for new entries")
+check(LastAddonMessage() == "AUDREQ\t" .. ns.AuditAuto.LatestTime("freund-classicbetapve2"), "next request only asks for new entries")
 for _, message in ipairs(answer) do
 	FireEvent("CHAT_MSG_ADDON", "GFForever", message, "WHISPER", "Freund-ClassicBetaPvE2")
 end
+cache = A.GetData("freund-classicbetapve2")
 check(#cache.snapshots == snapshotTotal and #cache.log == #ns.char.log and #cache.trades == #records.trades, "records received twice are not duplicated")
 FireEvent("CHAT_MSG_ADDON", "GFForever", answer[1], "WHISPER", "Crossy-OtherRealm")
-check(ns.db.auditCache["crossy-otherrealm"] == nil, "unrequested data ignored")
+check(A.GetData("crossy-otherrealm") == nil, "unrequested data ignored")
 A.Request("Crossy-OtherRealm")
 FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDNO", "WHISPER", "Crossy-OtherRealm")
 check(A.GetRequestState("crossy-otherrealm") == "denied", "refusal recorded")
@@ -1596,7 +1597,10 @@ ResetCalls()
 check(A.FormatItems("2589:20,777:1") == "20x |cffffffff[Leinenstoff]|r, 1x [#777]" and CallCount("RequestLoadItem") == 1, "items named; unknown items requested")
 local tradeText = A.FormatTrade(cachedTrade)
 check(tradeText:find("Handel mit Freund (Gilde)", 1, true) ~= nil and tradeText:find("gegeben: 20x", 1, true) ~= nil and tradeText:find("500c", 1, true) ~= nil, "trade formatted")
-check(A.FormatMail(cache.mail[#cache.mail]):find("Post von Freund (Gilde)", 1, true) ~= nil, "mail formatted")
+-- The member sent and took mail in the same second; the store keeps no order within a second.
+local takenMail
+for _, mail in ipairs(cache.mail) do if mail.d == "r" then takenMail = mail end end
+check(A.FormatMail(takenMail):find("Post von Freund (Gilde)", 1, true) ~= nil, "mail formatted")
 
 -- Audit: window ------------------------------------------------------------------
 ns.db.lastTab = "audit"
@@ -1725,6 +1729,149 @@ do
 	check(ns.char.audit.first and ns.char.audit.join, "join and first state stay")
 	ns.char.audit, ns.char.log = savedAudit, savedLog
 	UNITS.NPC = nil
+end
+
+-- Audit: automatic ------------------------------------------------------------------
+local AA = ns.AuditAuto
+do
+	CAN_VIEW_OFFICER = true
+	RANK_FLAGS = { [1] = { [11] = true }, [2] = { [11] = true }, [4] = { [11] = true }, [5] = { [11] = false } }
+	-- HELLOs here carry versions no newer than our own (0.7.0): the notice about a newer version
+	-- comes once per session, and the section "Addon messages" tests it.
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "HELLO\t0.7.0\tA", "GUILD", "Freund-ClassicBetaPvE2")
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "HI\t1.0.0\tA", "WHISPER", "Crossy-OtherRealm")
+	RunTimers()
+	ResetCalls()
+	AA.Start()
+	RunTimers()
+	local pushes = SentMessages("AUDX\t")
+	check(#pushes > 0 and pushes[1].args[4] == "Freund-ClassicBetaPvE2", "own data goes to the officer running the new version")
+	local toCrossy = false
+	for _, c in ipairs(pushes) do if c.args[4] == "Crossy-OtherRealm" then toCrossy = true end end
+	check(not toCrossy, "a normal member gets nothing without the relay rule")
+	check(not Said("hat deine Audit-Daten abgerufen"), "automatic sharing does not tell the member")
+	ResetCalls()
+	ns.Log("ah", "Auktionshaus im Automatiktest")
+	RunTimers()
+	local carried = false
+	for _, c in ipairs(SentMessages("AUDX\t")) do
+		if c.args[4] == "Freund-ClassicBetaPvE2" and c.args[2]:find("Auktionshaus im Automatiktest", 1, true) then carried = true end
+	end
+	check(carried, "a new own record goes out by itself")
+	-- Throttled by the server (code 3): the engine tries again 3 s later instead of dropping it.
+	ResetCalls()
+	SEND_RESULT = 3
+	ns.Log("ah", "Gedrosselt im Automatiktest")
+	RunTimers(2)
+	SEND_RESULT = nil
+	RunTimers()
+	local retried = false
+	for _, c in ipairs(SentMessages("AUDX\t")) do
+		if c.args[2]:find("Gedrosselt im Automatiktest", 1, true) then retried = true end
+	end
+	check(retried, "a throttled message goes out once the server lets it through")
+	local fHint = R.Encode("H", { t = GetServerTime() - 60, hk = "blocked", sev = "y", a = "ah", b = "AH" })
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. fHint, "WHISPER", "Freund-ClassicBetaPvE2")
+	local found
+	for _, e in ipairs(AA.GetTimeline()) do if e.key == "freund-classicbetapve2" and e.hint.hk == "blocked" then found = e end end
+	check(found and found.name == "Freund-ClassicBetaPvE2" and found.new, "a pushed notice is in the timeline, new since the last login")
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. R.Encode("H", { t = 7, hk = "mail", sev = "o", a = "Gilde", b = "s" }), "GUILD", "Freund-ClassicBetaPvE2")
+	check(#St.Timeline(AA.GetStore()) == 1, "audit messages over the guild channel are ignored")
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. R.Encode("H", { t = 5, hk = "mail", sev = "o", a = "X", b = "s" }), "WHISPER", "Crossy-OtherRealm")
+	check(#St.Timeline(AA.GetStore()) == 1, "forwarding by a normal member is refused")
+	ns.Rules.Set("auditRelay", true)
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. R.Encode("H", { t = 5, hk = "mail", sev = "o", a = "X", b = "s" }), "WHISPER", "Crossy-OtherRealm")
+	check(#St.Timeline(AA.GetStore()) == 2, "with the relay rule a member may forward")
+	ns.Rules.Set("auditRelay", false)
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tCrossy-OtherRealm\t" .. fHint, "WHISPER", "Crossy-OtherRealm")
+	local crossy
+	for _, e in ipairs(AA.GetTimeline()) do if e.key == "crossy-otherrealm" then crossy = e end end
+	check(crossy and Ambiguate(crossy.name, "guild") == "Crossy", "other realms: stored by normalized key, shown by name")
+	local preFound
+	for _, e in ipairs(AA.GetTimeline()) do if e.key == ns.Guild.GetPlayerKey() and e.hint.hk == "mail" then preFound = e.pre end end
+	check(preFound == true, "own notices from before joining are marked")
+	-- Prüfschwerpunkt 3: an officer with an old version is no recipient.
+	ROSTER[3][2] = true
+	FireEvent("GUILD_ROSTER_UPDATE")
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "HELLO\t0.6.0", "GUILD", "Offline-ClassicBetaPvE2")
+	RunTimers()
+	ResetCalls()
+	AA.Start()
+	RunTimers()
+	local toOld = false
+	for _, c in ipairs(SentMessages("AUDX\t")) do if c.args[4] == "Offline-ClassicBetaPvE2" then toOld = true end end
+	check(not toOld, "an officer running an old version is no recipient")
+	ROSTER[3][2] = false
+	FireEvent("GUILD_ROSTER_UPDATE")
+	-- Notices in the messages: one at login, collected during the session.
+	CloseMessages()
+	ClearMessages()
+	ns.char.auditSeen.prev = 0
+	AA.ReportLoginHints()
+	local loginReport = ns.Messages.GetList("audit")[1]
+	check(loginReport and loginReport.m:find("neue Audit%-Hinweise") and loginReport.i and loginReport.a == "audit", "login: one important message with the count")
+	local toast = GuildFoundForeverMessagesToast
+	check(toast:IsShown() and toast.entry == loginReport, "the login report shows the hint")
+	toast:RunScript("OnClick")
+	check(GuildFoundForeverFrame:IsShown() and ns.db.lastTab == "audit" and not ns.MessageWindow.IsShown(), "clicking the hint opens the audit tab")
+	ns.UI.Toggle()
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. R.Encode("H", { t = GetServerTime(), hk = "trade", sev = "o", a = "Y", b = "0", c = "0", d = "1" }), "WHISPER", "Freund-ClassicBetaPvE2")
+	RunTickers()
+	local sessionReport = ns.Messages.GetList("audit")[1]
+	check(sessionReport ~= loginReport and sessionReport.m:find("weitere Audit%-Hinweise") and not sessionReport.i, "during the session: collected, not important")
+	-- Prüfschwerpunkt 5: no guild name yet.
+	local savedGetGuildInfo, errorsBefore = GetGuildInfo, #ERRORS
+	GetGuildInfo = function() return nil end
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "AUDX\tFreund-ClassicBetaPvE2\t" .. R.Encode("H", { t = 9, hk = "mail", sev = "o", a = "Z", b = "s" }), "WHISPER", "Freund-ClassicBetaPvE2")
+	check(#ERRORS == errorsBefore, "no guild name yet: the message is dropped without an error")
+	GetGuildInfo = savedGetGuildInfo
+	-- Former members and rank loss, not before the roster is loaded.
+	St.Add(AA.GetStore(), "weg-classicbetapve2", "Weg-ClassicBetaPvE2", fHint, GetServerTime())
+	ns.char.auditStore["Alte Gilde"] = St.New()
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(AA.GetStore().members["weg-classicbetapve2"] == nil, "former members leave the store")
+	check(ns.char.auditStore["Alte Gilde"] == nil, "the data of a guild the character is no longer in goes too")
+	local savedRoster = ROSTER
+	ROSTER = {}
+	CAN_VIEW_OFFICER = false
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde ~= nil, "empty roster: nothing deleted")
+	ROSTER = savedRoster
+	local savedFlags = RANK_FLAGS
+	RANK_FLAGS = {}
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde ~= nil, "rank permissions not readable yet: nothing deleted")
+	RANK_FLAGS = savedFlags
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.char.auditStore.Testgilde == nil and AA.GetStore() == nil, "rank lost: foreign data deleted")
+	CAN_VIEW_OFFICER = true
+	-- Migration of the old account-wide cache.
+	ns.db.auditCache["freund-classicbetapve2"] = { name = "Freund-ClassicBetaPvE2", fetched = 123, latest = 50,
+		snapshots = { { t = 50, l = 10, x = 0, m = 1, p = 2, r = "out" } }, trades = {}, mail = {}, log = {} }
+	AA.Migrate()
+	check(ns.db.auditCache["freund-classicbetapve2"] == nil and #AA.GetMemberData("freund-classicbetapve2").snapshots == 1, "old cache moved into the store")
+	-- Prüfschwerpunkt 2: empty roster at start, recipients later.
+	ROSTER = {}
+	FireEvent("GUILD_ROSTER_UPDATE")
+	ResetCalls()
+	AA.Start()
+	RunTimers()
+	check(#SentMessages("AUDX\t") == 0, "no roster: nothing sent yet")
+	ROSTER = savedRoster
+	FireEvent("GUILD_ROSTER_UPDATE")
+	FireEvent("CHAT_MSG_ADDON", "GFForever", "HI\t1.0.0\tA", "WHISPER", "Freund-ClassicBetaPvE2")
+	RunTimers()
+	check(#SentMessages("AUDX\t") > 0, "roster and officer arrive: sending catches up")
+	-- Back to the state the later sections expect: nobody announced the automatic audit, no
+	-- officer view, rank permissions unreadable.
+	ROSTER[2][2], ROSTER[4][2] = false, false
+	FireEvent("GUILD_ROSTER_UPDATE")
+	ROSTER[2][2], ROSTER[4][2] = true, true
+	FireEvent("GUILD_ROSTER_UPDATE")
+	CAN_VIEW_OFFICER = false
+	RANK_FLAGS = {}
+	RunTimers()
+	ResetCalls()
 end
 
 -- Professions: skills ------------------------------------------------------------
@@ -2276,7 +2423,8 @@ check(ns.Comm.BuildHello() == "HELLO\t0.7.0\tA", "HELLO carries the capabilities
 ResetCalls()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "HELLO\t1.0.0\tA", "GUILD", "Freund-ClassicBetaPvE2")
 RunTimers()
-local hi = LastCall("SendAddonMessage")
+-- Freund is an officer with the new version now: the automatic audit whispers him as well.
+local hi = SentMessages("HI\t")[1]
 check(hi and hi.args[2] == "HI\t0.7.0\tA" and hi.args[3] == "WHISPER" and hi.args[4] == "Freund-ClassicBetaPvE2", "HELLO answered with HI by whisper")
 check(ns.Comm.HasCapability("Freund-ClassicBetaPvE2", "A") and not ns.Comm.HasCapability("Crossy-OtherRealm", "A"), "capabilities from HELLO")
 FireEvent("CHAT_MSG_ADDON", "GFForever", "HI\t1.0.0\tA", "WHISPER", "Crossy-OtherRealm")
@@ -2290,6 +2438,15 @@ check(not ns.Comm.HasCapability("Crossy-OtherRealm", "A"), "members who went off
 ROSTER[4][2] = true
 FireEvent("GUILD_ROSTER_UPDATE")
 FireEvent("CHAT_MSG_ADDON", "GFForever", "HI\t1.0.0\tA", "WHISPER", "Crossy-OtherRealm")
+do
+	-- A roster that is not loaded (yet) says nothing about who went offline.
+	local fullRoster = ROSTER
+	ROSTER = {}
+	FireEvent("GUILD_ROSTER_UPDATE")
+	ROSTER = fullRoster
+	FireEvent("GUILD_ROSTER_UPDATE")
+	check(ns.Comm.HasCapability("Freund-ClassicBetaPvE2", "A") and ns.Comm.HasCapability("Crossy-OtherRealm", "A"), "an empty roster keeps the presence")
+end
 ResetCalls()
 FireEvent("CHAT_MSG_ADDON", "GFForever", "PING", "GUILD", "Magus-ClassicBetaPvE2")
 check(CallCount("SendAddonMessage") == 0, "own messages ignored")

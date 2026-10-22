@@ -598,20 +598,43 @@ local function Pack(records)
 	return messages
 end
 
--- Whether the named guild member's rank may view officer notes (false for names outside the guild).
-function Audit.IsOfficer(name)
-	local rankIndex = ns.Guild.GetRankIndex(name)
-	if not rankIndex then
-		return false
-	end
+-- The "view officer note" permission of a rank: true or false, nil while it cannot be read.
+local function RankCanViewOfficerNote(rankIndex)
 	if C_GuildInfo and C_GuildInfo.GuildControlGetRankFlags then
 		local ok, flags = pcall(C_GuildInfo.GuildControlGetRankFlags, rankIndex + 1)
 		if ok and type(flags) == "table" and flags[VIEW_OFFICER_NOTE_FLAG] ~= nil then
 			return flags[VIEW_OFFICER_NOTE_FLAG] and true or false
 		end
 	end
+	return nil
+end
+
+-- Whether the named guild member's rank may view officer notes (false for names outside the guild).
+function Audit.IsOfficer(name)
+	local rankIndex = ns.Guild.GetRankIndex(name)
+	if not rankIndex then
+		return false
+	end
+	local canView = RankCanViewOfficerNote(rankIndex)
+	if canView ~= nil then
+		return canView
+	end
 	-- Permissions not readable: only the guild master and the rank below.
 	return rankIndex <= 1
+end
+
+-- Whether the rank of the named member and its permissions are loaded. Until then a "no" from
+-- C_GuildInfo.CanViewOfficerNote may only mean "not known yet". Without the API there is nothing
+-- to wait for.
+function Audit.RankRightsKnown(name)
+	local rankIndex = ns.Guild.GetRankIndex(name)
+	if not rankIndex then
+		return false
+	end
+	if not (C_GuildInfo and C_GuildInfo.GuildControlGetRankFlags) then
+		return true
+	end
+	return RankCanViewOfficerNote(rankIndex) ~= nil
 end
 
 local function MayRequest(sender)
@@ -634,7 +657,7 @@ ns.Comm.RegisterHandler("AUDREQ", function(sender, channel, payload)
 end)
 
 ---------------------------------------------------------------------------
--- Officers: requests and the cache of fetched data
+-- Officers: requests ("Request data"); the answers go into the guild's store (AuditAuto.lua)
 ---------------------------------------------------------------------------
 
 function Audit.CanView()
@@ -643,63 +666,6 @@ function Audit.CanView()
 	end
 	local ok, canView = pcall(C_GuildInfo.CanViewOfficerNote)
 	return ok and canView and true or false
-end
-
-local function GetCache(key, name)
-	local cache = ns.db.auditCache[key]
-	if not cache then
-		cache = { name = name, snapshots = {}, trades = {}, mail = {}, log = {}, latest = 0 }
-		ns.db.auditCache[key] = cache
-	end
-	return cache
-end
-
--- Records already in the cache, by their raw text (requests overlap by one second).
-local function BuildSeen(cache)
-	local seen = {}
-	for _, list in ipairs({ cache.snapshots, cache.trades, cache.mail, cache.log }) do
-		for _, entry in ipairs(list) do
-			if entry.raw then
-				seen[entry.raw] = true
-			end
-		end
-	end
-	return seen
-end
-
-local function StoreRecord(cache, record, seen)
-	local kind, rec = ns.AuditRecords.Decode(record)
-	if not kind or seen[record] then
-		return false
-	end
-	local t, list, entry = rec.t, nil, nil
-	if kind == "S" then
-		list, entry = cache.snapshots, { l = rec.l or 0, x = rec.x or 0, m = rec.m or 0, p = rec.p, r = rec.r }
-	elseif kind == "T" then
-		list, entry = cache.trades, { n = rec.n or "?", k = rec.k, gm = rec.gm or 0, rm = rec.rm or 0, gi = rec.gi or "", ri = rec.ri or "" }
-	elseif kind == "M" then
-		list, entry = cache.mail, { d = rec.d, n = rec.n or "?", k = rec.k, m = rec.m or 0, c = rec.c or 0, i = rec.i or "" }
-	elseif kind == "L" then
-		list, entry = cache.log, { k = rec.k, m = rec.m or "" }
-	else
-		return false
-	end
-	-- The sequence number keeps the member's order among records of the same second.
-	cache.seq = (cache.seq or 0) + 1
-	entry.t, entry.raw, entry.seq = t, record, cache.seq
-	list[#list + 1] = entry
-	seen[record] = true
-	cache.latest = math.max(cache.latest or 0, t)
-	return true
-end
-
-local function SortByTime(list)
-	table.sort(list, function(a, b)
-		if a.t ~= b.t then
-			return a.t < b.t
-		end
-		return (a.seq or 0) < (b.seq or 0)
-	end)
 end
 
 local function FinishRequest(key, state)
@@ -716,8 +682,7 @@ function Audit.Request(name)
 	if not key or not Audit.CanView() or ns.Guild.IsSelf(name) then
 		return
 	end
-	local cache = ns.db.auditCache[key]
-	local since = cache and cache.latest or 0
+	local since = ns.AuditAuto.LatestTime(key)
 	local sent, code = ns.Comm.Send("AUDREQ\t" .. since, "WHISPER", name)
 	if not sent then
 		ns.Warn("audit", ns.Comm.FailureText(code))
@@ -754,15 +719,14 @@ local function ActiveRequest(sender, channel)
 	return nil
 end
 
+-- Records already stored (requests overlap by one second) do not count again.
 ns.Comm.RegisterHandler("AUD", function(sender, channel, payload)
 	local key, request = ActiveRequest(sender, channel)
 	if not key or not payload then
 		return
 	end
-	local cache = GetCache(key, sender)
-	request.seen = request.seen or BuildSeen(cache)
 	for record in payload:gmatch("[^\030]+") do
-		if StoreRecord(cache, record, request.seen) then
+		if ns.AuditAuto.StoreFetched(key, sender, record) then
 			request.records = request.records + 1
 		end
 	end
@@ -774,15 +738,6 @@ ns.Comm.RegisterHandler("AUDEND", function(sender, channel)
 	if not key then
 		return
 	end
-	local cache = GetCache(key, sender)
-	cache.fetched = GetServerTime()
-	for _, list in ipairs({ cache.snapshots, cache.trades, cache.mail, cache.log }) do
-		SortByTime(list)
-	end
-	Trim(cache.snapshots, MAX_SNAPSHOTS, function(snapshot) return snapshot.r == "lvl" end)
-	Trim(cache.trades, MAX_TRADES)
-	Trim(cache.mail, MAX_MAIL)
-	Trim(cache.log, 200)
 	ns.Print("audit", L.AUDIT_RECEIVED, Ambiguate(sender, "guild"), request.records)
 	FinishRequest(key, "done")
 end)
@@ -795,13 +750,14 @@ ns.Comm.RegisterHandler("AUDNO", function(sender, channel)
 	end
 end)
 
--- The data shown for a member: our own records for ourselves, otherwise the fetched cache (or nil).
+-- The data shown for a member: our own records for ourselves, otherwise what the guild's store
+-- holds (or nil).
 function Audit.GetData(key)
 	if key and ns.Guild.IsSelf(key) then
 		local records = Records()
 		return { own = true, snapshots = records.snapshots, trades = records.trades, mail = records.mail, log = ns.char.log, fetched = GetServerTime() }
 	end
-	return ns.db.auditCache[key]
+	return ns.AuditAuto.GetMemberData(key)
 end
 
 ---------------------------------------------------------------------------

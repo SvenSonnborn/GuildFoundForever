@@ -64,9 +64,14 @@ function Comm.Send(message, channel, target)
 	return false, result
 end
 
+-- Whether a failed Comm.Send was throttled by the server (worth trying again a little later).
+function Comm.IsThrottled(code)
+	return code == RESULT_ADDON_THROTTLE or code == RESULT_CHANNEL_THROTTLE
+end
+
 -- Text for a failed Comm.Send.
 function Comm.FailureText(code)
-	if code == RESULT_ADDON_THROTTLE or code == RESULT_CHANNEL_THROTTLE then
+	if Comm.IsThrottled(code) then
 		return L.COMM_THROTTLED
 	elseif code == RESULT_NOT_IN_GUILD then
 		return L.COMM_NOT_IN_GUILD
@@ -232,8 +237,12 @@ function Comm.GetCapablePeers(cap)
 	return result
 end
 
--- Players who went offline lose their presence.
+-- Players who went offline lose their presence. A roster that is not loaded (yet) says nothing
+-- about who is online, so it would drop every peer until their next login.
 ns.RegisterCallback("ROSTER_UPDATED", function()
+	if not ns.Guild.IsRosterReady() then
+		return
+	end
 	local online = ns.Guild.GetOnlineMembers()
 	local changed = false
 	for key, peer in pairs(peers) do
